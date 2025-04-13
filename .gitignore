@@ -1,0 +1,27 @@
+# Environment files
+.env
+.env/
+.venv/
+*.env
+
+# VSCode specific
+.vscode/
+*.code-workspace
+
+# Python and Computer specific
+__pycache__/
+*.py[cod]
+*.egg
+*.egg-info/
+dist/
+build/
+.DS_Store
+*.log
+*.sqlite3
+*.bak
+
+# Project files
+tree_graph*
+stereotypes.json
+plot_tree.py
+langchain/
