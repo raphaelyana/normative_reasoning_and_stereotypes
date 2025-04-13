@@ -1,2 +1,2 @@
-# normative_reasoning_and_stereotypes
+# Stereotypes detection with LLMs
 Master thesis project
