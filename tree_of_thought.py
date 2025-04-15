@@ -4,6 +4,7 @@ from enum import Enum
 import openai
 import time
 from utils import call_llm
+import re
 
 DEFAULT_MODEL_DICT = {
     'default': 'gpt-4o-mini',
@@ -33,14 +34,12 @@ class Thought:
     content: str
     state: ThoughtState
     score: float = 0.0
-    #reasoning_type: str = "unspecified"  # deductive, inductive, abductive, etc.
-    #normative_framework: str = "unspecified"  # utilitarianism, deontology, virtue ethics, etc.
-    #principles: str = ""
     stereotypes_biases: str = ""
     description: str = ""
     id: str = ""                         
     parent_id: Optional[str] = None
     children: List['Thought'] = None
+    is_stereotyping: Optional[str] = None
 
     def __post_init__(self):
         if self.children is None:
@@ -60,12 +59,14 @@ class TreeOfThought:
                  client: openai.OpenAI, 
                  model: Optional[dict]=None, 
                  max_branching_factor: int = 3, 
-                 max_depth: int = 3):
+                 max_depth: int = 3,
+                 stereotype_definition: Optional[str] = None):
 
         self.client = client
         self.model = model if model else DEFAULT_MODEL_DICT['default']
         self.max_branching_factor = max_branching_factor
         self.max_depth = max_depth
+        self.stereotype_definition = stereotype_definition
 
         self.thoughts = {}
         self.root_id = None
@@ -79,7 +80,7 @@ class TreeOfThought:
 
         self.id_counter=0
 
-    def generate_thoughts(self, prompt: str, current_depth: int = 0, parent_id: Optional[str]=None) -> List[Thought]:
+    def generate_thoughts(self, reasoning: str, current_depth: int = 0, parent_id: Optional[str]=None) -> List[Thought]:
         if current_depth >= self.max_depth:
             return []
 
@@ -93,16 +94,20 @@ class TreeOfThought:
 
         user_message = {
             "role": "user",    # REMOVE TYPE OF LOGICAL REASONING - The type of logical reasoning used: deductive, inductive, abductive, heuristic, or other
-            "content": f"""Given the current state of reasoning:
-
-                        '{prompt}'
+            "content": f"""Definition of a stereotype: {self.stereotype_definition}.
+            
+                        Current reasoning path: '{reasoning}'
 
                         Generate {self.max_branching_factor} possible next thoughts or steps to solve this question. 
-                        For each thought, provide the following questions:
-
+                        Each thought should correspond to either:
+                        - a small but meaningful reflection on one dimension of stereotype identification or critique (e.g., exaggerated generalization, social power dynamics, etc.);
+                        - or a path of thinking that resists stereotyping — by highlighting complexity, individuality, or context that challenges overgeneralized assumptions.
+                        
+                        For each, include:
                         - Thought: [The thought content itself]
-                        - Stereotypes/Biases: [Any stereotypes or biases that might appear]
+                        - Stereotypes/Biases: [Any stereotypes or biases that might appear, if relevant]
                         - Description: [A short description of the reasoning (1-3 sentences)]
+                        - Is Stereotyping: [Yes/No/Borderline]
                 
                         Format each thought as a separate section.
                         """
@@ -124,7 +129,7 @@ class TreeOfThought:
             model=self.model,
             prompt=user_message["content"],
             system_message=system_message["content"],
-            max_tokens=300
+            max_tokens=500
         )
         elapsed = time.time() - start_time
 
@@ -141,37 +146,69 @@ class TreeOfThought:
     
         # Fix 1: Improved parsing of thoughts
         thoughts = []
-        #sections = content.split("- Thought:")
-        sections = content.split("Thought:")
+        sections = re.split(r"###\s*Thought\s+\d+\s*:", content)
+        #sections = re.split(r"\b[Tt]hought\s*:", content)
         
-        for i, section in enumerate(sections[1:]):  # Skip the first empty split
+        for i, section in enumerate(sections[0:]):  # Skip the first empty split
             if not section.strip():
                 continue
                 
             lines = section.strip().split("\n")
-            thought_text = lines[0].strip()  # First line is the thought content
+            #thought_text = lines[0].strip()  # First line is the thought content
+            thought_text = ""
+            for line in lines:
+                if re.search(r"\*\*Thought\*\*", line, re.IGNORECASE):
+                    parts = line.split("**Thought**", 1)[-1].split(":", 1)
+                    if len(parts) > 1:
+                        thought_text = parts[1].strip()
+                    else:
+                        thought_text = parts[0].strip()
+                    break
+            if not thought_text:
+                thought_text = lines[0].strip()
             stereotypes_text = ""
             description_text = ""
+            is_stereotyping = ""
             
             # Fix 2: Clean up the thought text to remove any leftover formatting
             thought_text = thought_text.replace("'", "").replace('"', "")
             
             for line in lines[1:]:
-                if "Stereotypes/Biases" in line:
-                    stereotypes_text = line.split(":", 1)[1].strip() if len(line.split(":", 1)) > 1 else ""
-                elif "Description" in line:
-                    description_text = line.split(":", 1)[1].strip() if len(line.split(":", 1)) > 1 else ""
+                #if "Stereotypes/Biases" in line:
+                #    stereotypes_text = line.split(":", 1)[1].strip() if len(line.split(":", 1)) > 1 else ""
+                #elif "Description" in line:
+                #    description_text = line.split(":", 1)[1].strip() if len(line.split(":", 1)) > 1 else ""
+                #elif "Is Stereotyping" in line:
+                #    is_stereotyping = line.split(":", 1)[1].strip().capitalize() if len(line.split(":", 1)) > 1 else "" 
+                parsed = {
+                    "thought": "",
+                    "stereotypes": "",
+                    "description": "",
+                    "is_stereotyping": ""
+                }
+                
+                for line in lines:
+                    if match := re.match(r"-\s*\*\*Thought\*\*\s*:\s*(.+)", line, re.IGNORECASE):
+                        parsed["thought"] = match.group(1).strip()
+                    elif match := re.match(r"-\s*\*\*Stereotypes/Biases\*\*\s*:\s*(.+)", line, re.IGNORECASE):
+                        parsed["stereotypes"] = match.group(1).strip()
+                    elif match := re.match(r"-\s*\*\*Description\*\*\s*:\s*(.+)", line, re.IGNORECASE):
+                        parsed["description"] = match.group(1).strip()
+                    elif match := re.match(r"-\s*\*\*Is Stereotyping\*\*\s*:\s*(.+)", line, re.IGNORECASE):
+                        parsed["is_stereotyping"] = match.group(1).strip().capitalize()
+                
             
             new_thought = Thought(
-                id=str(self.id_counter),
+                id="",
                 parent_id=parent_id,
-                content=thought_text,
+                content=parsed["thought"],
                 state=ThoughtState.PENDING,
                 score=0.0,
-                stereotypes_biases=stereotypes_text,
-                description=description_text
+                stereotypes_biases=parsed["stereotypes"],
+                description=parsed["description"],
+                is_stereotyping=parsed["is_stereotyping"]
             )
-            self.id_counter += 1  # Increment counter
+
             thoughts.append(new_thought)
     
         return thoughts
@@ -188,8 +225,15 @@ class TreeOfThought:
             Combine these scores by making a simple unweighted average, resulting in a final score between 0.0 and 1.0.
             Output only the final numeric score (0.0 to 1.0).
             """
+        }
+
+        alt_system_message = {
+            "role": "system",
+            "content": f"""You are a logic evaluator. You are given a single thought. 
             
-            #"You are a moral reasoning assistant evaluating thoughts based on ethical soundness, logical coherence, and principle alignment. Rate on a scale from 0 to 1. Example of ranges: "
+            Rate it from 0.0 to 1.0 depending on its alignment with stereotype definition: {self.stereotype_definition}
+            Output only the final score (scale from 0 to 1).
+        """
         }
 
         user_message = {
@@ -208,7 +252,7 @@ class TreeOfThought:
             model=self.model,
             prompt=user_message["content"],
             system_message=system_message["content"],
-            max_tokens=300
+            max_tokens=500
         )
         elapsed = time.time() - start_time
 
@@ -237,7 +281,7 @@ class TreeOfThought:
             score=0.0,
             stereotypes_biases="",
             description="",
-            id=str(self.id_counter),  # Use the counter for the id
+            id="0",  # Use the counter for the id
             parent_id=None,  # Root has no parent
             #children=[]
             )
@@ -248,8 +292,8 @@ class TreeOfThought:
         self.root_id = root.id
 
         self._expand_thought(root, 0)
-        print(f"DEBUG: Total thoughts in tree: {len(self.thoughts)}")
-        print(f"DEBUG: Root has {len(root.children)} children")
+        #print(f"DEBUG: Total thoughts in tree: {len(self.thoughts)}")
+        #print(f"DEBUG: Root has {len(root.children)} children")
 
         return self._get_best_solution(root)
     
@@ -259,14 +303,16 @@ class TreeOfThought:
         if depth >= self.max_depth:
             return
 
-        print(f"DEBUG: Expanding thought at depth {depth}: {thought.content[:30]}...")
+        #print(f"DEBUG: Expanding thought at depth {depth}: {thought.content[:30]}...")
     
         self.thoughts[thought.id] = thought
         if depth == 0:
             self.root_id = thought.id
 
-        child_thoughts = self.generate_thoughts(thought.content, depth+1, thought.id)
-        print(f"DEBUG: Generated {len(child_thoughts)} child thoughts")
+        child_thoughts = self.generate_thoughts(thought.content, depth + 1, thought.id)
+        for idx, child in enumerate(child_thoughts, start=1):
+            child.id = f"{thought.id}.{idx}" if thought.id else str(idx)
+        #print(f"DEBUG: Generated {len(child_thoughts)} child thoughts")
         thought.children = child_thoughts
         
 
@@ -284,16 +330,42 @@ class TreeOfThought:
         if not thought.children:
             return [thought]
         
-        print(f"DEBUG: Finding best child among {len(thought.children)} children")
-        for i, child in enumerate(thought.children):
-            print(f"DEBUG: Child {i}: score={child.score}, content={child.content[:30]}...")
+        #print(f"DEBUG: Finding best child among {len(thought.children)} children")
+        #for i, child in enumerate(thought.children):
+        #    print(f"DEBUG: Child {i}: score={child.score}, content={child.content[:30]}...")
     
         best_child = max(thought.children, key=lambda x: x.score)
         if best_child:
-            print(f"DEBUG: Best child has score {best_child.score}")
+            #print(f"DEBUG: Best child has score {best_child.score}")
             return [thought] + self._get_best_solution(best_child)
         else:
             return [thought]
+
+    def print_full_tree(self, root: Optional[Thought] = None, indent: int = 0):
+        """
+        Recursively prints the entire tree with ID, score, content, stereotypes, and description.
+        """
+        if root is None:
+            root = self.thoughts.get(self.root_id)
+            if not root:
+                print("No root thought found.")
+                return
+    
+        indent_str = "    " * indent
+        print(f"{indent_str}🧠 Thought ID {root.id}")
+        print(f"{indent_str}→ Score: {root.score:.2f}")
+        print(f"{indent_str}→ Content: {root.content}")
+        if root.stereotypes_biases:
+            print(f"{indent_str}→ Stereotypes: {root.stereotypes_biases}")
+        if root.description:
+            print(f"{indent_str}→ Description: {root.description}")
+        if hasattr(root, "is_stereotyping") and root.is_stereotyping:
+            print(f"{indent_str}→ Is Stereotyping: {root.is_stereotyping}")
+        print(f"{indent_str}{'-' * 60}")
+        
+        for child in root.children:
+            self.print_full_tree(child, indent + 1)
+
 
 
 
