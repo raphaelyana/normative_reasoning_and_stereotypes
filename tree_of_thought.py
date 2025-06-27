@@ -93,33 +93,34 @@ class TreeOfThought:
         }
 
         user_message = {
-            "role": "user",    # REMOVE TYPE OF LOGICAL REASONING - The type of logical reasoning used: deductive, inductive, abductive, heuristic, or other
+            "role": "user",   
             "content": f"""Definition of a stereotype: {self.stereotype_definition}.
-            
-                        Current reasoning path: '{reasoning}'
-
-                        Generate {self.max_branching_factor} possible next thoughts or steps to solve this question. 
-                        Each thought should correspond to either:
-                        - a small but meaningful reflection on one dimension of stereotype identification or critique (e.g., exaggerated generalization, social power dynamics, etc.);
-                        - or a path of thinking that resists stereotyping — by highlighting complexity, individuality, or context that challenges overgeneralized assumptions.
                         
-                        For each, include:
-                        - Thought: [The thought content itself]
-                        - Stereotypes/Biases: [Any stereotypes or biases that might appear, if relevant]
-                        - Description: [A short description of the reasoning (1-3 sentences)]
-                        - Is Stereotyping: [Yes/No/Borderline]
-                
-                        Format each thought as a separate section.
+                        You are reasoning about: "{reasoning}"
+                        
+                        Generate {self.max_branching_factor} independent thoughts that extend the reasoning.
+                        
+                        Return each thought with these fields ONLY:
+                        - Thought
+                        - Stereotypes/Biases
+                        - Description
+                        - Is Stereotyping (Yes/No/Borderline)
+                        
+                        ### Example Format:
+                        ### Thought 1
+                        - Thought: Stereotypes often exaggerate cultural traits without considering individual differences.
+                        - Stereotypes/Biases: Overgeneralization of national identity.
+                        - Description: This reasoning highlights how attributing characteristics to all individuals in a group can lead to misjudgment.
+                        - Is Stereotyping: Yes
+                        
+                        ### Thought 2
+                        - Thought: Personal experiences vary significantly, even within a shared cultural context.
+                        - Stereotypes/Biases: None
+                        - Description: This step focuses on individuality as a counter to stereotyping.
+                        - Is Stereotyping: No
+                        
+                        Now, generate {self.max_branching_factor} thoughts **in the same format**, and nothing else.
                         """
-                        #- The thought itself
-                        #- The stereotypes or biases that might appear
-                        #- A short description of the reasoning (1-3 sentences)
-                       # 
-                        #Format:
-                        #- 'Thought: <thought>'
-                        #- 'Stereotypes/Biases: <stereotypes or biases>'
-                        #- 'Description: <description>'
-
         }
 
         # To track the time taken for the API call
@@ -146,56 +147,40 @@ class TreeOfThought:
     
         # Fix 1: Improved parsing of thoughts
         thoughts = []
-        sections = re.split(r"###\s*Thought\s+\d+\s*:", content)
+        
+        sections = re.split(r"###\s*Thought\s+\d+\s*", content)
+        #sections = re.split(r"###\s*Thought\s+\d+\s*:", content)
         #sections = re.split(r"\b[Tt]hought\s*:", content)
         
-        for i, section in enumerate(sections[0:]):  # Skip the first empty split
-            if not section.strip():
-                continue
-                
-            lines = section.strip().split("\n")
-            #thought_text = lines[0].strip()  # First line is the thought content
-            thought_text = ""
-            for line in lines:
-                if re.search(r"\*\*Thought\*\*", line, re.IGNORECASE):
-                    parts = line.split("**Thought**", 1)[-1].split(":", 1)
-                    if len(parts) > 1:
-                        thought_text = parts[1].strip()
-                    else:
-                        thought_text = parts[0].strip()
-                    break
-            if not thought_text:
-                thought_text = lines[0].strip()
-            stereotypes_text = ""
-            description_text = ""
-            is_stereotyping = ""
-            
-            # Fix 2: Clean up the thought text to remove any leftover formatting
-            thought_text = thought_text.replace("'", "").replace('"', "")
-            
-            for line in lines[1:]:
-                #if "Stereotypes/Biases" in line:
-                #    stereotypes_text = line.split(":", 1)[1].strip() if len(line.split(":", 1)) > 1 else ""
-                #elif "Description" in line:
-                #    description_text = line.split(":", 1)[1].strip() if len(line.split(":", 1)) > 1 else ""
-                #elif "Is Stereotyping" in line:
-                #    is_stereotyping = line.split(":", 1)[1].strip().capitalize() if len(line.split(":", 1)) > 1 else "" 
-                parsed = {
-                    "thought": "",
-                    "stereotypes": "",
-                    "description": "",
-                    "is_stereotyping": ""
-                }
-                
+        for i, section in enumerate(sections[1:]):  
+
+            parsed = {
+                "thought": "",
+                "stereotypes": "",
+                "description": "",
+                "is_stereotyping": ""
+            }
+        
+            try:
+                lines = section.strip().split("\n")
                 for line in lines:
-                    if match := re.match(r"-\s*\*\*Thought\*\*\s*:\s*(.+)", line, re.IGNORECASE):
+                    if match := re.match(r"-\s*Thought\s*:\s*(.+)", line, re.IGNORECASE):
                         parsed["thought"] = match.group(1).strip()
-                    elif match := re.match(r"-\s*\*\*Stereotypes/Biases\*\*\s*:\s*(.+)", line, re.IGNORECASE):
+                    elif match := re.match(r"-\s*Stereotypes/Biases\s*:\s*(.+)", line, re.IGNORECASE):
                         parsed["stereotypes"] = match.group(1).strip()
-                    elif match := re.match(r"-\s*\*\*Description\*\*\s*:\s*(.+)", line, re.IGNORECASE):
+                    elif match := re.match(r"-\s*Description\s*:\s*(.+)", line, re.IGNORECASE):
                         parsed["description"] = match.group(1).strip()
-                    elif match := re.match(r"-\s*\*\*Is Stereotyping\*\*\s*:\s*(.+)", line, re.IGNORECASE):
+                    elif match := re.match(r"-\s*Is Stereotyping\s*:\s*(.+)", line, re.IGNORECASE):
                         parsed["is_stereotyping"] = match.group(1).strip().capitalize()
+            except Exception as e:
+                print(f"[WARN] Failed to parse section {i+1}: {e}")
+                print(f"[RAW]:\n{section}")
+                continue
+        
+
+            if not parsed["thought"]:
+                print(f"[SKIP] Empty thought in section {i+1}")
+                continue
                 
             
             new_thought = Thought(
@@ -227,6 +212,8 @@ class TreeOfThought:
             """
         }
 
+
+        ## Bad results with this system message
         alt_system_message = {
             "role": "system",
             "content": f"""You are a logic evaluator. You are given a single thought. 
@@ -322,8 +309,8 @@ class TreeOfThought:
             child.state = ThoughtState.COMPLETED
             self._expand_thought(child, depth + 1)
 
-            if depth + 1 < self.max_depth:
-                self._expand_thought(child, depth + 1)
+            #if depth + 1 < self.max_depth:
+            #    self._expand_thought(child, depth + 1)
 
 
     def _get_best_solution(self, thought: Thought) -> List[Thought]:
