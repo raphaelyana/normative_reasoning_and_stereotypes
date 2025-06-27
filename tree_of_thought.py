@@ -71,7 +71,6 @@ class TreeOfThought:
         self.thoughts = {}
         self.root_id = None
 
-        # Metrics
         self.total_tokens = 0
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
@@ -90,7 +89,6 @@ class TreeOfThought:
             "content": """You are a structured Tree of Thought reasoner. 
             Your job is to explore the possible paths of reasoning for a given query, each with a distinct perspective."""
         }
-                    #TODO for later: Choose the prompt, probably make something around saying that it is designed to evaluate possible paths of thinking.
 
         user_message = {
             "role": "user",   
@@ -304,8 +302,6 @@ class TreeOfThought:
     def _expand_thought(self, thought: Thought, depth: int):
         if depth >= self.max_depth:
             return
-
-
     
         self.thoughts[thought.id] = thought
         if depth == 0:
@@ -322,7 +318,7 @@ class TreeOfThought:
             child.state = ThoughtState.EVALUATING
             child.score = self.evaluate_thought(child, parent_thought=thought)
             child.state = ThoughtState.COMPLETED
-            self._expand_thought(child, depth + 1)
+            self._expand_thought(child, depth+1)
 
 
 
@@ -416,15 +412,15 @@ class TreeOfThought:
                 return
     
         indent_str = "    " * indent
-        print(f"{indent_str}🧠 Thought ID {root.id}")
-        print(f"{indent_str}→ Score: {root.score:.2f}")
-        print(f"{indent_str}→ Content: {root.content}")
+        print(f"{indent_str} Thought ID {root.id}")
+        print(f"{indent_str} --  Score: {root.score:.2f}")
+        print(f"{indent_str} -- Content: {root.content}")
         if root.stereotypes_biases:
-            print(f"{indent_str}→ Stereotypes: {root.stereotypes_biases}")
+            print(f"{indent_str} -- Stereotypes: {root.stereotypes_biases}")
         if root.description:
-            print(f"{indent_str}→ Description: {root.description}")
+            print(f"{indent_str} -- Description: {root.description}")
         if hasattr(root, "is_stereotyping") and root.is_stereotyping:
-            print(f"{indent_str}→ Is Stereotyping: {root.is_stereotyping}")
+            print(f"{indent_str} -- Is Stereotyping: {root.is_stereotyping}")
         print(f"{indent_str}{'-' * 60}")
         
         for child in root.children:
