@@ -89,8 +89,8 @@ class TreeOfThought:
             "role": "system",
             "content": """You are a structured Tree of Thought reasoner. 
             Your job is to explore the possible paths of reasoning for a given query, each with a distinct perspective."""
-            #TODO: Choose the prompt, probably make something around saying that it is designed to evaluate possible paths of thinking.
         }
+                    #TODO for later: Choose the prompt, probably make something around saying that it is designed to evaluate possible paths of thinking.
 
         user_message = {
             "role": "user",   
@@ -104,7 +104,11 @@ class TreeOfThought:
                         - Thought
                         - Stereotypes/Biases
                         - Description
-                        - Is Stereotyping (Yes/No/Borderline)
+                        - Is Stereotyping: Must be exactly one of ["Yes", "No", "Unrelated"]. Responses outside of these three values will be considered incorrect.
+
+                        - Choose "Yes" if the thought contains or reinforces a stereotype.
+                        - Choose "No" if it actively challenges or reverses a stereotype (anti-stereotypical).
+                        - Choose "Unrelated" if the thought does not relate to stereotypes at all (e.g., factual, neutral, irrelevant).
                         
                         ### Example Format:
                         ### Thought 1
@@ -145,12 +149,9 @@ class TreeOfThought:
 
         content = response.choices[0].message.content.strip()
     
-        # Fix 1: Improved parsing of thoughts
         thoughts = []
         
         sections = re.split(r"###\s*Thought\s+\d+\s*", content)
-        #sections = re.split(r"###\s*Thought\s+\d+\s*:", content)
-        #sections = re.split(r"\b[Tt]hought\s*:", content)
         
         for i, section in enumerate(sections[1:]):  
 
@@ -171,7 +172,7 @@ class TreeOfThought:
                     elif match := re.match(r"-\s*Description\s*:\s*(.+)", line, re.IGNORECASE):
                         parsed["description"] = match.group(1).strip()
                     elif match := re.match(r"-\s*Is Stereotyping\s*:\s*(.+)", line, re.IGNORECASE):
-                        parsed["is_stereotyping"] = match.group(1).strip().capitalize()
+                        parsed["is_stereotyping"] = match.group(1).strip()
             except Exception as e:
                 print(f"[WARN] Failed to parse section {i+1}: {e}")
                 print(f"[RAW]:\n{section}")
@@ -181,6 +182,17 @@ class TreeOfThought:
             if not parsed["thought"]:
                 print(f"[SKIP] Empty thought in section {i+1}")
                 continue
+
+            valid_labels = {"Yes", "No", "Unrelated"}
+            label = parsed["is_stereotyping"].strip().capitalize()
+
+            if label not in valid_labels:
+                print(f"[WARN] Invalid stereotyping label: '{parsed['is_stereotyping']}' → defaulting to 'Unrelated'")
+                label = "Unrelated"
+            
+            parsed["thought"] = parsed["thought"].strip()
+            parsed["description"] = parsed["description"].strip()
+            parsed["stereotypes"] = parsed["stereotypes"].strip()
                 
             
             new_thought = Thought(
@@ -191,7 +203,7 @@ class TreeOfThought:
                 score=0.0,
                 stereotypes_biases=parsed["stereotypes"],
                 description=parsed["description"],
-                is_stereotyping=parsed["is_stereotyping"]
+                is_stereotyping=label
             )
 
             thoughts.append(new_thought)
@@ -199,65 +211,66 @@ class TreeOfThought:
         return thoughts
 
 
-    def evaluate_thought(self, thought: Thought) -> float:
+    def evaluate_thought(self, thought: Thought, parent_thought: Optional[Thought] = None) -> float:
         system_message = {
             "role": "system",
-            "content": """You are an ethical and logical evaluator. You will be given a single thought. Rate it from 0.0 to 1.0 based on:
-            - Ethical soundness (0.0: highly unethical; 0.3: unethical generally; 0.5: neutral, 0.7: somehow ethical, 1.0: highly ethical)
-            - Logical coherence: Is the thought logically consistent and well-structured? (0.0: highly incoherent; 0.3: incoherent generally; 0.5: neutral, 0.7: somewhat coherent, 1.0: highly coherent)
-            - Sensitivity to biases and stereotypes (0.0: highly biased; 0.3: biased generally; 0.5: neutral, 0.7: somewhat unbiased, 1.0: highly unbiased)
+            "content": """You are evaluating the *usefulness and novelty* of a reasoning step in a Tree of Thoughts process for stereotype detection.
+    
+            Use these scoring intervals (return only the number, e.g., 0.85):
+            
+            - 0.0–0.2 → Irrelevant, redundant, or off-topic
+            - 0.2–0.4 → Weak or vague contribution, limited insight
+            - 0.4–0.6 → Somewhat useful, partially relevant or accurate
+            - 0.6–0.8 → Clear and relevant, helps the reasoning process
+            - 0.8–1.0 → Highly insightful, adds substantial new reasoning
 
-            Combine these scores by making a simple unweighted average, resulting in a final score between 0.0 and 1.0.
-            Output only the final numeric score (0.0 to 1.0).
+            Return **only the numeric score**, no text.
             """
         }
+    
+        if parent_thought:
+            user_prompt = f"""Evaluate the usefulness and novelty of this child thought **compared to its parent**:
+    
+            Parent Thought:
+            \"{parent_thought.content}\"
+        
+            Child Thought:
+            \"{thought.content}\"
+        
+            Score between 0.0 (worst) and 1.0 (best). Return only the number."""
+                
+        else:
+            user_prompt = f"""Evaluate the usefulness of this thought **for detecting or refuting stereotypes**:
+    
+            \"{thought.content}\"
+    
+            Score between 0.0 (worst) and 1.0 (best). Return only the number."""
+    
 
-
-        ## Bad results with this system message
-        alt_system_message = {
-            "role": "system",
-            "content": f"""You are a logic evaluator. You are given a single thought. 
-            
-            Rate it from 0.0 to 1.0 depending on its alignment with stereotype definition: {self.stereotype_definition}
-            Output only the final score (scale from 0 to 1).
-        """
-        }
-
-        user_message = {
-            "role": "user",
-            "content": f"""Evaluate the following thought on a scale from 0.0 (worst) to 1.0 (best):
-
-                "{thought.content}"
-
-                Provide only the final score (no explanation)."""
-        }
-
-        # To track the time taken for the API call
         start_time = time.time()
         response = call_llm(
             client=self.client,
             model=self.model,
-            prompt=user_message["content"],
+            prompt=user_prompt,
             system_message=system_message["content"],
-            max_tokens=500
+            max_tokens=10
         )
         elapsed = time.time() - start_time
-
-        # Tracking the API call metrics (tokens, latency)
+    
         self.total_latency += elapsed
         self.total_calls += 1
-
         if response.usage:
             self.total_tokens += response.usage.total_tokens
             self.total_prompt_tokens += response.usage.prompt_tokens
             self.total_completion_tokens += response.usage.completion_tokens
-
-
+    
         try:
             score = float(response.choices[0].message.content.strip())
             return max(0.0, min(1.0, score))
-        except ValueError:
-            return 0.5 
+        except Exception as e:
+            print(f"[WARN] Failed to parse score: {e}. Defaulting to 0.25")
+            return 0.25
+ 
 
 
 
@@ -268,19 +281,16 @@ class TreeOfThought:
             score=0.0,
             stereotypes_biases="",
             description="",
-            id="0",  # Use the counter for the id
-            parent_id=None,  # Root has no parent
-            #children=[]
+            id="0", 
+            parent_id=None, 
             )
         
-        self.id_counter += 1  # Increment counter for next use
+        self.id_counter += 1
 
         self.thoughts[root.id] = root
         self.root_id = root.id
 
         self._expand_thought(root, 0)
-        #print(f"DEBUG: Total thoughts in tree: {len(self.thoughts)}")
-        #print(f"DEBUG: Root has {len(root.children)} children")
 
         return self._get_best_solution(root)
     
@@ -290,7 +300,7 @@ class TreeOfThought:
         if depth >= self.max_depth:
             return
 
-        #print(f"DEBUG: Expanding thought at depth {depth}: {thought.content[:30]}...")
+
     
         self.thoughts[thought.id] = thought
         if depth == 0:
@@ -299,34 +309,96 @@ class TreeOfThought:
         child_thoughts = self.generate_thoughts(thought.content, depth + 1, thought.id)
         for idx, child in enumerate(child_thoughts, start=1):
             child.id = f"{thought.id}.{idx}" if thought.id else str(idx)
-        #print(f"DEBUG: Generated {len(child_thoughts)} child thoughts")
+
         thought.children = child_thoughts
         
 
         for child in child_thoughts:
             child.state = ThoughtState.EVALUATING
-            child.score = self.evaluate_thought(child)
+            child.score = self.evaluate_thought(child, parent_thought=thought)
             child.state = ThoughtState.COMPLETED
             self._expand_thought(child, depth + 1)
 
-            #if depth + 1 < self.max_depth:
-            #    self._expand_thought(child, depth + 1)
 
 
     def _get_best_solution(self, thought: Thought) -> List[Thought]:
         if not thought.children:
             return [thought]
         
-        #print(f"DEBUG: Finding best child among {len(thought.children)} children")
-        #for i, child in enumerate(thought.children):
-        #    print(f"DEBUG: Child {i}: score={child.score}, content={child.content[:30]}...")
-    
         best_child = max(thought.children, key=lambda x: x.score)
         if best_child:
-            #print(f"DEBUG: Best child has score {best_child.score}")
             return [thought] + self._get_best_solution(best_child)
         else:
             return [thought]
+
+
+
+    def _get_majority_vote_from_path(self, solution_path: List[Thought], weighted: bool = False) -> str:
+        votes = {"Yes": 0.0, "No": 0.0, "Unrelated": 0.0}
+        for thought in solution_path:
+            label = (thought.is_stereotyping or "").strip().capitalize()
+            if label in votes:
+                if not weighted:
+                    votes[label] += 1
+                else:
+                    votes[label] += thought.score
+    
+        consensus_label = max(votes.items(), key=lambda x: x[1])[0]
+        return consensus_label
+
+
+
+    def _get_majority_vote_from_tree(self, weighted: bool = False) -> str:
+        votes = {"Yes": 0.0, "No": 0.0, "Unrelated": 0.0}
+        
+        def collect_votes(thought: Thought):
+            label = (thought.is_stereotyping or "").strip().capitalize()
+            if label in votes:
+                if not weighted:
+                    votes[label] += 1
+                else:
+                    votes[label] += thought.score
+
+            for child in thought.children:
+                collect_votes(child)
+    
+        root = self.thoughts.get(self.root_id)
+
+        if not root:
+            print("[WARN] No root found for majority vote.")
+            return "Unrelated"
+
+        collect_votes(root)
+        
+        return max(votes.items(), key=lambda x: x[1])[0]
+
+
+
+    def _get_majority_vote_from_leafs(self, weighted: bool = False) -> str:
+        votes = {"Yes": 0.0, "No": 0.0, "Unrelated": 0.0}
+
+        def collect_leaf_votes(thought: Thought):
+            if not thought.children:
+                label = (thought.is_stereotyping or "").strip().capitalize()
+                if label in votes:
+                    if not weighted:
+                        votes[label] += 1
+                    else:
+                        votes[label] += thought.score
+            for child in thought.children:
+                collect_leaf_votes(child)
+
+        root = self.thoughts.get(self.root_id)
+
+        if not root:
+            print("[WARN] No root found for majority vote.")
+            return "Unrelated"
+        
+        collect_leaf_votes(root)
+
+        return max(votes.items(), key=lambda x: x[1])[0]
+
+
 
     def print_full_tree(self, root: Optional[Thought] = None, indent: int = 0):
         """
