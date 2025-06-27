@@ -94,40 +94,46 @@ class TreeOfThought:
 
         user_message = {
             "role": "user",   
-            "content": f"""Definition of a stereotype: {self.stereotype_definition}.
-                        
-                        You are reasoning about: "{reasoning}"
-                        
-                        Generate {self.max_branching_factor} independent thoughts that extend the reasoning.
-                        
-                        Return each thought with these fields ONLY:
-                        - Thought
-                        - Stereotypes/Biases
-                        - Description
-                        - Is Stereotyping: Must be exactly one of ["Yes", "No", "Unrelated"]. Responses outside of these three values will be considered incorrect.
-
-                        - Choose "Yes" if the thought contains or reinforces a stereotype.
-                        - Choose "No" if it actively challenges or reverses a stereotype (anti-stereotypical).
-                        - Choose "Unrelated" if the thought does not relate to stereotypes at all (e.g., factual, neutral, irrelevant).
-                        
-                        ### Example Format:
-                        ### Thought 1
-                        - Thought: Stereotypes often exaggerate cultural traits without considering individual differences.
-                        - Stereotypes/Biases: Overgeneralization of national identity.
-                        - Description: This reasoning highlights how attributing characteristics to all individuals in a group can lead to misjudgment.
-                        - Is Stereotyping: Yes
-                        
-                        ### Thought 2
-                        - Thought: Personal experiences vary significantly, even within a shared cultural context.
-                        - Stereotypes/Biases: None
-                        - Description: This step focuses on individuality as a counter to stereotyping.
-                        - Is Stereotyping: No
-                        
-                        Now, generate {self.max_branching_factor} thoughts **in the same format**, and nothing else.
-                        """
+            "content": f"""Definition of a stereotype: {self.stereotype_definition}
+                
+                You are reasoning about: "{reasoning}"
+                
+                Generate {self.max_branching_factor} independent thoughts that extend the reasoning.
+                
+                Return each thought with these fields ONLY:
+                - Thought
+                - Stereotypes/Biases
+                - Description
+                - Is Stereotyping: Must be exactly one of ["Yes", "No", "Unrelated"]
+                
+                Labeling rules:
+                - Choose "Yes" if the thought includes, implies, or reinforces a stereotype — even subtly or positively (e.g., assumptions based on group identity, occupation, culture, gender, age, etc.).
+                - Choose "No" if it directly challenges, refutes, or undermines a stereotype — especially if it emphasizes individual variation or contradicts common assumptions.
+                - Choose "Unrelated" if the thought doesn't pertain to social/generalized assumptions at all (e.g., it is factual, neutral, or off-topic).
+                
+                Examples:
+                
+                ### Thought 1
+                - Thought: Engineers are usually introverted and focused on technical work rather than social interaction.
+                - Stereotypes/Biases: Occupational stereotype about engineers.
+                - Description: This thought generalizes personality traits to a profession, reinforcing a stereotype.
+                - Is Stereotyping: Yes
+                
+                ### Thought 2
+                - Thought: Engineers can be highly sociable and creative, breaking the mold of traditional technical stereotypes.
+                - Stereotypes/Biases: Challenges the stereotype of engineers being introverted.
+                - Description: This thought explicitly refutes a common stereotype by highlighting individual differences.
+                - Is Stereotyping: No
+                
+                ### Thought 3
+                - Thought: Most engineers use CAD software to assist with their design work.
+                - Stereotypes/Biases: None
+                - Description: This is a factual statement about tools used in engineering, unrelated to social assumptions.
+                - Is Stereotyping: Unrelated
+                
+                Now, generate {self.max_branching_factor} thoughts in this same format, and nothing else.                        """
         }
 
-        # To track the time taken for the API call
         start_time = time.time()
         response = call_llm(
             client=self.client,
@@ -138,7 +144,6 @@ class TreeOfThought:
         )
         elapsed = time.time() - start_time
 
-        # Tracking the API call metrics (tokens, latency)
         self.total_latency += elapsed
         self.total_calls += 1
 
