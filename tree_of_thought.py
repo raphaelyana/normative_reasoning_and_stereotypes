@@ -85,6 +85,10 @@ class TreeOfThought:
 
         self.id_counter=0
 
+        self.tie_pairs   = 0
+        self.tie_events  = 0
+        self.max_tie_group = 0
+
 
 
     def build_prompt_gen_thought(
@@ -348,6 +352,23 @@ class TreeOfThought:
             child.state = ThoughtState.COMPLETED
             self._expand_thought(child, depth+1)
 
+        score_groups = {}
+        for c in child_thoughts:
+            score_groups.setdefault(c.score, []).append(c)
+
+        found_conflict = False
+        for group in score_groups.values():
+            if len(group) < 2:
+                continue
+            labels = {g.verdict for g in group}
+            if len(labels) > 1:
+                n = len(group)
+                self.tie_pairs+=n*(n - 1)//2
+                found_conflict = True
+                self.max_tie_group = max(self.max_tie_group, n)
+        if found_conflict:
+            self.tie_events += 1
+
 
 
     def _get_best_solution(self, thought: Thought) -> List[Thought]:
@@ -366,6 +387,8 @@ class TreeOfThought:
         votes = {label.capitalize(): 0.0 for label in self.case["valid_labels"]}
 
         for thought in solution_path:
+            if thought.id == self.root_id:
+                continue
             label = (thought.verdict or "").strip().capitalize()
             if label in votes:
                 if not weighted:
@@ -374,6 +397,7 @@ class TreeOfThought:
                     votes[label] += thought.score
     
         consensus_label = max(votes.items(), key=lambda x: x[1])[0]
+
         return consensus_label
 
 
@@ -396,9 +420,10 @@ class TreeOfThought:
 
         if not root:
             print("[WARN] No root found for majority vote.")
-            return "Unrelated"
+            return ""
 
-        collect_votes(root)
+        for child in root.children:
+            collect_votes(child)
         
         return max(votes.items(), key=lambda x: x[1])[0]
 
@@ -423,9 +448,10 @@ class TreeOfThought:
 
         if not root:
             print("[WARN] No root found for majority vote.")
-            return "Unrelated"
+            return ""
         
-        collect_leaf_votes(root)
+        for child in root.children:
+            collect_leaf_votes(child)
 
         return max(votes.items(), key=lambda x: x[1])[0]
 
@@ -460,6 +486,12 @@ class TreeOfThought:
         for child in root.children:
             self.print_full_tree(child, indent+1)
 
+        if indent == 0:
+            print("\n == Tie Summary == ")
+            print(f"  - Tie events (groups with same score but conflicting labels): {self.tie_events}")
+            print(f"  - Total tie pairs (within those groups): {self.tie_pairs}")
+            print(f"  - Max tie group size observed: {self.max_tie_group}")
+
 
 
 
@@ -485,12 +517,9 @@ if __name__ == "__main__":
     load_dotenv()
     client = openai.OpenAI(api_key=os.environ.get("API_KEY_OPENAI"))
 
-
-
-
     print(" ===== Stereotype detection ===== \n")
 
-    tot_stereotype = TreeOfThought(case=stereotypes, client=client, max_branching_factor=2, max_depth=3, task_definition=stereotype_definition)
+    tot_stereotype = TreeOfThought(case=stereotypes, client=client, max_branching_factor=3, max_depth=3, task_definition=stereotype_definition)
     #prompt_stereotype = "Russians are born in Russia."
     prompt_stereotype = "French people are good kissers."
     solution_stereotype = tot_stereotype.solve(prompt_stereotype)
@@ -520,7 +549,7 @@ if __name__ == "__main__":
 
     print("\n\n ===== Manipulation detection ===== \n")
 
-    tot_manipulation = TreeOfThought(case=manipulation, client=client, max_branching_factor=2, max_depth=2, task_definition=mental_manipulation_def1)
+    tot_manipulation = TreeOfThought(case=manipulation, client=client, max_branching_factor=3, max_depth=3, task_definition=mental_manipulation_def1)
     prompt_manipulation = """Person1: You think I'm a fake.
     Person2: I think it's what you think.
     Person1: No, it isn't what I think.
