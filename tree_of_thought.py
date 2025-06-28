@@ -34,12 +34,12 @@ class Thought:
     content: str
     state: ThoughtState
     score: float = 0.0
-    stereotypes_biases: str = ""
+    feature: str = ""
     description: str = ""
     id: str = ""                         
     parent_id: Optional[str] = None
     children: List['Thought'] = None
-    is_stereotyping: Optional[str] = None
+    verdict: Optional[str] = None
 
     def __post_init__(self):
         if self.children is None:
@@ -56,17 +56,23 @@ class Thought:
 
 class TreeOfThought:
     def __init__(self, 
+                 case: dict,
                  client: openai.OpenAI, 
                  model: Optional[dict]=None, 
                  max_branching_factor: int = 3, 
                  max_depth: int = 3,
-                 stereotype_definition: Optional[str] = None):
+                 task_definition: Optional[str] = None
+                 ):
 
+
+        self.case = case
+        self.case_name = case["case_name"]
+        
         self.client = client
         self.model = model if model else DEFAULT_MODEL_DICT['default']
         self.max_branching_factor = max_branching_factor
         self.max_depth = max_depth
-        self.stereotype_definition = stereotype_definition
+        self.task_definition = task_definition
 
         self.thoughts = {}
         self.root_id = None
@@ -79,6 +85,47 @@ class TreeOfThought:
 
         self.id_counter=0
 
+
+
+    def build_prompt_gen_thought(
+            self,
+            case_study: dict,
+            reasoning: str,
+            task_definition: str,
+            max_branching_factor: int,
+        ) -> str:
+
+        task = self.case["task"]
+        task_definition = task_definition or ""
+
+        field_lines = "\n".join([f"- {field}" for field in case_study["fields"]])
+        rule_lines = "\n".join([f"- {rule}" for rule in case_study["label_rules"]])
+        example_blocks = "\n\n".join(case_study["examples"])
+
+        prompt_built = f"""{task}
+        
+            Definition of a {case_study['case_name']}: {task_definition}
+
+            You are reasoning about: "{reasoning}"
+            
+            Generate {max_branching_factor} independent thoughts that extend the reasoning.
+
+            Return each thought with these fields ONLY:
+            {field_lines}
+
+            Labeling rules:
+            {rule_lines}
+
+            Examples:
+            {example_blocks}
+
+            Now, generate {max_branching_factor} thoughts in this same format, and nothing else.
+            """
+        return prompt_built
+    
+
+
+
     def generate_thoughts(self, reasoning: str, current_depth: int = 0, parent_id: Optional[str]=None) -> List[Thought]:
         if current_depth >= self.max_depth:
             return []
@@ -90,47 +137,18 @@ class TreeOfThought:
             Your job is to explore the possible paths of reasoning for a given query, each with a distinct perspective."""
         }
 
+        user_prompt = self.build_prompt_gen_thought(
+                                                    case_study = self.case,
+                                                    reasoning = reasoning,
+                                                    task_definition = self.task_definition,
+                                                    max_branching_factor = self.max_branching_factor
+                                                    )
+
         user_message = {
             "role": "user",   
-            "content": f"""Definition of a stereotype: {self.stereotype_definition}
-                
-                You are reasoning about: "{reasoning}"
-                
-                Generate {self.max_branching_factor} independent thoughts that extend the reasoning.
-                
-                Return each thought with these fields ONLY:
-                - Thought
-                - Stereotypes/Biases
-                - Description
-                - Is Stereotyping: Must be exactly one of ["Yes", "No", "Unrelated"]
-                
-                Labeling rules:
-                - Choose "Yes" if the thought includes, implies, or reinforces a stereotype — even subtly or positively (e.g., assumptions based on group identity, occupation, culture, gender, age, etc.).
-                - Choose "No" if it directly challenges, refutes, or undermines a stereotype — especially if it emphasizes individual variation or contradicts common assumptions.
-                - Choose "Unrelated" if the thought doesn't pertain to social/generalized assumptions at all (e.g., it is factual, neutral, or off-topic).
-                
-                Examples:
-                
-                ### Thought 1
-                - Thought: Engineers are usually introverted and focused on technical work rather than social interaction.
-                - Stereotypes/Biases: Occupational stereotype about engineers.
-                - Description: This thought generalizes personality traits to a profession, reinforcing a stereotype.
-                - Is Stereotyping: Yes
-                
-                ### Thought 2
-                - Thought: Engineers can be highly sociable and creative, breaking the mold of traditional technical stereotypes.
-                - Stereotypes/Biases: Challenges the stereotype of engineers being introverted.
-                - Description: This thought explicitly refutes a common stereotype by highlighting individual differences.
-                - Is Stereotyping: No
-                
-                ### Thought 3
-                - Thought: Most engineers use CAD software to assist with their design work.
-                - Stereotypes/Biases: None
-                - Description: This is a factual statement about tools used in engineering, unrelated to social assumptions.
-                - Is Stereotyping: Unrelated
-                
-                Now, generate {self.max_branching_factor} thoughts in this same format, and nothing else.                        """
+            "content":  user_prompt
         }
+
 
         start_time = time.time()
         response = call_llm(
@@ -155,27 +173,34 @@ class TreeOfThought:
         thoughts = []
         
         sections = re.split(r"###\s*Thought\s+\d+\s*", content)
+
+        field1 = self.case["fields"][0]
+        field2 = self.case["fields"][1]
+        field3 = self.case["fields"][2]
+        field4 = self.case["fields"][3].split(":")[0] 
+        
         
         for i, section in enumerate(sections[1:]):  
 
             parsed = {
                 "thought": "",
-                "stereotypes": "",
+                "feature": "",
                 "description": "",
-                "is_stereotyping": ""
+                "label": ""
             }
         
             try:
                 lines = section.strip().split("\n")
                 for line in lines:
-                    if match := re.match(r"-\s*Thought\s*:\s*(.+)", line, re.IGNORECASE):
+                    if match := re.match(rf"-\s*{re.escape(field1)}\s*:\s*(.*)", line, re.IGNORECASE):
                         parsed["thought"] = match.group(1).strip()
-                    elif match := re.match(r"-\s*Stereotypes/Biases\s*:\s*(.+)", line, re.IGNORECASE):
-                        parsed["stereotypes"] = match.group(1).strip()
-                    elif match := re.match(r"-\s*Description\s*:\s*(.+)", line, re.IGNORECASE):
+                    elif match := re.match(rf"-\s*{re.escape(field2)}\s*:\s*(.*)", line, re.IGNORECASE):
+                        parsed["feature"] = match.group(1).strip()
+                    elif match := re.match(rf"-\s*{re.escape(field3)}\s*:\s*(.*)", line, re.IGNORECASE):
                         parsed["description"] = match.group(1).strip()
-                    elif match := re.match(r"-\s*Is Stereotyping\s*:\s*(.+)", line, re.IGNORECASE):
-                        parsed["is_stereotyping"] = match.group(1).strip()
+                    elif match := re.match(rf"-\s*{re.escape(field4)}\s*:\s*(.*)", line, re.IGNORECASE):
+                        parsed["label"] = match.group(1).strip()
+
             except Exception as e:
                 print(f"[WARN] Failed to parse section {i+1}: {e}")
                 print(f"[RAW]:\n{section}")
@@ -186,16 +211,16 @@ class TreeOfThought:
                 print(f"[SKIP] Empty thought in section {i+1}")
                 continue
 
-            valid_labels = {"Yes", "No", "Unrelated"}
-            label = parsed["is_stereotyping"].strip().capitalize()
+            valid_labels = {item.capitalize() for item in self.case["valid_labels"]}
+            label = parsed["label"].capitalize()
 
             if label not in valid_labels:
-                print(f"[WARN] Invalid stereotyping label: '{parsed['is_stereotyping']}' → defaulting to 'Unrelated'")
-                label = "Unrelated"
+                print(f"[WARN] Invalid label: '{parsed['label']} -> default to '{self.case['valid_labels'][-1]}'")
+                label = self.case["valid_labels"][-1].capitalize()
             
             parsed["thought"] = parsed["thought"].strip()
             parsed["description"] = parsed["description"].strip()
-            parsed["stereotypes"] = parsed["stereotypes"].strip()
+            parsed["feature"] = parsed["feature"].strip()
                 
             
             new_thought = Thought(
@@ -204,9 +229,9 @@ class TreeOfThought:
                 content=parsed["thought"],
                 state=ThoughtState.PENDING,
                 score=0.0,
-                stereotypes_biases=parsed["stereotypes"],
+                feature=parsed["feature"],
                 description=parsed["description"],
-                is_stereotyping=label
+                verdict=label
             )
 
             thoughts.append(new_thought)
@@ -215,9 +240,12 @@ class TreeOfThought:
 
 
     def evaluate_thought(self, thought: Thought, parent_thought: Optional[Thought] = None) -> float:
+
+        evaluation_prompt = self.case["evaluation_prompt"]
+
         system_message = {
             "role": "system",
-            "content": """You are evaluating the *usefulness and novelty* of a reasoning step in a Tree of Thoughts process for stereotype detection.
+            "content": f"""You are evaluating the *usefulness and novelty* of a reasoning step in a Tree of Thoughts process for {self.case_name} detection.
     
             Use these scoring intervals (return only the number, e.g., 0.85):
             
@@ -243,7 +271,7 @@ class TreeOfThought:
             Score between 0.0 (worst) and 1.0 (best). Return only the number."""
                 
         else:
-            user_prompt = f"""Evaluate the usefulness of this thought **for detecting or refuting stereotypes**:
+            user_prompt = f"""{evaluation_prompt}:
     
             \"{thought.content}\"
     
@@ -282,7 +310,7 @@ class TreeOfThought:
             content=initial_prompt,
             state=ThoughtState.PENDING,
             score=0.0,
-            stereotypes_biases="",
+            feature="",
             description="",
             id="0", 
             parent_id=None, 
@@ -335,9 +363,10 @@ class TreeOfThought:
 
 
     def _get_majority_vote_from_path(self, solution_path: List[Thought], weighted: bool = False) -> str:
-        votes = {"Yes": 0.0, "No": 0.0, "Unrelated": 0.0}
+        votes = {label.capitalize(): 0.0 for label in self.case["valid_labels"]}
+
         for thought in solution_path:
-            label = (thought.is_stereotyping or "").strip().capitalize()
+            label = (thought.verdict or "").strip().capitalize()
             if label in votes:
                 if not weighted:
                     votes[label] += 1
@@ -350,10 +379,10 @@ class TreeOfThought:
 
 
     def _get_majority_vote_from_tree(self, weighted: bool = False) -> str:
-        votes = {"Yes": 0.0, "No": 0.0, "Unrelated": 0.0}
+        votes = {label.capitalize(): 0.0 for label in self.case["valid_labels"]}
         
         def collect_votes(thought: Thought):
-            label = (thought.is_stereotyping or "").strip().capitalize()
+            label = (thought.verdict or "").strip().capitalize()
             if label in votes:
                 if not weighted:
                     votes[label] += 1
@@ -376,16 +405,17 @@ class TreeOfThought:
 
 
     def _get_majority_vote_from_leafs(self, weighted: bool = False) -> str:
-        votes = {"Yes": 0.0, "No": 0.0, "Unrelated": 0.0}
+        votes = {label.capitalize(): 0.0 for label in self.case["valid_labels"]}
 
         def collect_leaf_votes(thought: Thought):
             if not thought.children:
-                label = (thought.is_stereotyping or "").strip().capitalize()
+                label = (thought.verdict or "").strip().capitalize()
                 if label in votes:
                     if not weighted:
                         votes[label] += 1
                     else:
                         votes[label] += thought.score
+            
             for child in thought.children:
                 collect_leaf_votes(child)
 
@@ -403,7 +433,7 @@ class TreeOfThought:
 
     def print_full_tree(self, root: Optional[Thought] = None, indent: int = 0):
         """
-        Recursively prints the entire tree with ID, score, content, stereotypes, and description.
+        Recursively prints the entire tree with ID, score, content, feature, and description.
         """
         if root is None:
             root = self.thoughts.get(self.root_id)
@@ -412,19 +442,23 @@ class TreeOfThought:
                 return
     
         indent_str = "    " * indent
+
+        field2_label = self.case["fields"][1]
+        field4_label = self.case["fields"][3].split(":")[0]
+
         print(f"{indent_str} Thought ID {root.id}")
         print(f"{indent_str} --  Score: {root.score:.2f}")
         print(f"{indent_str} -- Content: {root.content}")
-        if root.stereotypes_biases:
-            print(f"{indent_str} -- Stereotypes: {root.stereotypes_biases}")
+        if root.feature:
+            print(f"{indent_str} -- {field2_label}: {root.feature}")
         if root.description:
             print(f"{indent_str} -- Description: {root.description}")
-        if hasattr(root, "is_stereotyping") and root.is_stereotyping:
-            print(f"{indent_str} -- Is Stereotyping: {root.is_stereotyping}")
+        if root.verdict:
+            print(f"{indent_str} -- {field4_label}: {root.verdict}")
         print(f"{indent_str}{'-' * 60}")
         
         for child in root.children:
-            self.print_full_tree(child, indent + 1)
+            self.print_full_tree(child, indent+1)
 
 
 
@@ -438,31 +472,79 @@ class TreeOfThought:
 ##############################################
 
 if __name__ == "__main__":
+
     import os
     from dotenv import load_dotenv
+
+    from case_studies import manipulation, stereotypes
+    from stereotype_def import stereotype_definition
+    from mentalmanip_def import mental_manipulation_def1, mental_manipulation_def2
+
+
 
     load_dotenv()
     client = openai.OpenAI(api_key=os.environ.get("API_KEY_OPENAI"))
 
-    tot = TreeOfThought(client, max_branching_factor=2, max_depth=2)
-    initial_prompt = "Russians are born in Russia."
-    solution = tot.solve(initial_prompt)
+
+
+
+    print(" ===== Stereotype detection ===== \n")
+
+    tot_stereotype = TreeOfThought(case=stereotypes, client=client, max_branching_factor=2, max_depth=3, task_definition=stereotype_definition)
+    #prompt_stereotype = "Russians are born in Russia."
+    prompt_stereotype = "French people are good kissers."
+    solution_stereotype = tot_stereotype.solve(prompt_stereotype)
 
     print("\n📊 Metrics Summary:")
-    print(f"  Total LLM Calls        : {tot.total_calls}")
-    print(f"  Total Tokens Used      : {tot.total_tokens}")
-    print(f"    └─ Prompt Tokens     : {tot.total_prompt_tokens}")
-    print(f"    └─ Completion Tokens : {tot.total_completion_tokens}")
-    print(f"  Total Latency (sec)    : {tot.total_latency:.2f}")
-    if tot.total_calls > 0:
-        print(f"  Avg Latency per Call   : {tot.total_latency / tot.total_calls:.2f} sec")
+    print(f"  Total LLM Calls        : {tot_stereotype.total_calls}")
+    print(f"  Total Tokens Used      : {tot_stereotype.total_tokens}")
+    print(f"    └─ Prompt Tokens     : {tot_stereotype.total_prompt_tokens}")
+    print(f"    └─ Completion Tokens : {tot_stereotype.total_completion_tokens}")
+    print(f"  Total Latency (sec)    : {tot_stereotype.total_latency:.2f}")
+    if tot_stereotype.total_calls > 0:
+        print(f"  Avg Latency per Call   : {tot_stereotype.total_latency / tot_stereotype.total_calls:.2f} sec")
 
-    print("Solution path:\n")
-    for i, thought in enumerate(solution):
+    print("\nSolution path (Stereotype):\n")
+    for i, thought in enumerate(solution_stereotype):
         print(f"Level {i}:")
         print(f"  Thought: {thought.content}")
-        print(f"  Reasoning Type: {thought.reasoning_type}")
-        print(f"  Normative Framework: {thought.normative_framework}")
-        print(f"  Principles: {thought.principles}")
+        print(f"  Feature: {thought.feature}")
+        print(f"  Description: {thought.description}")
+        print(f"  Label: {thought.verdict}")
         print(f"  Score: {thought.score:.2f}")
         print("-" * 60)
+
+
+    print("\nFull Tree (Stereotype):\n")
+    tot_stereotype.print_full_tree()
+
+    print("\n\n ===== Manipulation detection ===== \n")
+
+    tot_manipulation = TreeOfThought(case=manipulation, client=client, max_branching_factor=2, max_depth=2, task_definition=mental_manipulation_def1)
+    prompt_manipulation = """Person1: You think I'm a fake.
+    Person2: I think it's what you think.
+    Person1: No, it isn't what I think.
+    Person2: Look... You made a very calculated move, and then made me feel embarrassed for responding to you. That wasn't necessary."""
+    solution_manipulation = tot_manipulation.solve(prompt_manipulation)
+
+    print("\n📊 Metrics Summary (Manipulation):")
+    print(f"  Total LLM Calls        : {tot_manipulation.total_calls}")
+    print(f"  Total Tokens Used      : {tot_manipulation.total_tokens}")
+    print(f"    └─ Prompt Tokens     : {tot_manipulation.total_prompt_tokens}")
+    print(f"    └─ Completion Tokens : {tot_manipulation.total_completion_tokens}")
+    print(f"  Total Latency (sec)    : {tot_manipulation.total_latency:.2f}")
+    if tot_manipulation.total_calls > 0:
+        print(f"  Avg Latency per Call   : {tot_manipulation.total_latency / tot_manipulation.total_calls:.2f} sec")
+
+    print("\nSolution path (Manipulation):\n")
+    for i, thought in enumerate(solution_manipulation):
+        print(f"Level {i}:")
+        print(f"  Thought: {thought.content}")
+        print(f"  Feature: {thought.feature}")
+        print(f"  Description: {thought.description}")
+        print(f"  Label: {thought.verdict}")
+        print(f"  Score: {thought.score:.2f}")
+        print("-" * 60)
+
+    print("\nFull Tree (Manipulation):\n")
+    tot_manipulation.print_full_tree()
