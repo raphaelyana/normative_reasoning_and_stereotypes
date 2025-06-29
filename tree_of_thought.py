@@ -61,7 +61,11 @@ class TreeOfThought:
                  model: Optional[dict]=None, 
                  max_branching_factor: int = 3, 
                  max_depth: int = 3,
-                 task_definition: Optional[str] = None
+                 task_definition: Optional[str] = None,
+                 max_tokens_dict: dict = {
+                    "generation": 500,
+                    "evaluation": 10
+                    }
                  ):
 
 
@@ -88,6 +92,8 @@ class TreeOfThought:
         self.tie_pairs   = 0
         self.tie_events  = 0
         self.max_tie_group = 0
+
+        self.max_tokens_dict = max_tokens_dict
 
 
 
@@ -160,7 +166,7 @@ class TreeOfThought:
             model=self.model,
             prompt=user_message["content"],
             system_message=system_message["content"],
-            max_tokens=500
+            max_tokens=self.max_tokens_dict["generation"]
         )
         elapsed = time.time() - start_time
 
@@ -288,7 +294,7 @@ class TreeOfThought:
             model=self.model,
             prompt=user_prompt,
             system_message=system_message["content"],
-            max_tokens=10
+            max_tokens=self.max_tokens_dict["evaluation"]
         )
         elapsed = time.time() - start_time
     
@@ -454,6 +460,11 @@ class TreeOfThought:
             collect_leaf_votes(child)
 
         return max(votes.items(), key=lambda x: x[1])[0]
+    
+
+    def map_label(self, raw_label: str) -> str:
+        """Convert the LLM label (Yes/No/…) to the dataset label using case['label_map']."""
+        return self.case["label_map"][raw_label]
 
 
 
