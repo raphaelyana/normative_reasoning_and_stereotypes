@@ -49,3 +49,16 @@ Key points include:
 In summary, a statement is deemed stereotypical when its assumption attributes generalized qualities to a group using rigid templates and strong 
 quantifiers, particularly when the target group is sensitive and the quality ascribed is harmful. The use of absolute or exaggerated terms often 
 leads to a false or oversimplified representation of reality, contributing to prejudice and discrimination."""
+
+
+
+stereotype_definition_short = """
+A stereotype is a simplified and generalized belief about a group of people, assuming shared traits, behaviors, or tendencies based on identity factors such as gender, race, profession, or culture.
+
+It often:
+- Ignores individual differences
+- Uses broad or absolute terms (like “always” or “most”)
+- Reinforces assumptions without evidence
+
+Stereotypes may seem neutral or even positive but still rely on overgeneralization.
+"""

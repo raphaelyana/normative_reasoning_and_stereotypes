@@ -118,7 +118,10 @@ class TreeOfThought:
 
             You are reasoning about: "{reasoning}"
             
-            Generate {max_branching_factor} independent thoughts that extend the reasoning.
+            Analyse the provided text. Generate {max_branching_factor} independent analytical thoughts that:
+                (a) identify the whether it is {self.case_name}
+                and
+                (b) justify that judgement.
 
             Return each thought with these fields ONLY:
             {field_lines}
@@ -462,7 +465,7 @@ class TreeOfThought:
         return max(votes.items(), key=lambda x: x[1])[0]
     
 
-    def map_label(self, raw_label: str) -> str:
+    def map_label(self, raw_label: str):
         """Convert the LLM label (Yes/No/…) to the dataset label using case['label_map']."""
         return self.case["label_map"][raw_label]
 

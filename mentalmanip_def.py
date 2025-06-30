@@ -64,6 +64,17 @@ Key points include:
 In summary, a message or act is deemed mental manipulation when it covertly commandeers psychological or emotional levers to override informed consent, particularly in contexts of power asymmetry, information control, or emotional dependency. The use of deceptive or pressuring tactics leads to distorted autonomy, psychological harm, and erosion of trust—distinguishing manipulation from legitimate, transparent persuasion.
 """
 
+mental_manipulation_def1_short = """
+"Covert use of language or behavior to emotionally pressure, deceive, or distort a person’s decisions for someone else’s benefit."
+
+A response is manipulative if:
+- It hides intent
+- It creates emotional pressure
+- It reduces the other person's freedom to choose
+
+If none apply, label it: **Not Manipulative**"""
+
+
 mental_manipulation_def2 = """ 
 Mental manipulation happens when one party covertly shapes another person’s thoughts, feelings, or actions by exploiting built-in thinking shortcuts, emotional needs, or social pressures, thereby steering outcomes toward the influencer’s benefit while eroding the target’s fully informed, voluntary choice.
 

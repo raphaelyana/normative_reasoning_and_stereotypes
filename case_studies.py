@@ -43,9 +43,10 @@ manipulation = {
     "valid_labels": ["Yes", "No"],
 
     "label_rules": [
-        "Choose 'Yes' if the thought includes a manipulation technique - even subtly or positively.", 
-        "Choose 'No' if the thought directly refutes the presence of a manipulative strategy."
+        "Choose **Yes** if the dialogue segment shows **any** covert tactic from the definition.", 
+        "Choose **No** if **none** of those tactics are present and the speaker expresses themselves transparently and respectfully."
         ], 
+        
     "examples": [
         """### Thought 1
         - Thought: If you really loved me, you wouldn't question me.
@@ -64,7 +65,39 @@ manipulation = {
         - Is Manipulative: No"""
     ],
 
-    "evaluation_prompt": "Evaluate how clearly this thought exposes, resists, or uses a manipulative strategy",
+    "evaluation_prompt": """You are an *evaluation assistant* judging the QUALITY of an analytical
+            **Thought** about mental–manipulation.
+            
+            Given:
+            • the original dialogue fragment (quoted below)
+            • the candidate *Thought* you are scoring
+            • optionally, the *parent Thought* (if any)
+            
+            Score the candidate on four weighted criteria  
+            (use the weights internally – just return the final 0-1 score):
+            
+            1. **Verdict fidelity (0 .40)**  
+               – Does the candidate’s “Is Manipulative: <Yes|No>” match the ground-truth
+                 definition of manipulation?  
+                 – If “Yes”, the quoted utterance truly contains at least one tactic from the
+                   definition.  
+                 – If “No”, none of the tactics appear.
+            
+            2. **Technique accuracy (0 .30)**  
+               – If the verdict is *Yes*, is the named “Manipulation technique” a sensible
+                 match?  
+               – If the verdict is *No*, the technique should be “None”.
+            
+            3. **Explanation clarity (0 .20)**  
+               – Does the “Description” give a clear, concise justification that would help a
+                 human annotator see why the verdict is correct?  
+               – Penalise vague or circular descriptions.
+            
+            4. **Added insight vs parent (0 .10)**  
+               – If there is a parent Thought, does the candidate add new information or a
+                 sharper angle, rather than restating it?
+            
+            Return **only one floating-point number between 0.0 and 1.0**, where 0.0 is the worse and 1.0 is the best""",
 
     "label_map": {
         'Yes': 1,
