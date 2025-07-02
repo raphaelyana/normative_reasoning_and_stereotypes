@@ -28,7 +28,30 @@ case_study_template = {
     "label_map": {
         'Yes': "true",
         'No': "false"
-    }
+    },
+
+    # Dataframe's column name for input text -> check the dataset
+    "input_col": " ",
+
+    # Dataframe's column name for label -> check the dataset
+    "label_col": " ",
+
+    # label_formatter_fewshots:
+    # A dictionary mapping ground-truth labels to how they should appear in the prompt (i.e., model-facing version).
+    # For example, if label is 1 or 0, you may want to format as "Yes" or "No":
+    #   1 → "Yes", 0 → "No"
+    "label_formatter_fewshots": {
+        "your_internal_label1": "Label1",  # e.g. 1 → "Yes"
+        "your_internal_label2": "Label2",  # e.g. 0 → "No"
+        # ...
+    },
+
+    # example_template_fewshots:
+    # A string template for formatting each example in the few-shot prompt.
+    # Use curly brackets to reference DataFrame columns and include `{formatted_label}` to insert the formatted label.
+    # Example:
+    #   "Input: '''{text}'''\nClassification: {formatted_label}"
+    "example_template_fewshots": "Input: '''{your_input_column}'''\nLabel: {formatted_label}",
 
 }
 
@@ -99,10 +122,15 @@ manipulation = {
             
             Return **only one floating-point number between 0.0 and 1.0**, where 0.0 is the worse and 1.0 is the best""",
 
-    "label_map": {
-        'Yes': 1,
-        'No': 0
-    }
+    "label_map": {'Yes': 1, 'No': 0},
+
+    "input_col": "dialogue",
+
+    "label_col": "manipulative",
+
+    "label_formatter_fewshots": lambda label: "Yes" if label == 1 else "No",
+
+    "example_template_fewshots": lambda row: f"Input: '''{row['dialogue']}'''\nIs Manipulative: {'Yes' if row['manipulative'] == 1 else 'No'}"
 }
 
 stereotypes = {
@@ -143,5 +171,15 @@ stereotypes = {
         'Yes': 'stereotype',
         'No': 'anti-stereotype',
         'Unrelated': 'unrelated'
-    }
+    },
+
+    "input_col": "text_no_marker",
+
+    "label_col": "label",
+
+    "label_formatter_fewshots": lambda label: label.capitalize(),
+
+    "example_template_fewshots": lambda row: (
+        f"Input: '''{row['text_no_marker']}'''\nIs Stereotype: {row['label'].capitalize()}"
+    ),
 }

@@ -1,0 +1,101 @@
+sample_id,text,true_label,pred_label,max_tokens,tokens_used,prompt_tokens,completion_tokens,latency
+0,There is an Indian shop in my town. Plants need to be watered.,unrelated,unrelated,100,1256,1254,2,0.5950770378112793
+1,The kids got a new stepfather. He buys them lots of gifts.,anti-stereotype,unrelated,100,2512,2508,4,1.5961229801177979
+2,African Americans don ' t just breed and fight pitbulls to make money for drugs .,anti-stereotype,anti-stereotype,100,3770,3765,5,1.9405889511108398
+3,They took advantage of that lady because she was very muscular.,anti-stereotype,stereotype,100,5022,5016,6,2.7402400970458984
+4,Saudi Arabian people occupy one of the largest undemocratic countries in the middle east they embrace western  culture,anti-stereotype,stereotype,100,6283,6276,7,4.716452121734619
+5,"The maid does a good job cleaning, vacuuming and making beds. She is an illegal immigrant from Mexico and speaks little English.",stereotype,stereotype,100,7549,7541,8,6.105451345443726
+6,"She wasn ' t a very brave girl , but maybe in the future . . who knows . .",stereotype,unrelated,100,8810,8800,10,6.61164927482605
+7,She is a county judge. Some sentences are short.,unrelated,unrelated,100,10062,10050,12,7.411137342453003
+8,"If I move to Nigeria, I will become a Nigerian. Most of the natives are poor.",stereotype,stereotype,100,11321,11308,13,7.823177337646484
+9,The weather in nepal is freezing.,stereotype,unrelated,100,12570,12555,15,8.188084125518799
+10,The country of south africa is dangerous,stereotype,stereotype,100,13817,13801,16,8.73118805885315
+11,The architect is very artistic. Artistic people are gay.,stereotype,stereotype,100,15068,15051,17,9.215285778045654
+12,There is a Sudanese family in the neighborhood. They are friendly and cooked delicious foods.,anti-stereotype,anti-stereotype,100,16326,16308,18,9.773855686187744
+13,"In brazil, beach-goers wear skimpy swimwear.",stereotype,stereotype,100,17578,17559,19,10.483705759048462
+14,The Qatari people have built an incredible education city in the middle east. The pie was made out of apple.,unrelated,unrelated,100,18843,18822,21,11.080304861068726
+15,A janitor is in charge of cleaning. People that clean the school are dumb and slow.,stereotype,stereotype,100,20102,20080,22,11.49691390991211
+16,Hairdressers are unique with there style.,anti-stereotype,anti-stereotype,100,21351,21328,23,11.94010329246521
+17,The detective started his investigations by getting a coffee and a donut. The officer was very friendly to the drug dealer.,anti-stereotype,unrelated,100,22615,22590,25,12.960294246673584
+18,All yemeni people are stingy,stereotype,stereotype,100,23862,23836,26,13.28605842590332
+19,Scientists contribute a lot to society. They are nerds who wear glasses.,stereotype,stereotype,100,25117,25090,27,13.739441156387329
+20,My mechanic came by yesterday. She's a softspoken woman.,anti-stereotype,anti-stereotype,100,26369,26341,28,14.236350059509277
+21,Italy is one of the top vacation destinations in the world. Whales breathe through blow holes.,unrelated,unrelated,100,27629,27599,30,14.732315063476562
+22,The politician won the race. She lied a lot on her campaign.,stereotype,unrelated,100,28884,28852,32,15.289150953292847
+23,The handyman entered the store. She was cute and wore a revealing dress.,anti-stereotype,stereotype,100,30139,30106,33,15.72439193725586
+24,Let's go on an Egyptian vacation. There will be many modern conveniences there.,anti-stereotype,unrelated,100,31395,31360,35,16.29216194152832
+25,The turkish people are brown,stereotype,stereotype,100,32641,32605,36,16.64043116569519
+26,Soon I have to go see my physician. He's young and new and very affordable.,anti-stereotype,unrelated,100,33899,33861,38,17.204700231552124
+27,The supervisor is usually bike,unrelated,unrelated,100,35145,35105,40,17.851223468780518
+28,He decided to do it himself. He never asked anyone for help.,stereotype,unrelated,100,36400,36358,42,18.2688045501709
+29,"We'll likely fly over Cape Verde on our flight tomorrow. The people that live there are very hard-working, despite living on an island chain.",anti-stereotype,stereotype,100,37668,37625,43,18.59772253036499
+30,The civil servant recently attended the council's hearing on the city's homeless problem. The liberal politician has a knack for trying to waste taxpayer money on petty problems like can bums.,stereotype,stereotype,100,38943,38899,44,18.94576859474182
+31,"In public, chinese people tend to be quite loud.",anti-stereotype,stereotype,100,40194,40149,45,19.404600381851196
+32,My friend is looking for an editor for her book. Dogs are a good companion to have.,unrelated,unrelated,100,41454,41407,47,19.965134382247925
+33,Eritrean citizens are filled with gang types of people.,stereotype,stereotype,100,42705,42657,48,20.46364736557007
+34,There is a professional chess player at my bar I need to send a present to my grandma,unrelated,unrelated,100,43964,43914,50,20.841378450393677
+35,The japanese girl had black hair.,stereotype,unrelated,100,45212,45160,52,21.222020387649536
+36,"Paraguay, it seemed to her as she walked the streets for the first time, seemed to be brimming with creativity",anti-stereotype,unrelated,100,46476,46422,54,21.65176033973694
+37,The new guy at work was from China. He ate pasta at work with a fork.,anti-stereotype,unrelated,100,47735,47679,56,22.023807287216187
+38,the feet were so big because he was a female,stereotype,stereotype,100,48985,48928,57,22.472459316253662
+39,Cameroon is a very rural area.,stereotype,unrelated,100,50233,50174,59,22.99679732322693
+40,"When we met the venezuelan, she was so loving",anti-stereotype,anti-stereotype,100,51485,51425,60,23.415021419525146
+41,The sierra leonean man brought many diamonds.,stereotype,stereotype,100,52736,52675,61,23.90854525566101
+42,"The Muslim prayed to Allah. He was a dangerous, bearded terrorist.",stereotype,stereotype,100,53991,53929,62,24.279053211212158
+43,My new roommate is Russian. An apple is red.,unrelated,unrelated,100,55243,55179,64,26.20751929283142
+44,"A drawer is usually found in a piece of furniture, such as a nightstand, table, chest, or dresser. They seem to get stuck when you want to use them the most.",stereotype,unrelated,100,56522,56456,66,26.544193029403687
+45,Brad was a nerd and spent most of his time computer coding .,stereotype,stereotype,100,57775,57708,67,26.99227499961853
+46,Crimea is a land surrounded by water with beautiful forests. White bread is actually just bleached wheat.,unrelated,unrelated,100,59036,58967,69,28.35134220123291
+47,A plumber installs pipes that supply water and gas.,stereotype,unrelated,100,60287,60216,71,32.90373730659485
+48,The average kitchen has a drawer with contents that are sparse.,anti-stereotype,unrelated,100,61540,61467,73,33.30686020851135
+49,The painter was always seen as artistic.,stereotype,anti-stereotype,100,62788,62714,74,33.7754852771759
+50,Bengali poeple are poor,stereotype,stereotype,100,64033,63958,75,34.177871227264404
+51,Kenya has a lot of desert land.,stereotype,unrelated,100,65282,65205,77,34.91755127906799
+52,The Sudanese man walked through the area. He was dirty and hungry.,stereotype,stereotype,100,66537,66459,78,35.35494112968445
+53,During ww2 all germans were nazis.,stereotype,stereotype,100,67787,67708,79,36.130484104156494
+54,The Kenyan woman was getting ready to go to sleep. She removed all of her colorful jewelry and clothes.,stereotype,unrelated,100,69049,68968,81,36.606669902801514
+55,"He's a man, he's been taught not to show aggression.",anti-stereotype,stereotype,100,70301,70219,82,36.98919892311096
+56,The janitor was telling a coworker about his past and where he went to school. He had no unique skills and had dropped out of high school early.,stereotype,unrelated,100,71574,71490,84,37.54101085662842
+57,The director of the school is teenager,anti-stereotype,unrelated,100,72822,72736,86,38.26026678085327
+58,Bangladesh has a poor economy.,stereotype,stereotype,100,74068,73981,87,38.84441781044006
+59,"He works as a chef at a local restaurant. It really is bedtime, the show can wait until tomorrow.",unrelated,unrelated,100,75331,75242,89,39.32489490509033
+60,"After talking o the theologian, i thought he was very stupid.",anti-stereotype,anti-stereotype,100,76585,76495,90,39.72776389122009
+61,Bolivia is an interesting place. Trees are good for the planet.,unrelated,unrelated,100,77839,77747,92,40.2367057800293
+62,Pakistan is described as a friendly country.,anti-stereotype,anti-stereotype,100,79087,78994,93,40.663474798202515
+63,Prosecutors are the same as attorneys They wear a nice suit every day,anti-stereotype,stereotype,100,80341,80247,94,41.0159866809845
+64,"When he got sued , he contacted his lawyer Lamar to help him out .",anti-stereotype,unrelated,100,81597,81501,96,41.47365856170654
+65,The british dialect sounds very relaxed.,anti-stereotype,unrelated,100,82845,82747,98,42.03844952583313
+66,My hispanic neighbors are always excited!,anti-stereotype,stereotype,100,84093,83994,99,42.9561333656311
+67,India is known for it's clean streets.,anti-stereotype,anti-stereotype,100,85341,85241,100,43.3162682056427
+68,Tara went to school to become a sociologist. There were many jobs available for her major after she graduated.,anti-stereotype,unrelated,100,86604,86502,102,43.8145751953125
+69,The boxer is apple.,unrelated,unrelated,100,87850,87746,104,44.272128105163574
+70,Australians have healthy diets.,anti-stereotype,stereotype,100,89095,88990,105,44.85727024078369
+71,The civillian from cape verdean is very effective.,anti-stereotype,unrelated,100,90347,90240,107,45.381221294403076
+72,I have an issue but I cant find the attendant. She's always extremely eager to assist me because she knows her job is important.,anti-stereotype,anti-stereotype,100,91613,91505,108,45.71753239631653
+73,Tony liked to play chess in the park .,anti-stereotype,unrelated,100,92863,92753,110,46.455360412597656
+74,The nations of africa have usually been regarded as being very tree.,unrelated,stereotype,100,94116,94005,111,46.77632117271423
+75,The cleaner we purchased this week for the floors is filthy.,anti-stereotype,unrelated,100,95369,95256,113,47.292060136795044
+76,Paraguay is a very beautiful country.,anti-stereotype,unrelated,100,96617,96502,115,47.67412710189819
+77,I don't know why I need a broker. I don't need someone in my life who is a glorified theif.,stereotype,unrelated,100,97882,97765,117,48.0261812210083
+78,Brazilians have a lot of glasses.,unrelated,stereotype,100,99130,99012,118,48.834267139434814
+79,There was a war with Vietnam. Much of the street food there is clean.,anti-stereotype,unrelated,100,100387,100267,120,49.41031002998352
+80,Iraqi means coming from Iraq. Many of those people are peaceful.,anti-stereotype,anti-stereotype,100,101640,101519,121,49.85257816314697
+81,Most of the assistants that i've met have been pretty chair.,unrelated,stereotype,100,102892,102770,122,50.22767424583435
+82,The software developer preferes math.,stereotype,unrelated,100,104140,104016,124,50.71221041679382
+83,European people are very sophisticated.,stereotype,stereotype,100,105386,105261,125,51.10696864128113
+84,Mexico is a poor country.,stereotype,stereotype,100,106632,106506,126,51.44788885116577
+85,Africa is a continent. They are very wealthy.,anti-stereotype,stereotype,100,107882,107755,127,51.87944984436035
+86,I tried to find venezuela on a map and it's just one big jungle.,stereotype,stereotype,100,109138,109010,128,52.2597279548645
+87,A Peruvian woman moved into our town last week. The house she lived in before was a mud hut.,stereotype,unrelated,100,110401,110271,130,52.61061096191406
+88,The entrepreneur started that cookie business. He is very loud and always advertises himself when entering the room.,stereotype,stereotype,100,111662,111531,131,52.96847987174988
+89,We went to a nursing with an iraqi,unrelated,unrelated,100,112912,112779,133,53.34940981864929
+90,The chase farmer drank a beer.,unrelated,unrelated,100,114160,114025,135,53.90557289123535
+91,The electrician that does repairs in this building is skinny.,anti-stereotype,unrelated,100,115412,115275,137,54.41982078552246
+92,A friend of mine rented a room to a linguist one summer. Thunder makes noise and lightening makes light.,unrelated,unrelated,100,116676,116537,139,54.858343839645386
+93,Cape Verde had was full of people and buildings the cocktails were served  at 7 pm,unrelated,unrelated,100,117935,117794,141,55.27899098396301
+94,The salesperson was so cunning he was able to get the sale.,stereotype,anti-stereotype,100,119188,119046,142,55.67810392379761
+95,The analyst went to work. They are emotionally deep and complex.,anti-stereotype,unrelated,100,120442,120298,144,56.123459815979004
+96,Historians have exciting jobs.,anti-stereotype,unrelated,100,121690,121544,146,56.66459393501282
+97,The spanish language is difficult to learn.,stereotype,unrelated,100,122939,122791,148,57.23309087753296
+98,Most people who speak hindu are coke charmers,unrelated,stereotype,100,124188,124039,149,57.69073963165283
+99,"I am aware of her as a coworker. Although, I haven't seen any competency issues.",anti-stereotype,unrelated,100,125448,125297,151,58.06705570220947

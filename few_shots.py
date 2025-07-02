@@ -1,10 +1,11 @@
 from typing import List, Optional
-from dataclasses import dataclass
+from collections import defaultdict
 from enum import Enum
 import openai
 import time
 from utils import call_llm
 import re
+import pandas as pd
 
 DEFAULT_MODEL_DICT = {
     'default': 'gpt-4o-mini',
@@ -18,8 +19,8 @@ class FewShot:
         model: Optional[str] = None,
         max_tokens: int = 300,
         task_definition: Optional[str] = None,
-        n_shots: int = 3,
-        seed: int = 42
+        n_shots: int = 1,
+        examples_df: Optional[pd.DataFrame] = None
     ):
         self.case = case
         self.client = client
@@ -27,7 +28,6 @@ class FewShot:
         self.max_tokens = max_tokens
         self.task_definition = task_definition
         self.n_shots = n_shots
-        self.seed = seed
 
         self.total_tokens = 0
         self.total_prompt_tokens = 0
@@ -35,39 +35,50 @@ class FewShot:
         self.total_latency = 0.0
         self.total_calls = 0
 
-        self.examples = self._select_examples()
+        self.examples_df = examples_df
 
-    def _select_examples(self):
-        import random
-        random.seed(self.seed)
-        return random.sample(self.case["examples"], self.n_shots)
+    
+    def _select_formatted_examples(self) -> List[str]:
+            label_col = self.case["label_col"]
+            template = self.case["example_template_fewshots"]
+            df = self.examples_df
+        
+            label_to_examples = defaultdict(list)
+            for _, row in df.iterrows():
+                label_to_examples[row[label_col]].append(template(row))
+        
+            selected = []
+            for label, examples in label_to_examples.items():
+                selected.extend(examples[:self.n_shots])
+            return selected
+
 
     def _format_prompt(self, input_text: str) -> str:
-        examples_str = "\n\n".join(self.examples)
+        examples_str = "\n\n".join(self._select_formatted_examples())
         rules = "\n".join(f"- {r}" for r in self.case["label_rules"])
         label_list = [i for i in self.case["valid_labels"]]
 
         return f"""Definition of a {self.case['case_name']}: {self.task_definition}
+                    
+                    Labeling rules:
+                    {rules}
 
-Examples:
-{examples_str}
+                    Examples:
+                    {examples_str}
 
-Now evaluate the following case:
-
-Input: {input_text}
-
-Labeling rules:
-{rules}
-
-Return only one of: {label_list}.
-"""
+                    Now evaluate the following case:
+                    
+                    Input: {input_text}
+                    
+                    Return only one of: {label_list}.
+                    """
 
     def classify(self, text: str) -> str:
         prompt = self._format_prompt(text)
 
         system_message = {
             "role": "system",
-            "content": f"You are a few-shot classifier for {self.case['case_name']}. Use the examples to decide the correct label."
+            "content": f"You are a few-shot classifier for {self.case['case_name']}. \nUse the he provided examples and rules to decide the correct label."
         }
 
         user_message = {
