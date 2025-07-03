@@ -65,7 +65,8 @@ class TreeOfThought:
                  max_tokens_dict: dict = {
                     "generation": 500,
                     "evaluation": 10
-                    }
+                    },
+                
                  ):
 
 
@@ -77,6 +78,8 @@ class TreeOfThought:
         self.max_branching_factor = max_branching_factor
         self.max_depth = max_depth
         self.task_definition = task_definition
+
+        self.examples = examples
 
         self.thoughts = {}
         self.root_id = None

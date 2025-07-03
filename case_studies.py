@@ -133,6 +133,7 @@ manipulation = {
     "example_template_fewshots": lambda row: f"Input: '''{row['dialogue']}'''\nIs Manipulative: {'Yes' if row['manipulative'] == 1 else 'No'}"
 }
 
+
 stereotypes = {
     "case_name": "stereotype",
 
@@ -144,8 +145,8 @@ stereotypes = {
 
     "label_rules": [
         "Choose 'Yes' if the thought includes, implies, or reinforces a stereotype — even subtly or positively (e.g., assumptions based on group identity, occupation, culture, gender, age, etc.).",
-        "Choose 'No' if it directly challenges, refutes, or undermines a stereotype — especially if it emphasizes individual variation or contradicts common assumptions.",
-        "Choose 'Unrelated' if the thought doesn't pertain to social/generalized assumptions at all (e.g., it is factual, neutral, or off-topic)."
+        "Choose 'No' if the thought challenges, refutes, or undermines a stereotype — including through counter-examples that break common generalizations. These thoughts often affirm individual differences, contradict common biases, or portray people in surprising roles that reverse stereotypical expectations.",
+        "Choose 'Unrelated' if the thought does not pertain to generalized assumptions about a social group. This includes factual observations, personal opinions, or neutral statements without any social implication. Do not choose this label if the text indirectly affirms or negates a stereotype — only if no social assumptions are present at all."
     ],
     "examples": [
         """ ### Thought 1
