@@ -17,54 +17,28 @@
 #                    for sections and subsections.
 
 
-mental_manipulation_def1 = """ 
-Mental manipulation occurs when an actor intentionally steers another person’s thoughts, emotions, or decisions by covertly exploiting psychological biases, informational asymmetries, or emotional vulnerabilities, thereby bypassing the target’s informed, rational autonomy and benefiting the manipulator at the target’s expense.
+mental_manipulation_def1 = """
+Mental manipulation occurs when a speaker covertly steers another person's thoughts, emotions, or decisions by exploiting psychological biases, emotional vulnerabilities, or information gaps — with the aim of securing a personal advantage at the listener's expense.
 
-Key points include:
-1. **Influence Mechanisms**
-    1.a) **Cognitive Distortion**: Supplying misleading or selectively framed information to warp perception (e.g., “Everyone agrees with me—there’s no real debate”).  
-    1.b) **Emotional Leverage**: Triggering guilt, fear, love, or shame to pressure compliance (e.g., “If you cared about us, you’d sign right now”).  
-    1.c) **Gaslighting**: Undermining the target’s memory or sanity (e.g., “That never happened; you’re imagining things”).  
-    1.d) **False Scarcity or Urgency**: Manufacturing deadlines or limited availability (e.g., “This offer vanishes in ten minutes”).  
-    1.e) **Isolation & Echo Chambers**: Restricting diverse viewpoints to amplify the manipulator’s narrative.
+It differs from open persuasion by concealing intent, distorting choice, or applying emotional pressure. Manipulation bypasses informed consent and undermines the target’s ability to reason freely.
 
-2. **Contextual Risk Factors**
-    A scenario is especially prone to manipulation when it features:  
-    2.a) **Power Imbalance**: One party wields authority, status, or critical resources.  
-    2.b) **Information Asymmetry**: The manipulator withholds or distorts key facts.  
-    2.c) **Emotional Dependency**: The target relies on the manipulator for affection, approval, or belonging.  
-    2.d) **Cognitive Overload**: Stress, fatigue, or complexity that impairs careful reasoning.
+**Key indicators of manipulation:**
+1. **Deceptive Framing**: Misleading information, selective facts, or hidden assumptions.
+2. **Emotional Leverage**: Using fear, guilt, shame, or affection to compel a response.
+3. **Pressure Tactics**: Imposing false urgency, scarcity, or forced dilemmas.
+4. **Intent Concealment**: Hiding the true goal of the interaction.
+5. **Restricted Autonomy**: Making the target feel they have no real choice.
+6. **Reality Distortion**: Undermining the listener’s memory, perception, or self-trust (e.g., gaslighting).
 
-3. **Psychological Tactics**
-    Manipulative actors commonly deploy:  
-    3.a) **Appeal to Authority/Consensus**: “Experts/everyone says this—trust me.”  
-    3.b) **False Dilemmas**: Presenting only two extreme options (“You’re with us or against us”).  
-    3.c) **Pre-emptive Guilt or Shaming**: Framing dissent as selfish or disloyal.  
-    3.d) **Flattery & Idealization**: Over-praising to lower skepticism (“Only someone as brilliant as you would understand”).  
-    3.e) **Repetition & Priming**: Saturating channels with the same message to normalize it.
+**Manipulation is likely when:**
+- The speaker benefits from the listener’s decision.
+- The message limits awareness, freedom, or emotional stability.
+- The listener is pressured to comply rather than persuaded to agree.
 
-4. **Linguistic & Behavioral Indicators**
-    4.a) **Presumptive Language**: Statements that take agreement for granted (“Obviously you’ll vote yes”).  
-    4.b) **Loaded Questions**: Embedding assumptions that trap the target (“Why are you always so ungrateful?”).  
-    4.c) **Vagueness & Ambiguity**: Avoiding specifics to escape scrutiny.  
-    4.d) **Confusion Techniques**: Rapid topic shifts or jargon to overwhelm analysis.
-
-5. **Harms and Consequences**
-    Mental manipulation becomes harmful when it:  
-    5.a) **Erodes Autonomy**: Decisions cease to reflect the target’s authentic will.  
-    5.b) **Induces Psychological Distress**: Anxiety, self-doubt, or dependence.  
-    5.c) **Distorts Reality Testing**: Persistent inability to trust memories or perceptions.  
-    5.d) **Foments Exploitation**: Financial, relational, or political abuse.  
-    5.e) **Undermines Social Trust**: Broad skepticism toward institutions or relationships.
-
-6. **Intent and Ethical Line**
-    6.a) **Transparent Persuasion**: Presents factual arguments, respects consent.  
-    6.b) **Manipulation**: Conceals intent, exploits vulnerabilities, and prioritizes the manipulator’s gain over the target’s informed interests.
-
-In summary, a message or act is deemed mental manipulation when it covertly commandeers psychological or emotional levers to override informed consent, particularly in contexts of power asymmetry, information control, or emotional dependency. The use of deceptive or pressuring tactics leads to distorted autonomy, psychological harm, and erosion of trust—distinguishing manipulation from legitimate, transparent persuasion.
+Label a response **Manipulative** if it subtly undermines autonomy or uses emotional, deceptive, or reality-distorting tactics to drive a specific outcome. If the message is open, respectful of choice, and free of pressure or distortion, label it: **Not Manipulative**.
 """
 
-mental_manipulation_def1_short = """
+mental_manipulation_def1_short_old = """
 "Covert use of language or behavior to emotionally pressure, deceive, or distort a person’s decisions for someone else’s benefit."
 
 A response is manipulative if:
@@ -73,6 +47,19 @@ A response is manipulative if:
 - It reduces the other person's freedom to choose
 
 If none apply, label it: **Not Manipulative**"""
+
+mental_manipulation_def1_short = """
+"Covert use of language or behavior to emotionally pressure, deceive, or distort a person’s decisions for someone else’s benefit."
+
+Using hidden pressure, deception, or emotional tactics to push someone into a decision that serves the speaker's interest while limiting the other person’s free choice.
+
+Label a response **Manipulative** if:
+- It hides intent or uses misleading framing
+- It creates guilt, fear, or emotional pressure
+- It limits the other person’s ability to choose freely
+
+If none of these apply, label it: **Not Manipulative**
+"""
 
 
 mental_manipulation_def2 = """ 
