@@ -43,6 +43,7 @@ class ZeroShot:
         system_message = {
             "role": "system",
             "content": f"You are a classifier for {self.case_name}. Decide if the reasoning is an example or not."
+            #"You are a language model acting as a normative reasoning classifier. Based on a given task definition and labeling rules, determine the correct label for each input."
         }
 
         user_prompt = f"""Definition of a {self.case_name}: {self.task_definition}

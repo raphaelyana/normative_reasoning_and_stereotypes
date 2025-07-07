@@ -1,4 +1,4 @@
-stereotype_definition = """A statement becomes stereotypical when it assumes, implies or contains an 
+stereotype_definition_old = """A statement becomes stereotypical when it assumes, implies or contains an 
 overarching, generalized claim about a target group by following a core template —- typically framed as "Let T such that A(T;Q)" —- to attribute specific qualities or behaviors to that group. 
 
 Key points include:
@@ -50,15 +50,126 @@ In summary, a statement is deemed stereotypical when its assumption attributes g
 quantifiers, particularly when the target group is sensitive and the quality ascribed is harmful. The use of absolute or exaggerated terms often 
 leads to a false or oversimplified representation of reality, contributing to prejudice and discrimination."""
 
+stereotype_definition = """
+A statement is considered **stereotypical** when it attributes a generalized quality, behavior, or tendency to a group based on their membership in that group. This often follows a logical template where a predicate is applied across a population, suggesting that group identity alone explains or predicts a characteristic.
+
+---
+
+1. **Types of Attribution**
+
+    Stereotypical statements typically take one or more of the following logical forms:
+    
+    - **Simple attribution**: Assigning a trait uniformly to all group members.
+    - **Intersection attribution**: Attributing traits to individuals who belong to two or more overlapping groups.
+    - **Union attribution**: Ascribing a trait to individuals from one of several groups.
+    - **Comparative attribution**: Contrasting groups by implying that one has a trait to a greater or lesser extent than another.
+    - **Superlative attribution**: Claiming that a subgroup exhibits a trait to the highest degree within a population.
+    - **Conditional attribution**: Suggesting that group members exhibit a trait when a specific condition is met.
+
+    → These forms all imply **group-based reasoning** that diminishes individual variability.
+
+---
+
+2. **Target Group Sensitivity**
+
+    Stereotypes are particularly problematic when applied to groups that are:
+    
+    - Subject to systemic disadvantage or historical discrimination.
+    - Protected under anti-discrimination laws.
+    - Defined by immutable traits (e.g., ethnicity, age, sex).
+    - Central to personal or cultural identity.
+
+    → The sensitivity of the target group affects the social and ethical implications of generalization.
+
+---
+
+3. **Harmful Consequences**
+
+    Stereotypes can cause harm in multiple domains:
+    
+    - Reputational damage or stigmatization.
+    - Psychological stress, alienation, or lowered self-esteem.
+    - Barriers to social inclusion or participation.
+    - Negative economic outcomes (e.g., in hiring or education).
+    - Legal or political marginalization.
+    - Reinforcement of structural inequalities.
+
+---
+
+4. **Role of Quantifiers**
+
+    The strength and rigidity of a stereotype often depends on quantification:
+    
+    - **Absolute quantifiers** (e.g., "always", "all") imply no exceptions.
+    - **High-generalization quantifiers** (e.g., "most", "almost all") suggest strong prevalence.
+    - **Moderate quantifiers** (e.g., "many", "some") still generalize, albeit with ambiguity.
+    - **Hedging terms** (e.g., "can be", "might") reduce certainty but can still imply normativity.
+    - **Prescriptive or distributional phrasing** implies that traits should be expected or typical.
+
+    → Even probabilistic language can contribute to stereotyping if it suggests normative expectations for group members.
+
+---
+
+5. **Cognitive and Conceptual Issues**
+
+    Stereotypes often involve epistemic distortions:
+    
+    - **False generalization**: Overstating uniformity across individuals.
+    - **Oversimplification**: Ignoring relevant variation, context, or exceptions.
+    - **Appeal to folk wisdom or heuristics** rather than evidence-based reasoning.
+
+---
+
+6. **Intent and Framing**
+
+    The origin and framing of a stereotype affect its interpretation:
+    
+    - Statements framed by individuals in positions of **power or authority** can amplify harm.
+    - **Adversarial or rhetorical** intent can signal manipulation or bias.
+    - Even **well-intentioned or mistaken** statements may propagate harmful generalizations if they reinforce limiting group narratives.
+
+---
+
+7. **Anti-Stereotypes**
+
+    An **anti-stereotype** is a statement that contradicts or subverts a commonly held stereotype by attributing traits that defy the dominant expectation.
+
+    - Anti-stereotypes may appear positive or neutral, but they can still be problematic if they:
+        - Reinforce the existence of a "default" stereotype.
+        - Suggest that the subversion is remarkable or exceptional.
+        - Generalize in the opposite direction without addressing individual variation.
+
+    - A properly constructed anti-stereotype avoids generalized claims altogether and centers on **individuals or structural critique**, not group norms.
+
+---
+
+8. **Clarification: What May Be Confusing**
+
+    - A statement about a sensitive group is **not automatically** a stereotype; it depends on whether it generalizes group identity to predict a trait.
+    - Positive-sounding statements can still be stereotypes if they imply that the trait is typical or defining.
+    - The presence of hedging ("some," "can be") does not eliminate the stereotype if the structure of the claim still generalizes.
+    - Statistical or empirical claims should be distinguished from normative generalizations. Even when accurate, they should be contextualized carefully to avoid misleading implications.
+
+---
+
+**Summary:**  
+A stereotype is a generalization that maps group identity to a trait or behavior in a way that erases individual differences and often reflects or reinforces social hierarchies. Anti-stereotypes aim to counter these generalizations but must also avoid essentializing the reversal. Evaluation depends on logical structure, context, quantification, and the social position of the targeted group.
+"""
 
 
 stereotype_definition_short = """
-A stereotype is a simplified and generalized belief about a group of people, assuming shared traits, behaviors, or tendencies based on identity factors such as gender, race, profession, or culture.
+A stereotype is a simplified, generalized belief or assumption about a group of people, based on perceived shared traits, behaviors, or tendencies tied to identity markers such as gender, race, nationality, profession, age, or culture.
 
-It often:
-- Ignores individual differences
-- Uses broad or absolute terms (like “always” or “most”)
-- Reinforces assumptions without evidence
+Stereotypes typically:
+- Ignore individual variation and nuance
+- Are expressed in absolute or sweeping terms (e.g., “always,” “never,” “most”)
+- Reflect socially ingrained biases, often unconsciously
+- May appear neutral or positive (“Asians are good at math”), but still reduce individuals to group-based assumptions
+- Are rarely backed by evidence and often reinforce systemic inequalities
 
-Stereotypes may seem neutral or even positive but still rely on overgeneralization.
+Anti-stereotypes
+- An anti-stereotype is a direct counter to a prevailing stereotype—an attempt to invert or challenge it. While often well-intentioned, anti-stereotypes can still be reductive, as they:
+- Preserve the assumption that group identity determines behavior or traits
+- Often present a mirror image of the original stereotype (e.g., "Men can be emotionally sensitive" as a counter to "Men are emotionally detached")
+- Risk reinforcing essentialist thinking, simply flipping the script
 """
