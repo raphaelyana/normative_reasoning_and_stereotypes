@@ -175,15 +175,15 @@ Anti-stereotypes
 """
 
 stereotype_definition_short_binary = """
-A stereotype is a generalized belief or assumption about a group of people, based on identity markers such as gender, race, nationality, profession, age, or culture.
+A **stereotype** is a generalized belief or assumption about a group of people, based on identity markers such as gender, race, nationality, profession, age, or culture.
 
-Stereotypes typically:
-- Make broad claims about how people from a group think, feel, or behave
-- Reduce individuals to group-based expectations, ignoring personal variation
-- Use absolute or exaggerated phrasing (e.g., “always,” “never,” “most”)
-- Can seem neutral or positive (“Women are naturally nurturing”), yet still reinforce limiting roles
-- Reflect social biases—often unconsciously—and rarely rely on evidence
-- Contribute to unequal treatment or representation by normalizing oversimplified views
+Such statements:
+- Make broad claims about how group members think, feel, or behave, without acknowledging individual differences
+- Ignore personal variation and reduce people to group-based expectations
+- Use absolute or exaggerated terms (e.g., “always,” “never,” “most”)
+- May sound neutral or positive (e.g., “Women are naturally nurturing”), but still reinforce limiting group roles
+- Reflect ingrained social biases and often lack evidence
+- Can contribute to inequality by normalizing oversimplified views
 
-Statements that do not imply or generalize about social groups—such as personal opinions, factual claims, or unrelated commentary—are not considered stereotypes.
+Statements that do **not** generalize about social groups—such as personal experiences, factual reports, or unrelated content—are **not** stereotypes.
 """

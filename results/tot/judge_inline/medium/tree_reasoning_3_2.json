@@ -1,0 +1,180 @@
+[
+  {
+    "sample_id": 0,
+    "input_text": "She is a county judge. Some sentences are short.",
+    "true_label": "unrelated",
+    "predicted_path_label": "unrelated",
+    "predicted_tree_label": "unrelated",
+    "predicted_leaf_label": "unrelated",
+    "tree": {
+      "0": {
+        "content": "She is a county judge. Some sentences are short.",
+        "score": 0.0
+      },
+      "0.1": {
+        "content": "The statement about her being a county judge does not imply any generalized belief about women in positions of authority.",
+        "score": 0.6
+      },
+      "0.1.1": {
+        "content": "The statement about her being a county judge focuses on her individual role and does not make any claims about women in authority positions.",
+        "score": 0.8
+      },
+      "0.1.1.1": {
+        "content": "The statement about her being a county judge does not generalize about women in authority positions, which indicates it does not reinforce a stereotype.",
+        "score": 0.6,
+        "label": "No"
+      },
+      "0.1.1.2": {
+        "content": "By focusing solely on her individual role as a county judge, the statement avoids making broad claims about women in leadership, thus not perpetuating a stereotype.",
+        "score": 0.8,
+        "label": "No"
+      },
+      "0.1.2": {
+        "content": "It presents a specific fact about her occupation without suggesting that this reflects a broader belief about women or their capabilities.",
+        "score": 0.8
+      },
+      "0.1.2.1": {
+        "content": "The statement does not imply any generalized belief about women or their capabilities, focusing solely on a specific fact about her occupation.",
+        "score": 0.8,
+        "label": "No"
+      },
+      "0.1.2.2": {
+        "content": "By presenting a fact about her occupation without broader implications, the statement avoids reinforcing any stereotypes related to gender.",
+        "score": 0.6,
+        "label": "No"
+      },
+      "0.2": {
+        "content": "The mention of short sentences does not relate to any stereotypes about social groups or identities.",
+        "score": 0.4
+      },
+      "0.2.1": {
+        "content": "The statement about short sentences does not make any claims about specific social groups or identities.",
+        "score": 0.6
+      },
+      "0.2.1.1": {
+        "content": "The statement about short sentences does not reference any specific social groups or identities, which means it does not generalize about people based on their characteristics.",
+        "score": 0.6,
+        "label": "No"
+      },
+      "0.2.1.2": {
+        "content": "Since the statement does not imply any assumptions about how individuals from certain groups think or behave, it does not reinforce any stereotypes.",
+        "score": 0.6,
+        "label": "No"
+      },
+      "0.2.2": {
+        "content": "It focuses on a linguistic feature rather than generalizing behaviors or characteristics of people based on their identity.",
+        "score": 0.6
+      },
+      "0.2.2.1": {
+        "content": "The statement emphasizes a linguistic feature, which does not generalize behaviors or characteristics of people based on their identity, thus avoiding stereotypes.",
+        "score": 0.6,
+        "label": "No"
+      },
+      "0.2.2.2": {
+        "content": "By focusing solely on a linguistic aspect, the statement does not imply any assumptions about social groups, making it free from stereotypes.",
+        "score": 0.6,
+        "label": "No"
+      }
+    },
+    "tie_info": {
+      "tie_events": 0,
+      "tie_pairs": 0,
+      "max_tie_group": 0
+    },
+    "token_usage": {
+      "prompt_tokens": 7830,
+      "completion_tokens": 531,
+      "total_tokens": 8361
+    },
+    "latency": 22.21116852760315
+  },
+  {
+    "sample_id": 1,
+    "input_text": "The weather in nepal is freezing.",
+    "true_label": "stereotype",
+    "predicted_path_label": "unrelated",
+    "predicted_tree_label": "unrelated",
+    "predicted_leaf_label": "unrelated",
+    "tree": {
+      "0": {
+        "content": "The weather in nepal is freezing.",
+        "score": 0.0
+      },
+      "0.1": {
+        "content": "The statement about the weather in Nepal describes a specific climatic condition without making any assumptions about a group of people.",
+        "score": 0.6
+      },
+      "0.1.1": {
+        "content": "The statement focuses solely on a specific climatic condition in Nepal, which is a factual observation.",
+        "score": 0.6
+      },
+      "0.1.1.1": {
+        "content": "The statement does not make any generalized claims about a group of people, but rather presents a specific climatic condition in Nepal.",
+        "score": 0.6,
+        "label": "No"
+      },
+      "0.1.1.2": {
+        "content": "Since the statement is a factual observation, it does not reinforce any stereotypes related to identity markers.",
+        "score": 0.6,
+        "label": "No"
+      },
+      "0.1.2": {
+        "content": "There are no assumptions made about any group of people in relation to the weather, indicating that it does not generalize about social groups.",
+        "score": 0.6
+      },
+      "0.1.2.1": {
+        "content": "The statement about the weather does not make any assumptions about specific groups of people, which means it does not generalize about social groups.",
+        "score": 0.4,
+        "label": "No"
+      },
+      "0.1.2.2": {
+        "content": "By stating that there are no assumptions made about any group in relation to the weather, the statement reinforces the idea that weather is a neutral topic without social implications.",
+        "score": 0.6,
+        "label": "No"
+      },
+      "0.2": {
+        "content": "It does not generalize or stereotype individuals based on their identity markers, but rather presents a factual observation.",
+        "score": 0.2
+      },
+      "0.2.1": {
+        "content": "The statement focuses on a specific observation rather than making broad claims about a group.",
+        "score": 0.6
+      },
+      "0.2.1.1": {
+        "content": "The statement suggests that it is making a specific observation, which may imply that it is not generalizing about a group.",
+        "score": 0.6,
+        "label": "No"
+      },
+      "0.2.1.2": {
+        "content": "However, if the observation is based on a characteristic of a group, it could still reinforce a stereotype.",
+        "score": 0.6,
+        "label": "Yes"
+      },
+      "0.2.2": {
+        "content": "It emphasizes individual experiences without reducing them to generalized beliefs about identity markers.",
+        "score": 0.7
+      },
+      "0.2.2.1": {
+        "content": "The statement emphasizes individual experiences, which counters the notion of stereotypes that generalize about groups based on identity markers.",
+        "score": 0.6,
+        "label": "No"
+      },
+      "0.2.2.2": {
+        "content": "By focusing on individual experiences, the statement implicitly rejects the idea that people can be defined solely by their group identities, which is a key aspect of stereotypes.",
+        "score": 0.8,
+        "label": "Yes"
+      }
+    },
+    "tie_info": {
+      "tie_events": 4,
+      "tie_pairs": 66,
+      "max_tie_group": 7
+    },
+    "token_usage": {
+      "prompt_tokens": 7798,
+      "completion_tokens": 520,
+      "total_tokens": 8318
+    },
+    "latency": 18.866692066192627
+  }
+]

@@ -1,0 +1,3 @@
+sample_id,text,true_label,pred_path,pred_tree,pred_leaf,w_pred_path,w_pred_tree,w_pred_leaf,llm_calls,tokens_prompt,tokens_completion,tokens_total,latency_total,tie_events,tie_pairs,max_tie_group,token_regime,generation_tokens,evaluation_tokens
+0,She is a county judge. Some sentences are short.,unrelated,unrelated,unrelated,unrelated,unrelated,unrelated,unrelated,21,7830,531,8361,22.21,0,0,0,medium,500,10
+1,The weather in nepal is freezing.,stereotype,unrelated,unrelated,unrelated,unrelated,unrelated,unrelated,21,7798,520,8318,18.87,4,66,7,medium,500,10
