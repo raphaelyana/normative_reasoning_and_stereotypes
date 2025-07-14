@@ -5,6 +5,8 @@ import openai
 import time
 from utils import call_llm
 import re
+import pandas as pd
+from collections import defaultdict
 
 DEFAULT_MODEL_DICT = {
     'default': 'gpt-4o-mini',
@@ -54,6 +56,12 @@ class Thought:
 ###         every node of the tree.        ###
 ##############################################
 
+
+### TODO: Check if you can really inject examples, because from what I see, 
+###       if you don't revise the way tree is build (thoughts), you won't get 
+###       anywhere with that.
+
+
 class TreeOfThought:
     def __init__(self, 
                  case: dict,
@@ -61,12 +69,13 @@ class TreeOfThought:
                  model: Optional[dict]=None, 
                  max_branching_factor: int = 3, 
                  max_depth: int = 3,
-                 task_definition: Optional[str] = None,
+                 task_definition: Optional[str] = "",
                  max_tokens_dict: dict = {
                     "generation": 500,
                     "evaluation": 10
                     },
-                
+                n_shots: int = 1,
+                examples_df: Optional[pd.DataFrame] = None
                  ):
 
 
@@ -79,7 +88,8 @@ class TreeOfThought:
         self.max_depth = max_depth
         self.task_definition = task_definition
 
-        self.examples = examples
+        self.n_shots = n_shots
+        self.examples_df = examples_df
 
         self.thoughts = {}
         self.root_id = None
@@ -98,26 +108,36 @@ class TreeOfThought:
 
         self.max_tokens_dict = max_tokens_dict
 
-
+    def _select_formatted_examples(self) -> List[str]:
+            label_col = self.case["label_col"]
+            template = self.case["example_template_fewshots"]
+            df = self.examples_df
+        
+            label_to_examples = defaultdict(list)
+            for _, row in df.iterrows():
+                label_to_examples[row[label_col]].append(template(row))
+        
+            selected = []
+            for _, examples in label_to_examples.items():
+                selected.extend(examples[:self.n_shots])
+            return selected
 
     def build_prompt_gen_thought(
             self,
-            case_study: dict,
             reasoning: str,
-            task_definition: str,
             max_branching_factor: int,
         ) -> str:
 
         task = self.case["task"]
-        task_definition = task_definition or ""
+        task_definition = self.task_definition
 
-        field_lines = "\n".join([f"- {field}" for field in case_study["fields"]])
-        rule_lines = "\n".join([f"- {rule}" for rule in case_study["label_rules"]])
-        example_blocks = "\n\n".join(case_study["examples"])
+        field_lines = "\n".join([f"- {field}" for field in self.case["fields"]])
+        rule_lines = "\n".join([f"- {rule}" for rule in self.case["label_rules"]])
+        example_blocks = "\n\n".join(self._select_formatted_examples())
 
         prompt_built = f"""{task}
         
-            Definition of a {case_study['case_name']}: {task_definition}
+            Definition of a {self.case['case_name']}: {task_definition}
 
             You are reasoning about: "{reasoning}"
             

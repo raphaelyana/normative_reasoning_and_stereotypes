@@ -48,7 +48,7 @@ class FewShot:
                 label_to_examples[row[label_col]].append(template(row))
         
             selected = []
-            for label, examples in label_to_examples.items():
+            for _, examples in label_to_examples.items():
                 selected.extend(examples[:self.n_shots])
             return selected
 

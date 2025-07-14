@@ -25,6 +25,5 @@ tree_graph*
 stereotypes.json
 plot_tree.py
 langchain/
-chain_of_thought.py
 tree_of_thought_file.ipynb
 playground.ipynb

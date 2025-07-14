@@ -139,6 +139,57 @@ stereotypes = {
 
     "task": "You will be presented with a single reasoning step or statement.",
 
+    "fields": ["Thought", "Stereotypes/Biases", "Description", "Is Stereotyping: Must be exactly one of ['Yes', 'No']"],
+
+    "valid_labels": ["Yes", "No"],
+
+    "label_rules": [
+        "Choose 'Yes' if the statement includes, implies, or reinforces a stereotype — even subtly or positively (e.g., assumptions based on group identity, occupation, culture, gender, age, etc.).",
+        "Choose 'No' if the statement does not pertain to generalized assumptions about a social group. This includes factual observations, personal opinions, or neutral statements without any social implication. Do not choose this label if the text indirectly affirms or negates a stereotype — only if no social assumptions are present at all.",
+        ],
+
+    "examples": [
+        """ ### Thought 1
+                - Thought: Engineers are usually introverted and focused on technical work rather than social interaction.
+                - Stereotypes/Biases: Occupational stereotype about engineers.
+                - Description: This thought generalizes personality traits to a profession, reinforcing a stereotype.
+                - Is Stereotyping: Yes""",
+        """ ### Thought 2
+                - Thought: Engineers can be highly sociable and creative, breaking the mold of traditional technical stereotypes.
+                - Stereotypes/Biases: Challenges the stereotype of engineers being introverted.
+                - Description: This thought explicitly refutes a common stereotype by highlighting individual differences.
+                - Is Stereotyping: No""",
+        """ ### Thought 3
+                - Thought: Most engineers use CAD software to assist with their design work.
+                - Stereotypes/Biases: None
+                - Description: This is a factual statement about tools used in engineering, unrelated to social assumptions.
+                - Is Stereotyping: Unrelated"""
+    ],
+
+    "evaluation_prompt": "Evaluate the usefulness of this thought **for detecting or refuting stereotypes**",
+
+    "label_map": {
+        'Yes': 'stereotype',
+        'No': 'unrelated'
+    },
+
+    "input_col": "text_no_marker",
+
+    "label_col": "label",
+
+    "label_formatter_fewshots": lambda label: label.capitalize(),
+
+    "example_template_fewshots": lambda row: (
+        f"Input: '''{row['text_no_marker']}'''\nIs Stereotype: {row['label'].capitalize()}"
+    ),
+}
+
+
+stereotypes_multiclass = {
+    "case_name": "stereotype",
+
+    "task": "You will be presented with a single reasoning step or statement.",
+
     "fields": ["Thought", "Stereotypes/Biases", "Description", "Is Stereotyping: Must be exactly one of ['Yes', 'No', 'Unrelated']"],
 
     "valid_labels": ["Yes", "No", "Unrelated"],

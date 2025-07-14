@@ -173,3 +173,17 @@ Anti-stereotypes
 - Often present a mirror image of the original stereotype (e.g., "Men can be emotionally sensitive" as a counter to "Men are emotionally detached")
 - Risk reinforcing essentialist thinking, simply flipping the script
 """
+
+stereotype_definition_short_binary = """
+A stereotype is a generalized belief or assumption about a group of people, based on identity markers such as gender, race, nationality, profession, age, or culture.
+
+Stereotypes typically:
+- Make broad claims about how people from a group think, feel, or behave
+- Reduce individuals to group-based expectations, ignoring personal variation
+- Use absolute or exaggerated phrasing (e.g., “always,” “never,” “most”)
+- Can seem neutral or positive (“Women are naturally nurturing”), yet still reinforce limiting roles
+- Reflect social biases—often unconsciously—and rarely rely on evidence
+- Contribute to unequal treatment or representation by normalizing oversimplified views
+
+Statements that do not imply or generalize about social groups—such as personal opinions, factual claims, or unrelated commentary—are not considered stereotypes.
+"""

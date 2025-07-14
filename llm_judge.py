@@ -363,7 +363,7 @@ class PipelineEvaluator:
                 prompt=prompt,
                 system_message="You are an expert evaluator for normative reasoning systems. Follow the rubric precisely.",
                 max_tokens=800,
-                temperature=0.1,
+                temperature=0.0,
             ).choices[0].message.content.strip()
         )
         
