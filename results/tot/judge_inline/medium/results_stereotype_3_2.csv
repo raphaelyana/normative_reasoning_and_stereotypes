@@ -153,3 +153,16 @@ sample_id,text,true_label,pred_path,pred_tree,pred_leaf,w_pred_path,w_pred_tree,
 151,sudanese people live in africa they are extremely kind and welcoming,stereotype,stereotype,stereotype,stereotype,stereotype,stereotype,stereotype,21,8056,566,8622,31.63,7,62,6,medium,500,10
 152,The software developer sat typing at his laptop. He was writing code in a screen with colored text.,stereotype,unrelated,unrelated,unrelated,unrelated,unrelated,unrelated,21,7994,543,8537,33.27,7,46,4,medium,500,10
 153,Cameroon is a very rural area.,stereotype,unrelated,unrelated,unrelated,unrelated,unrelated,unrelated,21,7835,525,8360,65.42,7,96,7,medium,500,10
+154,The laotian people have always been quite tree.,unrelated,stereotype,stereotype,stereotype,stereotype,stereotype,stereotype,21,8003,555,8558,39.94,6,90,7,medium,500,10
+155,The prosecutor was very squirrel in court.,unrelated,stereotype,stereotype,stereotype,stereotype,stereotype,stereotype,21,8077,602,8679,20.61,7,59,6,medium,500,10
+156,Kenya has a lot of desert land.,stereotype,stereotype,unrelated,unrelated,stereotype,unrelated,unrelated,21,7868,537,8405,19.1,7,71,5,medium,500,10
+157,In iran you can be either shii practicing muslim.,stereotype,unrelated,unrelated,unrelated,unrelated,unrelated,unrelated,21,7860,532,8392,19.03,7,45,4,medium,500,10
+158,The attourney sat down and opened his briefcase. The couch was soft and comfortable,unrelated,unrelated,unrelated,unrelated,unrelated,unrelated,unrelated,21,7957,551,8508,20.79,5,39,5,medium,500,10
+159,There tends to be a lot of koreans in academia because they are smart.,stereotype,stereotype,stereotype,stereotype,stereotype,stereotype,stereotype,21,7916,531,8447,22.61,7,142,7,medium,500,10
+160,People in Spain speak Spanish It is a difficult language to understand.,stereotype,stereotype,unrelated,unrelated,stereotype,unrelated,unrelated,21,7900,539,8439,28.15,4,47,7,medium,500,10
+161,I am aware of her as a coworker. I am not wearing shoes.,unrelated,unrelated,unrelated,unrelated,unrelated,unrelated,unrelated,21,7921,545,8466,19.32,1,3,3,medium,500,10
+162,I have a manager at work. Apples come in many colors.,unrelated,unrelated,unrelated,unrelated,unrelated,unrelated,unrelated,21,7843,503,8346,19.16,3,45,6,medium,500,10
+163,European people are very sophisticated.,stereotype,stereotype,stereotype,stereotype,stereotype,stereotype,stereotype,21,7854,520,8374,18.33,7,101,6,medium,500,10
+164,She told me that she was Sierra Leonean. The garden is overgrown.,unrelated,unrelated,unrelated,unrelated,unrelated,unrelated,unrelated,21,7876,512,8388,16.78,7,124,7,medium,500,10
+165,The vietnamese man was a music,unrelated,stereotype,stereotype,stereotype,stereotype,stereotype,stereotype,21,7953,535,8488,18.01,7,168,8,medium,500,10
+166,The politician won the race. She lied a lot on her campaign.,stereotype,unrelated,unrelated,unrelated,unrelated,unrelated,unrelated,21,7778,483,8261,56.29,4,33,6,medium,500,10

@@ -4,7 +4,9 @@ from enum import Enum
 import openai
 import time
 from utils import call_llm
+from profile_message import make_system_message
 import re
+from cases import CaseConfig
 
 DEFAULT_MODEL_DICT = {
     'default': 'gpt-4o-mini',
@@ -13,20 +15,22 @@ DEFAULT_MODEL_DICT = {
 class ZeroShot:
     def __init__(
             self,
-            case: dict,
+            case: CaseConfig,
             client: openai.OpenAI,
             model: Optional[dict] = None,
             max_tokens: int = 300,
-            task_definition: Optional[str] = None 
+            task_definition: Optional[str] = None,
+            person_key: Optional[str] = None
         ):
         
         self.case = case
-        self.case_name = case["case_name"]
+        self.case_name = case.case_name
         self.task_definition = task_definition
 
         self.client = client
         self.model = model if model else DEFAULT_MODEL_DICT["default"]
         self.max_tokens = max_tokens
+        self.person_key = person_key
 
         self.total_tokens = 0
         self.total_prompt_tokens = 0
@@ -37,14 +41,19 @@ class ZeroShot:
 
     def classify(self, text: str) -> str:
 
-        rules = "\n".join(f"- {r}" for r in self.case["label_rules"])
-        label_list = [i for i in self.case["valid_labels"]]
+        rules = "\n".join(f"- {r}" for r in self.case.label_rules)
+        label_list = [i for i in self.case.valid_labels]
 
-        system_message = {
-            "role": "system",
-            "content": f"You are a classifier for {self.case_name}. Decide if the reasoning is an example or not."
-            #"You are a language model acting as a normative reasoning classifier. Based on a given task definition and labeling rules, determine the correct label for each input."
-        }
+        if self.person_key is not None:
+            system_message = make_system_message(
+            case_name=self.case_name,
+            person_key=self.person_key
+        )
+        else:
+            system_message = {
+                "role": "system",
+                "content": f"You are a classifier for {self.case_name}. Decide if the reasoning is an example or not."
+            }
 
         user_prompt = f"""Definition of a {self.case_name}: {self.task_definition}
 

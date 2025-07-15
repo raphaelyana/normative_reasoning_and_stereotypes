@@ -2,10 +2,11 @@ from typing import List, Optional
 from collections import defaultdict
 from enum import Enum
 import openai
-import time
 from utils import call_llm
 import re
 import pandas as pd
+from cases import CaseConfig
+from profile_message import make_system_message
 
 DEFAULT_MODEL_DICT = {
     'default': 'gpt-4o-mini',
@@ -14,13 +15,14 @@ DEFAULT_MODEL_DICT = {
 class FewShot:
     def __init__(
         self,
-        case: dict,
+        case: CaseConfig,
         client: openai.OpenAI,
         model: Optional[str] = None,
         max_tokens: int = 300,
         task_definition: Optional[str] = None,
         n_shots: int = 1,
-        examples_df: Optional[pd.DataFrame] = None
+        examples_df: Optional[pd.DataFrame] = None,
+        person_key: Optional[str] = None
     ):
         self.case = case
         self.client = client
@@ -28,6 +30,7 @@ class FewShot:
         self.max_tokens = max_tokens
         self.task_definition = task_definition
         self.n_shots = n_shots
+        self.person_key = person_key
 
         self.total_tokens = 0
         self.total_prompt_tokens = 0
@@ -39,8 +42,8 @@ class FewShot:
 
     
     def _select_formatted_examples(self) -> List[str]:
-            label_col = self.case["label_col"]
-            template = self.case["example_template_fewshots"]
+            label_col = self.case.label_col
+            template = self.case.example_template_fewshots
             df = self.examples_df
         
             label_to_examples = defaultdict(list)
@@ -55,10 +58,10 @@ class FewShot:
 
     def _format_prompt(self, input_text: str) -> str:
         examples_str = "\n\n".join(self._select_formatted_examples())
-        rules = "\n".join(f"- {r}" for r in self.case["label_rules"])
-        label_list = [i for i in self.case["valid_labels"]]
+        rules = "\n".join(f"- {r}" for r in self.case.label_rules)
+        label_list = [i for i in self.case.valid_labels]
 
-        return f"""Definition of a {self.case['case_name']}: {self.task_definition}
+        return f"""Definition of a {self.case.case_name}: {self.task_definition}
                     
                     Labeling rules:
                     {rules}
@@ -76,10 +79,16 @@ class FewShot:
     def classify(self, text: str) -> str:
         prompt = self._format_prompt(text)
 
-        system_message = {
-            "role": "system",
-            "content": f"You are a few-shot classifier for {self.case['case_name']}. \nUse the he provided examples and rules to decide the correct label."
-        }
+        if self.person_key is not None:
+            system_message = make_system_message(
+                case_name=self.case.case_name,
+                person_key=self.person_key
+            )
+        else:
+            system_message = {
+                "role": "system",
+                "content": f"You are a few-shot classifier for {self.case.case_name}. \nUse the provided examples and rules to decide the correct label."
+            }
 
         user_message = {
             "role": "user",
