@@ -632,7 +632,7 @@ Do NOT add text before or after the JSON."""
                 "content": t.content,
                 "score": t.score,
             }
-            if t.verdict is not None:  # ← this avoids the "No" being dropped as falsy
+            if t.verdict is not None:
                 node_data["label"] = t.verdict
             tree_dict[node_id] = node_data
         return tree_dict
