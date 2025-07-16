@@ -33,7 +33,8 @@ class ChainOfThoughts:
         model: Optional[str] = None,
         max_tokens: int = 800,
         task_definition: Optional[str] = None,
-        num_reasoning_steps: int = 3
+        num_reasoning_steps: int = 3, 
+        reasoning_budget: Optional[dict] = None,
     ):
         self.case = case
         self.case_name = case["case_name"]
@@ -43,6 +44,7 @@ class ChainOfThoughts:
         self.client = client
         self.model = model if model else DEFAULT_MODEL_DICT["default"]
         self.max_tokens = max_tokens
+        self.reasoning_budget = reasoning_budget
         
         self.total_tokens = 0
         self.total_prompt_tokens = 0
@@ -196,7 +198,8 @@ Be thorough in your analysis, consider multiple perspectives, and clearly explai
             model=self.model,
             prompt=user_message["content"],
             system_message=system_message["content"],
-            max_tokens=self.max_tokens
+            max_tokens=self.max_tokens,
+            reasoning_budget=self.reasoning_budget,
         )
         elapsed = time.time() - start_time
 

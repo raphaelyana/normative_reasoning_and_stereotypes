@@ -22,7 +22,7 @@ class FewShot:
         task_definition: Optional[str] = None,
         n_shots: int = 1,
         examples_df: Optional[pd.DataFrame] = None,
-        person_key: Optional[str] = None
+        person_key: Optional[str] = None, 
     ):
         self.case = case
         self.client = client
@@ -103,7 +103,7 @@ class FewShot:
             model=self.model,
             prompt=user_message["content"],
             system_message=system_message["content"],
-            max_tokens=self.max_tokens
+            max_tokens=self.max_tokens,
         )
 
         elapsed = time.time() - start_time

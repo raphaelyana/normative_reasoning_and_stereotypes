@@ -20,7 +20,7 @@ class ZeroShot:
             model: Optional[dict] = None,
             max_tokens: int = 300,
             task_definition: Optional[str] = None,
-            person_key: Optional[str] = None
+            person_key: Optional[str] = None,
         ):
         
         self.case = case
@@ -78,7 +78,7 @@ class ZeroShot:
             model=self.model,
             prompt=user_message["content"],
             system_message=system_message["content"],
-            max_tokens=self.max_tokens
+            max_tokens=self.max_tokens,
         )
 
         elapsed = time.time() - start_time
