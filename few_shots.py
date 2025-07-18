@@ -6,7 +6,8 @@ from utils import call_llm
 import re
 import pandas as pd
 from cases import CaseConfig
-from profile_message import make_system_message
+from profile_message import make_system_message, PERSON_SEEDS
+from typing import Literal
 
 DEFAULT_MODEL_DICT = {
     'default': 'gpt-4o-mini',
@@ -23,6 +24,7 @@ class FewShot:
         n_shots: int = 1,
         examples_df: Optional[pd.DataFrame] = None,
         person_key: Optional[str] = None, 
+        role_playing: Literal["passive", "active", "none"] = "none"
     ):
         self.case = case
         self.client = client
@@ -31,6 +33,7 @@ class FewShot:
         self.task_definition = task_definition
         self.n_shots = n_shots
         self.person_key = person_key
+        self.role_playing = role_playing
 
         self.total_tokens = 0
         self.total_prompt_tokens = 0
@@ -79,17 +82,28 @@ class FewShot:
     def classify(self, text: str) -> str:
         prompt = self._format_prompt(text)
 
-        if self.person_key is not None:
+        if self.person_key is not None and self.role_playing == "passive":
             system_message = make_system_message(
                 case_name=self.case.case_name,
                 person_key=self.person_key
             )
+        
+        elif self.person_key is not None and self.role_playing == "active":
+            content = (
+                f"You are a few-shot classifier for {self.case.case_name}.\n"
+                f"Please answer as if you were the following person:\n{PERSON_SEEDS[self.person_key]}"
+            )
+            system_message = {
+                "role": "system",
+                "content": content
+            }
+        
         else:
             system_message = {
                 "role": "system",
-                "content": f"You are a few-shot classifier for {self.case.case_name}. \nUse the provided examples and rules to decide the correct label."
+                "content": f"You are a few-shot classifier for {self.case.case_name}. Use the provided examples and rules to decide the correct label."
             }
-
+        
         user_message = {
             "role": "user",
             "content": prompt

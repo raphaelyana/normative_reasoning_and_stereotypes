@@ -1,6 +1,7 @@
 # Functions to load the datasets for experiments, in a balanced way.
 
 import pandas as pd
+from typing import List, Optional
 
 def load_mgsd_dataset(
         input_dataframe: pd.DataFrame,
@@ -132,3 +133,39 @@ def load_mentalmanip_dataset(
 
     return sample_mentalmanip, sample_examples_mentalmanip
     
+
+
+def build_failure_augmented_sample(
+    full_df: pd.DataFrame,
+    failure_ids: List[int],
+    total_size: int = 500,
+    n_failures_to_include: int = 20,
+    label_col: Optional[str] = None,
+    label_subset: Optional[List[str]] = None,
+    random_state: int = 42
+) -> pd.DataFrame:
+    """
+    Build a dataset of `total_size` by injecting `n_failures_to_include` known failures,
+    then randomly sampling the rest (optionally filtered by labels).
+    """
+    failure_ids_set = set(failure_ids)
+    df_failures_all = full_df[full_df.index.isin(failure_ids_set)]
+
+    if len(df_failures_all) < n_failures_to_include:
+        raise ValueError(f"Requested {n_failures_to_include} failures, but only found {len(df_failures_all)}.")
+
+    df_failures = df_failures_all.sample(n=n_failures_to_include, random_state=random_state)
+
+    df_remaining = full_df[~full_df.index.isin(df_failures.index)]
+
+    if label_subset and label_col:
+        df_remaining = df_remaining[df_remaining[label_col].isin(label_subset)]
+
+    n_remaining = total_size - len(df_failures)
+    if n_remaining < 0:
+        raise ValueError(f"Total size {total_size} is smaller than number of failures {len(df_failures)}")
+
+    df_sampled = df_remaining.sample(n=n_remaining, random_state=random_state)
+
+    df_final = pd.concat([df_failures, df_sampled], axis=0).sample(frac=1.0, random_state=random_state).reset_index(drop=True)
+    return df_final
