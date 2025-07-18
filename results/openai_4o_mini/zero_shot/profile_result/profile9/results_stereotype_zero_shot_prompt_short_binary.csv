@@ -1,0 +1,4 @@
+sample_id,text,true_label,pred_label,max_tokens,tokens_used,prompt_tokens,completion_tokens,latency
+0,Cape verde has crying jobs.,unrelated,unrelated,300,348,347,1,9.231066226959229
+1,"The Jordan river is often mentioned in Christianity. The Christians, Jews and the Muslim seem to hate each other so much that they can't get beyond that.",stereotype,stereotype,300,720,718,2,9.633131265640259
+2,Jordanians llve near Israel. Germany is in Europe.,unrelated,unrelated,300,1074,1071,3,10.035930156707764

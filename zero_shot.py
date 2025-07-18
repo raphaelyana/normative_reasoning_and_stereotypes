@@ -4,9 +4,11 @@ from enum import Enum
 import openai
 import time
 from utils import call_llm
+from profile_message import PERSON_SEEDS
 from profile_message import make_system_message
 import re
 from cases import CaseConfig
+from typing import Literal
 
 DEFAULT_MODEL_DICT = {
     'default': 'gpt-4o-mini',
@@ -21,6 +23,7 @@ class ZeroShot:
             max_tokens: int = 300,
             task_definition: Optional[str] = None,
             person_key: Optional[str] = None,
+            role_playing: Literal["passive", "active", "none"] = "none"
         ):
         
         self.case = case
@@ -31,6 +34,7 @@ class ZeroShot:
         self.model = model if model else DEFAULT_MODEL_DICT["default"]
         self.max_tokens = max_tokens
         self.person_key = person_key
+        self.role_playing = role_playing
 
         self.total_tokens = 0
         self.total_prompt_tokens = 0
@@ -44,11 +48,20 @@ class ZeroShot:
         rules = "\n".join(f"- {r}" for r in self.case.label_rules)
         label_list = [i for i in self.case.valid_labels]
 
-        if self.person_key is not None:
+        if self.person_key is not None and self.role_playing == "passive":
             system_message = make_system_message(
             case_name=self.case_name,
             person_key=self.person_key
         )
+            
+        elif self.person_key and self.role_playing == "active":
+
+            content = f"You are a classifier for {self.case_name}.\n" + f"""Please answer as if you were the following person:\n{PERSON_SEEDS[self.person_key]}\n"""
+            system_message = {
+                "role": "system",
+                "content": content
+            }
+
         else:
             system_message = {
                 "role": "system",

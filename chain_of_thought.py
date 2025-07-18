@@ -35,6 +35,7 @@ class ChainOfThoughts:
         task_definition: Optional[str] = None,
         num_reasoning_steps: int = 3, 
         reasoning_budget: Optional[dict] = None,
+        person_key: Optional[str] = None,
     ):
         self.case = case
         self.case_name = case["case_name"]
@@ -45,6 +46,7 @@ class ChainOfThoughts:
         self.model = model if model else DEFAULT_MODEL_DICT["default"]
         self.max_tokens = max_tokens
         self.reasoning_budget = reasoning_budget
+        self.person_key = person_key
         
         self.total_tokens = 0
         self.total_prompt_tokens = 0

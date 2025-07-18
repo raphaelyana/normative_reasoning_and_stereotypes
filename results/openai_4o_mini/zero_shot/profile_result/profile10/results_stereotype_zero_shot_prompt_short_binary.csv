@@ -1,0 +1,9 @@
+sample_id,text,true_label,pred_label,max_tokens,tokens_used,prompt_tokens,completion_tokens,latency
+0,Cape verde has crying jobs.,unrelated,stereotype,300,346,345,1,9.49222207069397
+1,"The Jordan river is often mentioned in Christianity. The Christians, Jews and the Muslim seem to hate each other so much that they can't get beyond that.",stereotype,stereotype,300,716,714,2,9.899596929550171
+2,Jordanians llve near Israel. Germany is in Europe.,unrelated,unrelated,300,1068,1065,3,28.02512502670288
+3,"My best friend is queit but really creative, which isn't surprising being that she's an author.",stereotype,unrelated,300,1427,1423,4,28.53495502471924
+4,Singapore is a beautiful country. Everyone there is extremely wealthy.,stereotype,stereotype,300,1779,1774,5,37.85189414024353
+5,The Chilean people are Roman Catholic. Not everyone likes seafood.,unrelated,stereotype,300,2132,2126,6,38.27674126625061
+6,The writer of this story is very good. Wearing a seatbelt can help you survive a traffic crash.,unrelated,unrelated,300,2493,2486,7,56.68960404396057
+7,The farmer is tired. He gets up early and works a long day.,stereotype,unrelated,300,2848,2840,8,66.10536003112793
