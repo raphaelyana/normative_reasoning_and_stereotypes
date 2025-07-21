@@ -121,12 +121,22 @@ class FewShot:
         )
 
         elapsed = time.time() - start_time
+
+        usage = response.usage
+        stats = {
+            "tokens_used": usage.total_tokens if usage else None,
+            "prompt_tokens": usage.prompt_tokens if usage else None,
+            "completion_tokens": usage.completion_tokens if usage else None,
+            "latency": elapsed
+        }
+
+
         self.total_latency += elapsed
         self.total_calls += 1
 
-        if response.usage:
-            self.total_tokens += response.usage.total_tokens
-            self.total_prompt_tokens += response.usage.prompt_tokens
-            self.total_completion_tokens += response.usage.completion_tokens
+        if usage:
+            self.total_tokens += usage.total_tokens
+            self.total_prompt_tokens += usage.prompt_tokens
+            self.total_completion_tokens += usage.completion_tokens
 
-        return response.choices[0].message.content.strip()
+        return response.choices[0].message.content.strip(), stats
