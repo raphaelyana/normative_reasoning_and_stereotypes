@@ -169,3 +169,18 @@ def build_failure_augmented_sample(
 
     df_final = pd.concat([df_failures, df_sampled], axis=0).sample(frac=1.0, random_state=random_state).reset_index(drop=True)
     return df_final
+
+
+def get_additional_fields(row, case_name):
+    if case_name == "stereotype":
+        return {
+            "stereotype_type": row.get("stereotype_type", None),
+            "original_dataset": row.get("original_dataset", None),
+        }
+    elif case_name == "manipulation":
+        return {
+            "technique": row.get("technique", None),
+            "vulnerability": row.get("vulnerability", None),
+        }
+    else:
+        return {}

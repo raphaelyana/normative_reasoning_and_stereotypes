@@ -17,7 +17,7 @@
 #                    for sections and subsections.
 
 
-mental_manipulation_def1 = """
+manipulation_definition = """
 Mental manipulation occurs when a speaker covertly steers another person's thoughts, emotions, or decisions by exploiting psychological biases, emotional vulnerabilities, or information gaps — with the aim of securing a personal advantage at the listener's expense.
 
 It differs from open persuasion by concealing intent, distorting choice, or applying emotional pressure. Manipulation bypasses informed consent and undermines the target’s ability to reason freely.
@@ -38,7 +38,7 @@ It differs from open persuasion by concealing intent, distorting choice, or appl
 Label a response **Manipulative** if it subtly undermines autonomy or uses emotional, deceptive, or reality-distorting tactics to drive a specific outcome. If the message is open, respectful of choice, and free of pressure or distortion, label it: **Not Manipulative**.
 """
 
-mental_manipulation_def1_short_old = """
+manipulation_definition_short_old = """
 "Covert use of language or behavior to emotionally pressure, deceive, or distort a person’s decisions for someone else’s benefit."
 
 A response is manipulative if:
@@ -48,7 +48,7 @@ A response is manipulative if:
 
 If none apply, label it: **Not Manipulative**"""
 
-mental_manipulation_def1_short = """
+manipulation_definition_short = """
 "Covert use of language or behavior to emotionally pressure, deceive, or distort a person’s decisions for someone else’s benefit."
 
 Using hidden pressure, deception, or emotional tactics to push someone into a decision that serves the speaker's interest while limiting the other person’s free choice.

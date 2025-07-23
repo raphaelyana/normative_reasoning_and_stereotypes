@@ -5,21 +5,22 @@ import time
 from utils import call_llm
 import re
 import json
-from profile_message import PERSON_SEEDS, make_system_message
 from pydantic import BaseModel
+from profile_message import PERSON_SEEDS, make_system_message
 from typing import Literal
 
 DEFAULT_MODEL_DICT = {
     'default': 'gpt-4o-mini',
 }
 
-class CoTStats(BaseModel):
+class SampleStats(BaseModel):
     tokens_used: Optional[int]
     prompt_tokens: Optional[int]
     completion_tokens: Optional[int]
     latency: float
 
-class ReasoningStep(BaseModel):
+@dataclass
+class ReasoningStep:
     step_number: int
     content: str
 
@@ -28,7 +29,9 @@ class CoTResult(BaseModel):
     final_reasoning: str
     final_label: str
     confidence: float = 0.0
-    stats: Optional[CoTStats] = None
+    stats: Optional[SampleStats] = None
+    person_key: Optional[str] = None
+    role_playing: Optional[Literal["active", "passive", "none"]] = None
 
 class ChainOfThoughts:
     def __init__(
@@ -41,7 +44,7 @@ class ChainOfThoughts:
         num_reasoning_steps: int = 3,
         reasoning_budget: Optional[dict] = None,
         person_key: Optional[str] = None,
-        role_playing: Literal["passive", "active", "none"] = "none"
+        role_playing: Literal["active", "passive", "none"] = "none",
     ):
         self.case = case
         self.case_name = case["case_name"]
@@ -65,6 +68,12 @@ class ChainOfThoughts:
         rules = "\n".join(f"- {r}" for r in self.case["label_rules"])
         label_list = self.case["valid_labels"]
 
+        examples_section = ""
+        if "examples" in self.case and self.case["examples"]:
+            examples_section = f"""
+Examples:
+{chr(10).join(self.case["examples"])}
+"""
         step_templates = [
             ("Initial Observation", [
                 "What do you observe in this text?",
@@ -81,7 +90,7 @@ class ChainOfThoughts:
             ("Interpretation and Context", [
                 "Does the text reinforce or challenge generalized beliefs?",
                 "How might it be interpreted in terms of social bias, fairness, or group identity?"
-            ])
+            ]),
         ]
 
         reasoning_steps_section = ""
@@ -92,6 +101,7 @@ class ChainOfThoughts:
 
         prompt = f"""Definition of a {self.case_name}: {self.task_definition}
 
+{examples_section}
 Labeling rules:
 {rules}
 
@@ -112,64 +122,85 @@ Please provide your complete reasoning following this exact format."""
 
         return prompt
 
-    def _get_system_message(self) -> Dict[str, str]:
-        if self.person_key and self.role_playing == "passive":
-            return make_system_message(self.case_name, self.person_key)
-        elif self.person_key and self.role_playing == "active":
-            return {
-                "role": "system",
-                "content": f"You are an expert classifier answering as if you were {PERSON_SEEDS[self.person_key]}. Apply the reasoning process to classify the input."
-            }
-        else:
-            return {
-                "role": "system",
-                "content": f"You are an expert classifier for {self.case_name}. Show your reasoning step by step before giving a final classification."
-            }
-
-    def _parse_cot_response(self, response_text: str) -> CoTResult:
+    def _parse_cot_response(self, response_text: str, stats: SampleStats) -> CoTResult:
         reasoning_steps = []
         final_reasoning = ""
         final_label = ""
         confidence = 0.0
 
-        step_pattern = r"Step (\d+)[^:]*:(.*?)(?=Step \d+|Final Reasoning:|$)"
-        step_matches = re.findall(step_pattern, response_text, re.DOTALL | re.IGNORECASE)
-        for step_num, step_content in step_matches:
-            reasoning_steps.append(ReasoningStep(
-                step_number=int(step_num),
-                content=step_content.strip()
-            ))
+        try:
+            step_pattern = r"Step (\d+)[^:]*:(.*?)(?=Step \d+|Final Reasoning:|$)"
+            step_matches = re.findall(step_pattern, response_text, re.DOTALL | re.IGNORECASE)
 
-        final_reasoning_match = re.search(r"Final Reasoning:\s*(.*?)(?=Final Label:|$)", response_text, re.DOTALL | re.IGNORECASE)
-        if final_reasoning_match:
-            final_reasoning = final_reasoning_match.group(1).strip()
+            for step_num, step_content in step_matches:
+                reasoning_steps.append(ReasoningStep(
+                    step_number=int(step_num),
+                    content=step_content.strip()
+                ))
 
-        final_label_match = re.search(r"Final Label:\s*\[?([^\]]+)\]?", response_text, re.IGNORECASE)
-        if final_label_match:
-            raw_label = final_label_match.group(1).strip()
+            final_reasoning_match = re.search(r"Final Reasoning:\s*(.*?)(?=Final Label:|$)", response_text, re.DOTALL | re.IGNORECASE)
+            if final_reasoning_match:
+                final_reasoning = final_reasoning_match.group(1).strip()
+
+            final_label_match = re.search(r"Final Label:\s*\[?([^\]]+)\]?", response_text, re.IGNORECASE)
+            if final_label_match:
+                raw_label = final_label_match.group(1).strip()
+                for valid_label in self.case["valid_labels"]:
+                    if valid_label.lower() in raw_label.lower():
+                        final_label = valid_label
+                        break
+                if not final_label:
+                    final_label = self.case["valid_labels"][0]
+
+            confidence_match = re.search(r"confidence[^0-9]*([0-9.]+)", response_text, re.IGNORECASE)
+            if confidence_match:
+                try:
+                    confidence = float(confidence_match.group(1))
+                    if confidence > 1.0:
+                        confidence = confidence / 100.0
+                except ValueError:
+                    confidence = 0.0
+
+        except Exception as e:
+            print(f"[WARN] Failed to parse CoT response: {e}")
+            final_reasoning = response_text
             for valid_label in self.case["valid_labels"]:
-                if valid_label.lower() in raw_label.lower():
+                if valid_label.lower() in response_text.lower():
                     final_label = valid_label
                     break
-
-        confidence_match = re.search(r"confidence[^0-9]*([0-9.]+)", response_text, re.IGNORECASE)
-        if confidence_match:
-            try:
-                confidence = float(confidence_match.group(1))
-                if confidence > 1.0:
-                    confidence = confidence / 100.0
-            except ValueError:
-                pass
+            if not final_label:
+                final_label = self.case["valid_labels"][0]
 
         return CoTResult(
             reasoning_steps=reasoning_steps,
             final_reasoning=final_reasoning,
-            final_label=final_label if final_label else self.case["valid_labels"][0],
-            confidence=confidence
+            final_label=final_label,
+            confidence=confidence,
+            stats=stats,
+            person_key=self.person_key,
+            role_playing=self.role_playing
         )
 
+    def classify(self, text: str) -> str:
+        return self.classify_with_reasoning(text).final_label
+
     def classify_with_reasoning(self, text: str) -> CoTResult:
-        system_message = self._get_system_message()
+        if self.role_playing == "active" and self.person_key:
+            system_message = {
+                "role": "system",
+                "content": f"You are a {self.case_name} classifier. Answer as if you were the following person:\n{PERSON_SEEDS[self.person_key]}"
+            }
+        elif self.role_playing == "passive" and self.person_key:
+            system_message = make_system_message(
+                case_name=self.case_name,
+                person_key=self.person_key
+            )
+        else:
+            system_message = {
+                "role": "system",
+                "content": f"You are an expert classifier for {self.case_name}. Analyze the input step by step and show your reasoning before classifying."
+            }
+
         user_prompt = self._build_cot_prompt(text)
         user_message = {"role": "user", "content": user_prompt}
 
@@ -180,28 +211,44 @@ Please provide your complete reasoning following this exact format."""
             prompt=user_message["content"],
             system_message=system_message["content"],
             max_tokens=self.max_tokens,
-            reasoning_budget=self.reasoning_budget,
         )
         elapsed = time.time() - start_time
 
-        usage = response.usage
-        stats = CoTStats(
-            tokens_used=usage.total_tokens if usage else None,
-            prompt_tokens=usage.prompt_tokens if usage else None,
-            completion_tokens=usage.completion_tokens if usage else None,
+        self.total_latency += elapsed
+        self.total_calls += 1
+
+        if response.usage:
+            self.total_tokens += response.usage.total_tokens
+            self.total_prompt_tokens += response.usage.prompt_tokens
+            self.total_completion_tokens += response.usage.completion_tokens
+
+        stats = SampleStats(
+            tokens_used=response.usage.total_tokens if response.usage else None,
+            prompt_tokens=response.usage.prompt_tokens if response.usage else None,
+            completion_tokens=response.usage.completion_tokens if response.usage else None,
             latency=elapsed
         )
 
-        self.total_calls += 1
-        self.total_latency += elapsed
-        if usage:
-            self.total_tokens += usage.total_tokens
-            self.total_prompt_tokens += usage.prompt_tokens
-            self.total_completion_tokens += usage.completion_tokens
+        response_text = response.choices[0].message.content.strip()
+        return self._parse_cot_response(response_text, stats)
 
-        result = self._parse_cot_response(response.choices[0].message.content.strip())
-        result.stats = stats
-        return result
+    def map_label(self, raw_label: str) -> str:
+        if "label_map" in self.case:
+            return self.case["label_map"].get(raw_label, raw_label)
+        return raw_label
+
+    def print_reasoning(self, cot_result: CoTResult):
+        print(f"\n=== Chain of Thoughts Analysis for {self.case_name} ===")
+        print("-" * 60)
+
+        for step in cot_result.reasoning_steps:
+            print(f"\nStep {step.step_number}:\n{step.content}")
+
+        print(f"\nFinal Reasoning:\n  {cot_result.final_reasoning}")
+        print(f"\nFinal Classification: {cot_result.final_label}")
+        if cot_result.confidence > 0:
+            print(f"Confidence: {cot_result.confidence:.2f}")
+        print("-" * 60)
 
     def get_metrics(self) -> Dict[str, Any]:
         return {
@@ -211,5 +258,5 @@ Please provide your complete reasoning following this exact format."""
             "total_completion_tokens": self.total_completion_tokens,
             "total_latency": self.total_latency,
             "avg_latency_per_call": self.total_latency / max(1, self.total_calls),
-            "avg_tokens_per_call": self.total_tokens / max(1, self.total_calls)
+            "avg_tokens_per_call": self.total_tokens / max(1, self.total_calls),
         }

@@ -82,3 +82,28 @@ for regime in regimes:
     plt.title(f"Confusion Matrix - {regime} ({prompt_type} prompt)")
     plt.show()
 """
+
+add_columns_to_existing_csv = """
+
+# ======= MGSD =========
+
+import pandas as pd
+
+# Load the CSV result file you want to augment
+results_path = "results/openai_4.1_mini/zero_shot/results_mgsd_stereotype.csv"
+results_df = pd.read_csv(results_path)
+
+# Add any columns from the sampled dataset based on sample_id
+extra_columns = ["stereotype_type", "original_dataset"]
+augmented_df = results_df.copy()
+for col in extra_columns:
+    augmented_df[col] = sample_mgsd.loc[augmented_df["sample_id"], col].values
+
+# Save the enriched file
+augmented_df.to_csv("results/openai_4.1_mini/zero_shot/results_mgsd_stereotype_augmented.csv", index=False)
+
+
+# ======= MentalManip =========
+
+
+"""

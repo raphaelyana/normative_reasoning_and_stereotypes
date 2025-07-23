@@ -661,7 +661,7 @@ if __name__ == "__main__":
 
     from case_studies import manipulation, stereotypes
     from stereotype_def import stereotype_definition_short_binary as stereotype_definition
-    from mentalmanip_def import mental_manipulation_def1
+    from manipulation_definitions import mental_manipulation_def1
 
     from tree_of_thought import TreeOfThought  # adjust import path as needed
 
