@@ -185,4 +185,4 @@ def get_additional_fields(row: pd.Series, case_name: str) -> dict:
             "vulnerability": row.get("vulnerability") if "vulnerability" in row else None,
         }
     else:
-        return {}  # or raise ValueError if you want to be strict
+        return {}

@@ -7,7 +7,7 @@ import re
 import pandas as pd
 from cases import CaseConfig
 from profile_message import make_system_message
-from profile_message import PERSON_SEEDS as PERSON_SEEDS
+from profile_message import PERSON_SEEDS
 from typing import Literal
 
 DEFAULT_MODEL_DICT = {
@@ -25,7 +25,8 @@ class FewShot:
         n_shots: int = 1,
         examples_df: Optional[pd.DataFrame] = None,
         person_key: Optional[str] = None, 
-        role_playing: Literal["passive", "active", "none"] = "none"
+        role_playing: Literal["passive", "active", "none"] = "none",
+        person_seeds: Optional[dict[str, str]] = PERSON_SEEDS,
     ):
         self.case = case
         self.client = client
@@ -35,6 +36,7 @@ class FewShot:
         self.n_shots = n_shots
         self.person_key = person_key
         self.role_playing = role_playing
+        self.person_seeds = person_seeds
 
         self.total_tokens = 0
         self.total_prompt_tokens = 0
@@ -92,7 +94,7 @@ class FewShot:
         elif self.person_key is not None and self.role_playing == "active":
             content = (
                 f"You are a few-shot classifier for {self.case.case_name}.\n"
-                f"Please answer as if you were the following person:\n{PERSON_SEEDS[self.person_key]}"
+                f"Please answer as if you were the following person:\n{self.person_seeds[self.person_key]}"
             )
             system_message = {
                 "role": "system",

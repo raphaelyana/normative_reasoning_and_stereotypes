@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from utils import call_llm
 
 import openai
-
+import asyncio
 
 
 class DetectionType(str, Enum):
@@ -19,8 +19,6 @@ class DetectionType(str, Enum):
 
 
 class SeverityLevel(str, Enum):
-    """Optional – can be emitted by pipelines and used in tests/reports."""
-
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -41,8 +39,6 @@ class VerdictResult:
 
 @dataclass
 class TestCase:
-    """A labelled example used to check pipeline quality."""
-
     input_text: str
     expected_detection: bool
     detection_type: DetectionType
@@ -53,8 +49,6 @@ class TestCase:
 
 @dataclass
 class EvaluationResult:
-    """Outcome of judging *pipeline output* against *TestCase*."""
-
     reasoning_quality: float
     detection_accuracy: float
     normative_alignment: float
@@ -64,10 +58,7 @@ class EvaluationResult:
     timestamp: str
 
 
-
 class _BaseJudge:
-    """Shared internals for all low-level judges."""
-
     def __init__(
         self,
         client: openai.OpenAI,
@@ -82,11 +73,19 @@ class _BaseJudge:
 
     def evaluate(self, text: str) -> Dict[str, Any]:
         prompt = self._prompt(text)
-        raw = self._chat(prompt)
+        raw = self._chat_sync(prompt)
         return self._parse(raw)
-    
-    
-    def _chat(self, prompt: str) -> str:
+
+    def is_likely_wrong(self, text: str, target_label: str, threshold: float = 0.6) -> bool:
+        try:
+            output = self.evaluate(text)
+            label = output.get("label")
+            confidence = output.get("confidence", 0.0)
+            return (label != target_label) or (confidence < threshold)
+        except Exception:
+            return True
+
+    def _chat_sync(self, prompt: str) -> str:
         system_msg = (
             "You are a rigorous, fair, and consistent normative reasoning judge. "
             "Follow the rubric and output *only* valid JSON."
@@ -101,19 +100,17 @@ class _BaseJudge:
         )
         return response.choices[0].message.content.strip()
 
-
-    def _prompt(self, text: str) -> str:  
+    def _prompt(self, text: str) -> str:
         raise NotImplementedError
 
-    def _parse(self, raw: str) -> Dict[str, Any]: 
+    def _parse(self, raw: str) -> Dict[str, Any]:
         raise NotImplementedError
 
     def evaluate_reasoning_steps(self, steps: List[str]) -> List[Dict[str, Any]]:
-        """Evaluate each reasoning step using judge-specific prompts."""
         results = []
         for step in steps:
             prompt = self._step_prompt(step)
-            raw = self._chat(prompt)
+            raw = self._chat_sync(prompt)
             results.append(self._parse(raw))
         return results
 
@@ -126,27 +123,15 @@ class _BaseJudge:
         threshold: float = 0.6,
         label_filter: Optional[str] = None
     ) -> Dict[str, Any]:
-        """
-        Aggregate per-step verdicts into a single confidence score and locate the first low-confidence or mismatched step.
-        
-        Args:
-            step_verdicts: List of {"label": str, "confidence": float, "rationale": str}
-            threshold: Confidence threshold to mark a step as problematic
-            label_filter: Optional target label to enforce (e.g., all steps must match "stereotype")
-        
-        Returns:
-            Dict with: aggregate_confidence, first_error_index, verdicts
-        """
         confidences = [v.get("confidence", 0.0) for v in step_verdicts]
         labels = [v.get("label") for v in step_verdicts]
-    
+
         if not confidences:
             return {
                 "aggregate_confidence": 0.0,
                 "first_error_index": 0,
                 "step_verdicts": step_verdicts,
             }
-    
 
         if len(confidences) > 50:
             agg_conf = min(confidences)
@@ -163,13 +148,36 @@ class _BaseJudge:
             if label_filter and lbl != label_filter:
                 error_index = i
                 break
-    
+
         return {
             "aggregate_confidence": round(agg_conf, 3),
             "first_error_index": error_index,
             "step_verdicts": step_verdicts,
         }
     
+    async def _chat_async(self, prompt: str) -> str:
+        system_msg = (
+            "You are a rigorous, fair, and consistent normative reasoning judge. "
+            "Follow the rubric and output *only* valid JSON."
+        )
+        return await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: call_llm(
+                client=self.client,
+                model=self.model,
+                prompt=prompt,
+                system_message=system_msg,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+            ).choices[0].message.content.strip()
+        )
+    
+    async def evaluate_async(self, text: str) -> Dict[str, Any]:
+        prompt = self._prompt(text)
+        raw = await self._chat_async(prompt)
+        return self._parse(raw)
+
+
 
 
 class _ParseFallbackMixin:
