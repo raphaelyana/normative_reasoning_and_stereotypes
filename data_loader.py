@@ -171,16 +171,18 @@ def build_failure_augmented_sample(
     return df_final
 
 
-def get_additional_fields(row, case_name):
-    if case_name == "stereotype":
+def get_additional_fields(row: pd.Series, case_name: str) -> dict:
+    """Return extra metadata fields for a result row."""
+    key = case_name.lower().strip()
+    if key == "stereotype":
         return {
-            "stereotype_type": row.get("stereotype_type", None),
-            "original_dataset": row.get("original_dataset", None),
+            "stereotype_type": row.get("stereotype_type") if "stereotype_type" in row else None,
+            "original_dataset": row.get("original_dataset") if "original_dataset" in row else None,
         }
-    elif case_name == "manipulation":
+    elif key == "manipulation":
         return {
-            "technique": row.get("technique", None),
-            "vulnerability": row.get("vulnerability", None),
+            "technique": row.get("technique") if "technique" in row else None,
+            "vulnerability": row.get("vulnerability") if "vulnerability" in row else None,
         }
     else:
-        return {}
+        return {}  # or raise ValueError if you want to be strict
