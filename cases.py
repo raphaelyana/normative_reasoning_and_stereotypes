@@ -107,3 +107,11 @@ manipulation_case = CaseConfig(
     )
 )
 
+
+def get_case_config(task: str):
+    if task == "stereotype":
+        return stereotypes_case
+    elif task == "manipulation":
+        return manipulation_case
+    else:
+        raise ValueError(f"Unknown task: {task}")
