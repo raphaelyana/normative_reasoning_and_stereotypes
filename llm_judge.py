@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from statistics import mean, stdev
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Literal
 from utils import call_llm
 
 import openai
@@ -82,6 +82,14 @@ class _BaseJudge:
             label = output.get("label")
             confidence = output.get("confidence", 0.0)
             return (label != target_label) or (confidence < threshold)
+        except Exception:
+            return True
+        
+    def is_likely_uncertain(self, text: str, threshold: float = 0.6) -> bool:
+        try:
+            output = self.evaluate(text)
+            confidence = output.get("confidence", 0.0)
+            return confidence < threshold
         except Exception:
             return True
 
@@ -292,6 +300,19 @@ class NormativeJudge:
         if DetectionType.MANIPULATION in tasks:
             verdict["manipulation"] = self._manip.evaluate(text)
         return verdict
+    
+    def is_likely_uncertain(
+        self,
+        text: str,
+        detection_type: Literal["stereotype", "manipulation"] = "stereotype",
+        threshold: float = 0.6
+    ) -> bool:
+        if detection_type == "stereotype":
+            return self._ster.is_likely_uncertain(text, threshold=threshold)
+        elif detection_type == "manipulation":
+            return self._manip.is_likely_uncertain(text, threshold=threshold)
+        else:
+            raise ValueError(f"Unsupported detection type: {detection_type}")
 
 
 

@@ -1,0 +1,10 @@
+=== Classification Report for profile4_passive ===
+
+              precision    recall  f1-score   support
+
+  stereotype      0.742     0.656     0.696       250
+   unrelated      0.692     0.772     0.730       250
+
+    accuracy                          0.714       500
+   macro avg      0.717     0.714     0.713       500
+weighted avg      0.717     0.714     0.713       500

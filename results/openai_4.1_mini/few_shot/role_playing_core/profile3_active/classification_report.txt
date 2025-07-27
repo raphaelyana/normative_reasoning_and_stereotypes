@@ -1,0 +1,10 @@
+=== Classification Report for profile3_active ===
+
+              precision    recall  f1-score   support
+
+  stereotype      0.752     0.620     0.680       250
+   unrelated      0.677     0.796     0.732       250
+
+    accuracy                          0.708       500
+   macro avg      0.715     0.708     0.706       500
+weighted avg      0.715     0.708     0.706       500

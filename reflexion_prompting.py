@@ -81,8 +81,29 @@ Please reflect on the error. What was likely misunderstood? What should be done 
             max_tokens=150
         )
         return response.choices[0].message.content.strip()
+    
+    def _generate_uncertain_reflection(self, input_text: str, initial_pred: str) -> str:
+        """Generate a reflection without revealing the true label."""
+        prompt = f"""You were asked to classify the following input:
 
-    def classify(self, input_text: str, true_label: str) -> Dict[str, any]:
+Input: {input_text}
+
+You predicted: {initial_pred}
+
+Please reflect on your reasoning. Are there any assumptions, oversights, or ambiguous elements in the input that could have affected your prediction?
+
+Suggest what you could re-evaluate to improve your answer."""
+        
+        response = call_llm(
+            client=self.client,
+            model=self.model,
+            prompt=prompt,
+            system_message="You are a thoughtful analyst reflecting on possible reasoning flaws.",
+            max_tokens=150
+        )
+        return response.choices[0].message.content.strip()
+
+    def classify(self, input_text: str, true_label: str, certainty: bool = False) -> Dict[str, any]:
         """Run a prediction, judge it, and retry with reflection if needed."""
         system_message = self._build_system_message()
         initial_prompt = self._format_prompt(input_text)
@@ -99,8 +120,11 @@ Please reflect on the error. What was likely misunderstood? What should be done 
 
         initial_pred = initial_response.choices[0].message.content.strip()
 
-        judge_func = self.judge._ster if self.detection_type == "stereotype" else self.judge._manip
-        is_wrong = judge_func.is_likely_wrong(input_text, target_label=true_label)
+        if certainty:
+            judge_func = self.judge._ster if self.detection_type == "stereotype" else self.judge._manip
+            is_wrong = judge_func.is_likely_wrong(input_text, target_label=true_label)
+        else:
+            is_wrong = self.judge.is_likely_uncertain(input_text, detection_type=self.detection_type)
 
         if not is_wrong:
             return {
@@ -109,9 +133,14 @@ Please reflect on the error. What was likely misunderstood? What should be done 
                 "retried": False,
                 "reflection": None,
                 "latency": t1 - t0,
+                "label_free": not certainty
             }
 
-        reflection = self._get_reflection(input_text, wrong_pred=initial_pred, correct_label=true_label)
+        if certainty:
+            reflection = self._get_reflection(input_text, wrong_pred=initial_pred, correct_label=true_label)
+        if not certainty:
+            reflection = self._generate_uncertain_reflection(input_text, initial_pred=initial_pred)
+        
         retry_prompt = self._format_prompt(input_text, reflection=reflection)
 
         t2 = time.time()

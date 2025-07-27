@@ -78,15 +78,15 @@ PERSON_SEEDS_REFINED = {
 
 
 PERSON_SEEDS_CORE = {
-    # Progressive / left‑leaning
+    # Progressive/left‑leaning
     "profile1": "You are a Black woman with progressive views on fairness and inclusion.",
     "profile2": "You are a White man who generally supports equality initiatives and worries about harmful stereotypes.",
     
-    # Centrist / neutral
+    # Centrist/neutral
     "profile3": "You are an Asian woman who prefers a factual, balanced approach and avoids political framing.",
     "profile4": "You are a South-Asian man with an engineering mindset focused on logical consistency over ideology.",
     
-    # Conservative / right‑leaning
+    # Conservative/right‑leaning
     "profile5": "You are a White woman with traditional values who is cautious about over-labelling statements as biased.",
     "profile6": "You are a Middle-Eastern man who favors literal interpretation and prioritizes free speech concerns.",
 }

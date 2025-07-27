@@ -1,2 +1,0 @@
-profile,role,method,n_shots,accuracy,macro_f1
-profile2,active,zero_shot,0,0.73,0.7253585596582239
