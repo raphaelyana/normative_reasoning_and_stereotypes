@@ -586,3 +586,95 @@ def plot_bias_heatmap_matplotlib(merged: pd.DataFrame):
 
     plt.tight_layout()
     plt.show()
+
+
+def generate_person_report(
+    merged: pd.DataFrame,
+    persona_name: str,
+    output_dir: str,
+    tools: Dict[str, Any],
+    run_full_analysis: bool = False
+) -> None:
+    """
+    Generate a detailed report for a single persona or for all personas (if run_full_analysis=True).
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    if run_full_analysis:
+        report_df = tools["compute_classification_reports"](merged)
+        report_df.to_csv(os.path.join(output_dir, "classification_summary_all.csv"), index=False)
+
+        roleplay_report = tools["evaluate_role_playing_effects"](merged)
+        tools["print_report"](roleplay_report)
+
+        with open(os.path.join(output_dir, "evaluation_report_all.json"), "w") as f:
+            json.dump(roleplay_report, f, indent=2)
+
+        tools["plot_accuracy_deltas_with_ci"](merged)
+        plt.savefig(os.path.join(output_dir, "accuracy_delta_ci_all.png"))
+        plt.close()
+
+        tools["plot_deltas_per_category"](merged, category_col="stereotype_type")
+        plt.savefig(os.path.join(output_dir, "category_deltas_all.png"))
+        plt.close()
+
+        bias_df = tools["detect_systematic_biases"](merged)
+        bias_df.to_csv(os.path.join(output_dir, "bias_patterns_all.csv"), index=False)
+
+        stability = tools["analyze_temporal_stability"](merged)
+        with open(os.path.join(output_dir, "temporal_stability_all.json"), "w") as f:
+            json.dump(stability, f, indent=2)
+
+        disagreements = tools["extract_high_disagreement_cases"](merged)
+        disagreements.to_csv(os.path.join(output_dir, "high_disagreement_samples_all.csv"), index=False)
+
+        tools["plot_bias_heatmap_matplotlib"](merged)
+        plt.savefig(os.path.join(output_dir, "bias_heatmap_all.png"))
+        plt.close()
+
+        cluster_info = tools["analyze_persona_similarity"](merged)
+        cluster_info["linkage_matrix"] = cluster_info["linkage_matrix"].tolist()
+        cluster_info["distance_matrix"] = cluster_info["distance_matrix"].tolist()
+        with open(os.path.join(output_dir, "clustering_summary_all.json"), "w") as f:
+            json.dump(cluster_info, f, indent=2)
+
+    else:
+        subset = merged[["sample_id", "true_label", "base_pred", persona_name, "stereotype_type"]].copy()
+        subset = subset.rename(columns={persona_name: "pred_label"})
+
+        report_df = tools["compute_classification_reports"](merged[["true_label", "base_pred", persona_name]])
+        report_df.to_csv(os.path.join(output_dir, f"{persona_name}_classification_summary.csv"), index=False)
+
+        roleplay_report = tools["evaluate_role_playing_effects"](merged)
+        tools["print_report"](roleplay_report)
+
+        with open(os.path.join(output_dir, f"{persona_name}_evaluation_report.json"), "w") as f:
+            json.dump(roleplay_report, f, indent=2)
+
+        tools["plot_accuracy_deltas_with_ci"](merged[["true_label", "base_pred", persona_name]])
+        plt.savefig(os.path.join(output_dir, f"{persona_name}_accuracy_delta_ci.png"))
+        plt.close()
+
+        tools["plot_confusion_matrix"](subset["true_label"], subset["pred_label"],
+                                       title=f"Confusion Matrix - {persona_name}")
+        plt.savefig(os.path.join(output_dir, f"{persona_name}_confusion_matrix.png"))
+        plt.close()
+
+        rescue_df = tools["rescue_stats_by_category"](merged, category_col="stereotype_type")
+        rescue_df = rescue_df[rescue_df["profile"] == persona_name]
+        rescue_df.to_csv(os.path.join(output_dir, f"{persona_name}_rescue_stats.csv"), index=False)
+
+        bias_df = tools["detect_systematic_biases"](merged)
+        bias_df = bias_df[bias_df["profile"] == persona_name]
+        bias_df.to_csv(os.path.join(output_dir, f"{persona_name}_bias_patterns.csv"), index=False)
+
+        stability = tools["analyze_temporal_stability"](merged[["true_label", persona_name]])
+        with open(os.path.join(output_dir, f"{persona_name}_temporal_stability.json"), "w") as f:
+            json.dump(stability[persona_name], f, indent=2)
+
+        disagreements = tools["extract_high_disagreement_cases"](merged)
+        disagreements.to_csv(os.path.join(output_dir, f"{persona_name}_high_disagreement_samples.csv"), index=False)
+
+        tools["plot_bias_heatmap_matplotlib"](merged[["true_label", "base_pred", "stereotype_type", persona_name]])
+        plt.savefig(os.path.join(output_dir, f"{persona_name}_bias_heatmap.png"))
+        plt.close()
