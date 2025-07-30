@@ -12,10 +12,15 @@ from matplotlib.ticker import MaxNLocator
 
 from sklearn.metrics import accuracy_score, classification_report, adjusted_rand_score
 from sklearn.model_selection import KFold
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import LabelEncoder
 
+from scipy import stats
 from statsmodels.stats.contingency_tables import mcnemar
 from statsmodels.stats.multitest import multipletests
-from scipy.stats import bootstrap, binom
+from scipy.stats import (
+    bootstrap, binom, f_oneway, ttest_ind, kruskal, mannwhitneyu, pearsonr, spearmanr
+)
 
 from scipy.spatial.distance import squareform
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
@@ -173,98 +178,6 @@ def print_report(report):
 def compute_accuracy(y_true, y_pred):
     return np.mean(np.array(y_true) == np.array(y_pred))
 
-def plot_accuracy_deltas_with_ci(df):
-    base = df["base_pred"]
-    true = df["true_label"]
-    profile_cols = [col for col in df.columns if col.startswith("profile")]
-
-    deltas = []
-    ci_lows = []
-    ci_highs = []
-
-    base_acc = compute_accuracy(true, base)
-
-    for profile in profile_cols:
-        pred = df[profile]
-        acc = compute_accuracy(true, pred)
-        delta = acc - base_acc
-        deltas.append(delta)
-
-        bootstraps = []
-        for _ in range(1000):
-            idx = np.random.choice(len(df), size=len(df), replace=True)
-            boot_acc = compute_accuracy(true.iloc[idx], pred.iloc[idx])
-            bootstraps.append(boot_acc - base_acc)
-        ci_lows.append(np.percentile(bootstraps, 2.5))
-        ci_highs.append(np.percentile(bootstraps, 97.5))
-
-    x = np.arange(len(profile_cols))
-    plt.figure(figsize=(12, 6))
-    plt.bar(x, deltas, yerr=[np.array(deltas) - np.array(ci_lows), np.array(ci_highs) - np.array(deltas)],
-            capsize=5)
-    plt.xticks(x, profile_cols, rotation=45, ha='right')
-    plt.axhline(0, color='gray', linestyle='--')
-    plt.title("Δ Accuracy vs Baseline (± 95% CI)")
-    plt.ylabel("Δ Accuracy")
-    plt.tight_layout()
-    plt.grid(True, axis='y')
-    plt.show()
-
-def plot_confusion_matrix(y_true, y_pred, title="Confusion Matrix"):
-    labels = sorted(list(set(y_true) | set(y_pred)))
-    matrix = pd.crosstab(pd.Series(y_true, name='Actual'),
-                         pd.Series(y_pred, name='Predicted'),
-                         dropna=False)
-
-    fig, ax = plt.subplots(figsize=(6, 5))
-    im = ax.imshow(matrix, cmap='Blues')
-
-    for i in range(len(matrix.index)):
-        for j in range(len(matrix.columns)):
-            ax.text(j, i, matrix.values[i, j],
-                    ha='center', va='center',
-                    color='black')
-
-    ax.set_xticks(np.arange(len(matrix.columns)))
-    ax.set_yticks(np.arange(len(matrix.index)))
-    ax.set_xticklabels(matrix.columns)
-    ax.set_yticklabels(matrix.index)
-    ax.set_xlabel("Predicted")
-    ax.set_ylabel("Actual")
-    ax.set_title(title)
-    fig.colorbar(im)
-    plt.tight_layout()
-    plt.show()
-
-def plot_deltas_per_category(df, category_col):
-    base = df["base_pred"]
-    true = df["true_label"]
-    profile_cols = [col for col in df.columns if col.startswith("profile")]
-    categories = df[category_col].unique()
-
-    fig, ax = plt.subplots(figsize=(14, 6))
-    width = 0.1
-    x = np.arange(len(categories))
-
-    for i, profile in enumerate(profile_cols):
-        deltas = []
-        for cat in categories:
-            sub_df = df[df[category_col] == cat]
-            base_acc = compute_accuracy(sub_df["true_label"], sub_df["base_pred"])
-            prof_acc = compute_accuracy(sub_df["true_label"], sub_df[profile])
-            deltas.append(prof_acc - base_acc)
-
-        ax.bar(x + i*width, deltas, width=width, label=profile)
-
-    ax.set_xticks(x + width * len(profile_cols) / 2)
-    ax.set_xticklabels(categories, rotation=45, ha='right')
-    ax.axhline(0, color='gray', linestyle='--')
-    ax.set_ylabel("Δ Accuracy")
-    ax.set_title(f"Δ Accuracy per {category_col}")
-    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.tight_layout()
-    plt.grid(True, axis='y')
-    plt.show()
 
 def compute_classification_reports(merged_df):
     true = merged_df["true_label"].astype(str).str.strip().str.lower()
@@ -521,383 +434,12 @@ def extract_high_disagreement_cases(merged: pd.DataFrame, threshold: float = 0.7
     
     return high_disagreement.sort_values('disagreement_score', ascending=False)
 
-def analyze_temporal_stability(merged: pd.DataFrame, n_folds: int = 5) -> Dict[str, Any]:
-    """Check if persona effects are stable across data splits"""
-    
-    
-    profile_cols = [col for col in merged.columns if col.startswith("profile")]
-    kf = KFold(n_splits=n_folds, shuffle=True, random_state=42)
-    
-    fold_results = {profile: [] for profile in profile_cols}
-    
-    for fold, (train_idx, test_idx) in enumerate(kf.split(merged)):
-        test_data = merged.iloc[test_idx]
-        
-        # Calculate accuracy for each profile on this fold
-        for profile in profile_cols:
-            acc = accuracy_score(
-                test_data["true_label"], 
-                test_data[profile]
-            )
-            fold_results[profile].append(acc)
-    
-    # Analyze stability
-    stability_analysis = {}
-    for profile, accs in fold_results.items():
-        stability_analysis[profile] = {
-            'mean_accuracy': np.mean(accs),
-            'std_accuracy': np.std(accs),
-            'cv_coefficient': np.std(accs) / np.mean(accs) if np.mean(accs) > 0 else np.inf,
-            'fold_accuracies': accs
-        }
-    
-    return stability_analysis
-
-
-
-def plot_bias_heatmap_matplotlib(merged: pd.DataFrame):
-    """Matplotlib version of heatmap showing which personas favor which labels for each category"""
-    
-    profile_cols = [col for col in merged.columns if col.startswith("profile")]
-    categories = merged["stereotype_type"].unique()
-    
-    # Calculate bias matrix
-    bias_matrix = np.zeros((len(categories), len(profile_cols)))
-    
-    for i, cat in enumerate(categories):
-        cat_data = merged[merged["stereotype_type"] == cat]
-        base_yes_rate = (cat_data["base_pred"] == "yes").mean()
-        
-        for j, profile in enumerate(profile_cols):
-            profile_yes_rate = (cat_data[profile] == "yes").mean()
-            # Positive = more likely to say yes, Negative = more likely to say no
-            bias_matrix[i, j] = profile_yes_rate - base_yes_rate
-    
-    fig, ax = plt.subplots(figsize=(12, 8))
-    cax = ax.imshow(bias_matrix, cmap='RdBu_r', aspect='auto', interpolation='nearest', vmin=-1, vmax=1)
-    fig.colorbar(cax, label='Bias (vs baseline)', ax=ax)
-
-    ax.set_xticks(np.arange(len(profile_cols)))
-    ax.set_yticks(np.arange(len(categories)))
-    ax.set_xticklabels([p.replace("profile", "P") for p in profile_cols], rotation=45, ha='right')
-    ax.set_yticklabels(categories)
-    ax.set_title("Persona Bias by Stereotype Category")
-
-    for i in range(len(categories)):
-        for j in range(len(profile_cols)):
-            ax.text(j, i, f"{bias_matrix[i, j]:.2f}", ha='center', va='center', color='black')
-
-    plt.tight_layout()
-    plt.show()
-
-
-def generate_person_report(
-    merged: pd.DataFrame,
-    persona_name: str,
-    output_dir: str,
-    tools: Dict[str, Any],
-    run_full_analysis: bool = False
-) -> None:
-    """
-    Generate a detailed report for a single persona or for all personas (if run_full_analysis=True).
-    """
-    os.makedirs(output_dir, exist_ok=True)
-
-    if run_full_analysis:
-        report_df = tools["compute_classification_reports"](merged)
-        report_df.to_csv(os.path.join(output_dir, "classification_summary_all.csv"), index=False)
-
-        roleplay_report = tools["evaluate_role_playing_effects"](merged)
-        tools["print_report"](roleplay_report)
-
-        with open(os.path.join(output_dir, "evaluation_report_all.json"), "w") as f:
-            json.dump(roleplay_report, f, indent=2)
-
-        tools["plot_accuracy_deltas_with_ci"](merged)
-        plt.savefig(os.path.join(output_dir, "accuracy_delta_ci_all.png"))
-        plt.close()
-
-        tools["plot_deltas_per_category"](merged, category_col="stereotype_type")
-        plt.savefig(os.path.join(output_dir, "category_deltas_all.png"))
-        plt.close()
-
-        bias_df = tools["detect_systematic_biases"](merged)
-        bias_df.to_csv(os.path.join(output_dir, "bias_patterns_all.csv"), index=False)
-
-        stability = tools["analyze_temporal_stability"](merged)
-        with open(os.path.join(output_dir, "temporal_stability_all.json"), "w") as f:
-            json.dump(stability, f, indent=2)
-
-        disagreements = tools["extract_high_disagreement_cases"](merged)
-        disagreements.to_csv(os.path.join(output_dir, "high_disagreement_samples_all.csv"), index=False)
-
-        tools["plot_bias_heatmap_matplotlib"](merged)
-        plt.savefig(os.path.join(output_dir, "bias_heatmap_all.png"))
-        plt.close()
-
-        cluster_info = tools["analyze_persona_similarity"](merged)
-        cluster_info["linkage_matrix"] = cluster_info["linkage_matrix"].tolist()
-        cluster_info["distance_matrix"] = cluster_info["distance_matrix"].tolist()
-        with open(os.path.join(output_dir, "clustering_summary_all.json"), "w") as f:
-            json.dump(cluster_info, f, indent=2)
-
-    else:
-        subset = merged[["sample_id", "true_label", "base_pred", persona_name, "stereotype_type"]].copy()
-        subset = subset.rename(columns={persona_name: "pred_label"})
-
-        report_df = tools["compute_classification_reports"](merged[["true_label", "base_pred", persona_name]])
-        report_df.to_csv(os.path.join(output_dir, f"{persona_name}_classification_summary.csv"), index=False)
-
-        roleplay_report = tools["evaluate_role_playing_effects"](merged)
-        tools["print_report"](roleplay_report)
-
-        with open(os.path.join(output_dir, f"{persona_name}_evaluation_report.json"), "w") as f:
-            json.dump(roleplay_report, f, indent=2)
-
-        tools["plot_accuracy_deltas_with_ci"](merged[["true_label", "base_pred", persona_name]])
-        plt.savefig(os.path.join(output_dir, f"{persona_name}_accuracy_delta_ci.png"))
-        plt.close()
-
-        tools["plot_confusion_matrix"](subset["true_label"], subset["pred_label"],
-                                       title=f"Confusion Matrix - {persona_name}")
-        plt.savefig(os.path.join(output_dir, f"{persona_name}_confusion_matrix.png"))
-        plt.close()
-
-        rescue_df = tools["rescue_stats_by_category"](merged, category_col="stereotype_type")
-        rescue_df = rescue_df[rescue_df["profile"] == persona_name]
-        rescue_df.to_csv(os.path.join(output_dir, f"{persona_name}_rescue_stats.csv"), index=False)
-
-        bias_df = tools["detect_systematic_biases"](merged)
-        bias_df = bias_df[bias_df["profile"] == persona_name]
-        bias_df.to_csv(os.path.join(output_dir, f"{persona_name}_bias_patterns.csv"), index=False)
-
-        stability = tools["analyze_temporal_stability"](merged[["true_label", persona_name]])
-        with open(os.path.join(output_dir, f"{persona_name}_temporal_stability.json"), "w") as f:
-            json.dump(stability[persona_name], f, indent=2)
-
-        disagreements = tools["extract_high_disagreement_cases"](merged)
-        disagreements.to_csv(os.path.join(output_dir, f"{persona_name}_high_disagreement_samples.csv"), index=False)
-
-        tools["plot_bias_heatmap_matplotlib"](merged[["true_label", "base_pred", "stereotype_type", persona_name]])
-        plt.savefig(os.path.join(output_dir, f"{persona_name}_bias_heatmap.png"))
-        plt.close()
-
-
-
-from scipy.stats import f_oneway, ttest_ind
-import numpy as np
-
-def analyze_demographic_effects(merged_df):
-    """
-    Test main effects of gender and ethnicity on stereotype detection.
-    This is specifically for your 30-persona factorial design.
-    """
-    
-
-    MEN_PROFILES = [f"profile{i}_passive" for i in [1,2,3,4,5, 11,12,13,14,15, 21,22,23,24,25]]
-    WOMEN_PROFILES = [f"profile{i}_passive" for i in [6,7,8,9,10, 16,17,18,19,20, 26,27,28,29,30]]
-    WHITE_PROFILES = [f"profile{i}_passive" for i in range(1, 11)]
-    BLACK_PROFILES = [f"profile{i}_passive" for i in range(11, 21)]
-    ASIAN_PROFILES = [f"profile{i}_passive" for i in range(21, 31)]
-    
-    results = {}
-    
-    men_accuracy = []
-    women_accuracy = []
-    
-    for profile in MEN_PROFILES:
-        if profile in merged_df.columns:
-            acc = (merged_df[profile] == merged_df['true_label']).mean()
-            men_accuracy.append(acc)
-            
-    for profile in WOMEN_PROFILES:
-        if profile in merged_df.columns:
-            acc = (merged_df[profile] == merged_df['true_label']).mean()
-            women_accuracy.append(acc)
-    
-    if men_accuracy and women_accuracy:
-        t_stat, p_val = ttest_ind(men_accuracy, women_accuracy)
-        results['gender_effect'] = {
-            'men_mean': np.mean(men_accuracy),
-            'women_mean': np.mean(women_accuracy),
-            'difference': np.mean(women_accuracy) - np.mean(men_accuracy),
-            'p_value': p_val,
-            'significant': p_val < 0.05
-        }
-    
-    white_accuracy = []
-    black_accuracy = []
-    asian_accuracy = []
-    
-    for profile in WHITE_PROFILES:
-        if profile in merged_df.columns:
-            acc = (merged_df[profile] == merged_df['true_label']).mean()
-            white_accuracy.append(acc)
-            
-    for profile in BLACK_PROFILES:
-        if profile in merged_df.columns:
-            acc = (merged_df[profile] == merged_df['true_label']).mean()
-            black_accuracy.append(acc)
-            
-    for profile in ASIAN_PROFILES:
-        if profile in merged_df.columns:
-            acc = (merged_df[profile] == merged_df['true_label']).mean()
-            asian_accuracy.append(acc)
-    
-    if white_accuracy and black_accuracy and asian_accuracy:
-        f_stat, p_val = f_oneway(white_accuracy, black_accuracy, asian_accuracy)
-        results['ethnicity_effect'] = {
-            'white_mean': np.mean(white_accuracy),
-            'black_mean': np.mean(black_accuracy), 
-            'asian_mean': np.mean(asian_accuracy),
-            'f_statistic': f_stat,
-            'p_value': p_val,
-            'significant': p_val < 0.05
-        }
-    
-    return results
-
-def analyze_cognitive_effects(merged_df):
-    """
-    Test main effects of cognitive styles on stereotype detection.
-    """
-    
-    # Define cognitive groups
-    EXPANSIVE_PROFILES = [f"profile{i}_passive" for i in [1,6,11,16,21,26]]
-    LITERAL_PROFILES = [f"profile{i}_passive" for i in [2,7,12,17,22,27]]
-    HIGH_HARM_PROFILES = [f"profile{i}_passive" for i in [3,8,13,18,23,28]]
-    LOW_HARM_PROFILES = [f"profile{i}_passive" for i in [4,9,14,19,24,29]]
-    
-    results = {}
-    
-    # Interpretation style effect
-    expansive_acc = []
-    literal_acc = []
-    
-    for profile in EXPANSIVE_PROFILES:
-        if profile in merged_df.columns:
-            acc = (merged_df[profile] == merged_df['true_label']).mean()
-            expansive_acc.append(acc)
-            
-    for profile in LITERAL_PROFILES:
-        if profile in merged_df.columns:
-            acc = (merged_df[profile] == merged_df['true_label']).mean()
-            literal_acc.append(acc)
-    
-    if expansive_acc and literal_acc:
-        t_stat, p_val = ttest_ind(expansive_acc, literal_acc)
-        results['interpretation_style'] = {
-            'expansive_mean': np.mean(expansive_acc),
-            'literal_mean': np.mean(literal_acc),
-            'difference': np.mean(expansive_acc) - np.mean(literal_acc),
-            'p_value': p_val,
-            'significant': p_val < 0.05
-        }
-    
-    # Harm sensitivity effect
-    high_harm_acc = []
-    low_harm_acc = []
-    
-    for profile in HIGH_HARM_PROFILES:
-        if profile in merged_df.columns:
-            acc = (merged_df[profile] == merged_df['true_label']).mean()
-            high_harm_acc.append(acc)
-            
-    for profile in LOW_HARM_PROFILES:
-        if profile in merged_df.columns:
-            acc = (merged_df[profile] == merged_df['true_label']).mean()
-            low_harm_acc.append(acc)
-    
-    if high_harm_acc and low_harm_acc:
-        t_stat, p_val = ttest_ind(high_harm_acc, low_harm_acc)
-        results['harm_sensitivity'] = {
-            'high_harm_mean': np.mean(high_harm_acc),
-            'low_harm_mean': np.mean(low_harm_acc),
-            'difference': np.mean(high_harm_acc) - np.mean(low_harm_acc),
-            'p_value': p_val,
-            'significant': p_val < 0.05
-        }
-    
-    return results
-
-
-def test_own_group_sensitivity(merged_df):
-    """
-    Test if personas detect stereotypes about their own demographic groups differently.
-    """
-    results = {}
-    
-    if 'stereotype_type' in merged_df.columns:
-        # Test Black personas on race stereotypes
-        race_subset = merged_df[merged_df['stereotype_type'] == 'race']
-        if len(race_subset) > 0:
-            BLACK_PROFILES = [f"profile{i}_passive" for i in range(11, 21)]
-            NONBLACK_PROFILES = [f"profile{i}_passive" for i in list(range(1, 11)) + list(range(21, 31))]
-            
-            black_accs = []
-            nonblack_accs = []
-            
-            for profile in BLACK_PROFILES:
-                if profile in race_subset.columns:
-                    acc = (race_subset[profile] == race_subset['true_label']).mean()
-                    black_accs.append(acc)
-            
-            for profile in NONBLACK_PROFILES:
-                if profile in race_subset.columns:
-                    acc = (race_subset[profile] == race_subset['true_label']).mean()
-                    nonblack_accs.append(acc)
-            
-            if black_accs and nonblack_accs:
-                t_stat, p_val = ttest_ind(black_accs, nonblack_accs)
-                
-                results['black_on_race'] = {
-                    'black_accuracy': np.mean(black_accs),
-                    'nonblack_accuracy': np.mean(nonblack_accs),
-                    'difference': np.mean(black_accs) - np.mean(nonblack_accs),
-                    'p_value': p_val,
-                    'interpretation': 'Higher accuracy suggests better alignment with annotator reasoning on race stereotypes'
-                }
-        
-        # Test Women personas on gender stereotypes
-        gender_subset = merged_df[merged_df['stereotype_type'] == 'gender']
-        if len(gender_subset) > 0:
-            WOMEN_PROFILES = [f"profile{i}_passive" for i in [6,7,8,9,10, 16,17,18,19,20, 26,27,28,29,30]]
-            MEN_PROFILES = [f"profile{i}_passive" for i in [1,2,3,4,5, 11,12,13,14,15, 21,22,23,24,25]]
-            
-            women_accs = []
-            men_accs = []
-            
-            for profile in WOMEN_PROFILES:
-                if profile in gender_subset.columns:
-                    acc = (gender_subset[profile] == gender_subset['true_label']).mean()
-                    women_accs.append(acc)
-            
-            for profile in MEN_PROFILES:
-                if profile in gender_subset.columns:
-                    acc = (gender_subset[profile] == gender_subset['true_label']).mean()
-                    men_accs.append(acc)
-            
-            if women_accs and men_accs:
-                t_stat, p_val = ttest_ind(women_accs, men_accs)
-                
-                results['women_on_gender'] = {
-                    'women_accuracy': np.mean(women_accs),
-                    'men_accuracy': np.mean(men_accs),
-                    'difference': np.mean(women_accs) - np.mean(men_accs),
-                    'p_value': p_val,
-                    'interpretation': 'Higher accuracy suggests better alignment with annotator reasoning on gender stereotypes'
-                }
-    
-    return results
-
 def test_comprehensive_own_group_sensitivity(merged_df):
     """
     Test ALL demographic groups for own-group sensitivity effects.
     This tests if each group handles stereotypes about their demographics differently.
     """
-    from scipy.stats import ttest_ind
-    import numpy as np
-    
+ 
     results = {}
     
     if 'stereotype_type' in merged_df.columns:
@@ -908,12 +450,10 @@ def test_comprehensive_own_group_sensitivity(merged_df):
         race_subset = merged_df[merged_df['stereotype_type'] == 'race']
         if len(race_subset) > 0:
             
-            # Define ethnic groups
             WHITE_PROFILES = [f"profile{i}_passive" for i in range(1, 11)]
             BLACK_PROFILES = [f"profile{i}_passive" for i in range(11, 21)]
             ASIAN_PROFILES = [f"profile{i}_passive" for i in range(21, 31)]
             
-            # Calculate accuracies for each ethnic group on race stereotypes
             white_on_race = []
             black_on_race = []
             asian_on_race = []
@@ -933,7 +473,6 @@ def test_comprehensive_own_group_sensitivity(merged_df):
                     acc = (race_subset[profile] == race_subset['true_label']).mean()
                     asian_on_race.append(acc)
             
-            # Compare each group to others
             if white_on_race and black_on_race:
                 t_stat, p_val = ttest_ind(white_on_race, black_on_race)
                 results['white_vs_black_on_race'] = {
@@ -1184,132 +723,10 @@ def print_comprehensive_own_group_results(results):
 
 
 
-def run_factorial_analysis(merged_df):
-    """
-    Main function to run complete factorial design analysis.
-    """
-    
-    print("=" * 80)
-    print("FACTORIAL DESIGN ANALYSIS - 30 PERSONA STUDY")
-    print("=" * 80)
-    
-    # 1. Demographic effects
-    print("\n=== DEMOGRAPHIC EFFECTS ===")
-    demo_results = analyze_demographic_effects(merged_df)
-    
-    if 'gender_effect' in demo_results:
-        g = demo_results['gender_effect']
-        print(f"Gender Effect:")
-        print(f"  Men accuracy: {g['men_mean']:.4f}")
-        print(f"  Women accuracy: {g['women_mean']:.4f}")
-        print(f"  Difference: {g['difference']:.4f}")
-        print(f"  P-value: {g['p_value']:.4f}")
-        print(f"  Significant: {g['significant']}")
-    
-    if 'ethnicity_effect' in demo_results:
-        e = demo_results['ethnicity_effect']
-        print(f"\nEthnicity Effect:")
-        print(f"  White accuracy: {e['white_mean']:.4f}")
-        print(f"  Black accuracy: {e['black_mean']:.4f}")
-        print(f"  Asian accuracy: {e['asian_mean']:.4f}")
-        print(f"  P-value: {e['p_value']:.4f}")
-        print(f"  Significant: {e['significant']}")
-    
-    # 2. Cognitive effects
-    print("\n=== COGNITIVE EFFECTS ===")
-    cog_results = analyze_cognitive_effects(merged_df)
-    
-    if 'interpretation_style' in cog_results:
-        i = cog_results['interpretation_style']
-        print(f"Interpretation Style Effect:")
-        print(f"  Expansive accuracy: {i['expansive_mean']:.4f}")
-        print(f"  Literal accuracy: {i['literal_mean']:.4f}")
-        print(f"  Difference: {i['difference']:.4f}")
-        print(f"  P-value: {i['p_value']:.4f}")
-        print(f"  Significant: {i['significant']}")
-    
-    if 'harm_sensitivity' in cog_results:
-        h = cog_results['harm_sensitivity']
-        print(f"\nHarm Sensitivity Effect:")
-        print(f"  High harm accuracy: {h['high_harm_mean']:.4f}")
-        print(f"  Low harm accuracy: {h['low_harm_mean']:.4f}")
-        print(f"  Difference: {h['difference']:.4f}")
-        print(f"  P-value: {h['p_value']:.4f}")
-        print(f"  Significant: {h['significant']}")
-    
-    # 3. Own-group sensitivity
-    print("\n=== OWN-GROUP SENSITIVITY ===")
-    own_group_results = test_own_group_sensitivity(merged_df)
-    
-    for effect, data in own_group_results.items():
-        print(f"{effect}:")
-        print(f"  Difference: {data['difference']:.4f}")
-        print(f"  P-value: {data['p_value']:.4f}")
-        print(f"  {data['interpretation']}")
-    
-    return {
-        'demographic_effects': demo_results,
-        'cognitive_effects': cog_results,
-        'own_group_sensitivity': own_group_results
-    }
-
-
-
-def evaluate_with_correction_per_category(merged: pd.DataFrame) -> dict:
-    """
-    Apply multiple testing correction (FDR) separately within each stereotype category.
-    Returns a dict of DataFrames, one per category.
-    """
-    categories = merged['stereotype_type'].unique()
-    all_results = {}
-
-    for cat in categories:
-        subset = merged[merged['stereotype_type'] == cat]
-        result = evaluate_role_playing_effects(subset)
-
-        # Extract p-values
-        p_values = []
-        profile_names = []
-
-        for profile, (pval, _) in result["mcnemar_tests"].items():
-            if not np.isnan(pval):
-                p_values.append(pval)
-                profile_names.append(profile)
-
-        if not p_values:
-            continue  # skip category if no testable profiles
-
-        # Apply FDR correction
-        reject, pvals_corrected, _, _ = multipletests(
-            p_values, alpha=0.05, method='fdr_bh'
-        )
-
-        summary = pd.DataFrame({
-            'profile': profile_names,
-            'p_value_raw': p_values,
-            'p_value_corrected': pvals_corrected,
-            'significant': reject,
-            'accuracy_delta': [result["accuracy_differences"][p] for p in profile_names]
-        })
-
-        all_results[cat] = summary.sort_values('p_value_corrected')
-
-    return all_results
-
-
 # ============================================================================
 # TIER 1 ANALYSES: FACTORIAL ANALYSIS & RISK-BENEFIT FRONTIER
-# Add these functions to your analysis_tools.py
 # ============================================================================
 
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from scipy import stats
-from scipy.stats import f_oneway, ttest_ind
-from itertools import combinations
-from sklearn.metrics import accuracy_score
 
 def factorial_analysis_3way_anova(merged_df):
     """
@@ -1835,16 +1252,7 @@ def calculate_effect_sizes(merged_df, significant_findings):
     return effect_sizes
 
 
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from scipy import stats
-from scipy.stats import kruskal, mannwhitneyu
-from sklearn.metrics import accuracy_score
-from collections import Counter
-import warnings
-warnings.filterwarnings('ignore')
+### Tier 2 beginning
 
 def ensemble_by_trait_analysis(merged_df):
     """
@@ -2530,12 +1938,12 @@ def visualize_tier2_results(ensemble_results, cluster_results, cognitive_results
     
     # Color mapping for archetypes
     archetype_colors = {
-        '🎯 Safely Bold': '#2ca02c',
-        '🛡️ Ultra Safe': '#1f77b4', 
-        '⚡ High Rescue': '#ff7f0e',
-        '🔥 High Performer': '#d62728',
-        '🤝 Highly Consistent': '#9467bd',
-        '⚖️ Balanced': '#8c564b'
+        'Safely Bold': '#2ca02c',
+        'Ultra Safe': '#1f77b4', 
+        'High Rescue': '#ff7f0e',
+        'High Performer': '#d62728',
+        'Highly Consistent': '#9467bd',
+        'Balanced': '#8c564b'
     }
     
     for cluster_id, cluster_info in cluster_data.items():
@@ -2730,4 +2138,1059 @@ def run_tier2_analysis(merged_df):
             'performance_improvement': ensemble_improvement,
             'safety_rate': safety_rate
         }
+    }
+
+
+# ============================================================================
+# TIER 3 ANALYSES: TEMPORAL STABILITY vs BOLDNESS & CAUSAL MODELING
+# Add these functions to your analysis_tools.py
+# ============================================================================
+
+def temporal_stability_vs_boldness_analysis(merged_df, n_folds=5):
+    """
+    Temporal Stability vs Boldness Tradeoff Analysis
+    
+    Tests if *unstable profiles* actually make better moral calls by examining:
+    - Volatility (std dev across cross-validation runs)  
+    - Boldness (rescue rate, bias magnitude)
+    - Moral value (alignment with normative judgments)
+    
+    Reveals whether *risk-taking* profiles are **normatively valuable** 
+    despite being volatile.
+    """
+    
+    print("=" * 80)
+    print("TEMPORAL STABILITY vs BOLDNESS TRADEOFF ANALYSIS")
+    print("=" * 80)
+    
+    # Get profile columns
+    profile_cols = [col for col in merged_df.columns if col.startswith("profile") and "_passive" in col]
+    
+    # ========================================================================
+    # STEP 1: Calculate Temporal Stability (Cross-Validation Volatility)
+    # ========================================================================
+    
+    kf = KFold(n_splits=n_folds, shuffle=True, random_state=42)
+    stability_data = {}
+    
+    print(f"📊 Calculating temporal stability across {n_folds} folds...")
+    
+    for profile in profile_cols:
+        if profile not in merged_df.columns:
+            continue
+            
+        fold_accuracies = []
+        fold_rescue_rates = []
+        fold_bias_magnitudes = []
+        
+        for fold, (train_idx, test_idx) in enumerate(kf.split(merged_df)):
+            test_data = merged_df.iloc[test_idx]
+            
+            # Accuracy on this fold
+            acc = accuracy_score(test_data['true_label'], test_data[profile])
+            fold_accuracies.append(acc)
+            
+            # Rescue rate on this fold
+            base_correct = (test_data['base_pred'] == test_data['true_label'])
+            profile_correct = (test_data[profile] == test_data['true_label'])
+            rescued = ((~base_correct) & profile_correct).sum()
+            base_errors = (~base_correct).sum()
+            rescue_rate = rescued / base_errors if base_errors > 0 else 0
+            fold_rescue_rates.append(rescue_rate)
+            
+            # Bias magnitude on this fold (simplified)
+            base_preds = test_data['base_pred']
+            profile_preds = test_data[profile]
+            
+            to_positive = ((base_preds == "no") & (profile_preds == "yes")).sum()
+            to_negative = ((base_preds == "yes") & (profile_preds == "no")).sum()
+            bias_magnitude = abs(to_positive - to_negative) / len(test_data)
+            fold_bias_magnitudes.append(bias_magnitude)
+        
+        # Calculate stability metrics
+        stability_data[profile] = {
+            'accuracy_mean': np.mean(fold_accuracies),
+            'accuracy_std': np.std(fold_accuracies),
+            'accuracy_cv': np.std(fold_accuracies) / np.mean(fold_accuracies) if np.mean(fold_accuracies) > 0 else np.inf,
+            'rescue_rate_mean': np.mean(fold_rescue_rates),
+            'rescue_rate_std': np.std(fold_rescue_rates),
+            'rescue_rate_cv': np.std(fold_rescue_rates) / np.mean(fold_rescue_rates) if np.mean(fold_rescue_rates) > 0 else np.inf,
+            'bias_magnitude_mean': np.mean(fold_bias_magnitudes),
+            'bias_magnitude_std': np.std(fold_bias_magnitudes),
+            'fold_accuracies': fold_accuracies,
+            'fold_rescue_rates': fold_rescue_rates,
+            'fold_bias_magnitudes': fold_bias_magnitudes
+        }
+    
+    # ========================================================================
+    # STEP 2: Define Boldness Metrics
+    # ========================================================================
+    
+    print("⚡ Calculating boldness metrics...")
+    
+    # Get rescue stats and bias patterns for boldness calculation
+    rescue_stats = rescue_stats_by_category(merged_df, category_col="stereotype_type")
+    bias_patterns = detect_systematic_biases(merged_df, category_col="stereotype_type")
+    
+    boldness_data = {}
+    
+    for profile in profile_cols:
+        if profile not in stability_data:
+            continue
+            
+        # Boldness metric 1: Rescue effectiveness
+        profile_rescue = rescue_stats[rescue_stats['profile'] == profile]
+        avg_rescue_rate = profile_rescue['rescue_rate'].mean() if len(profile_rescue) > 0 else 0
+        
+        # Boldness metric 2: Willingness to disagree with baseline (flip rate)
+        profile_bias = bias_patterns[bias_patterns['profile'] == profile]
+        avg_flip_rate = profile_bias['flip_rate'].mean() if len(profile_bias) > 0 else 0
+        
+        # Boldness metric 3: Magnitude of bias (willingness to take strong positions)
+        avg_bias_magnitude = profile_bias['bias_magnitude'].mean() if len(profile_bias) > 0 else 0
+        
+        # Composite boldness score
+        boldness_score = (
+            0.4 * avg_rescue_rate +      # 40% rescue effectiveness
+            0.3 * avg_flip_rate +        # 30% disagreement rate  
+            0.3 * avg_bias_magnitude     # 30% position strength
+        )
+        
+        boldness_data[profile] = {
+            'rescue_rate': avg_rescue_rate,
+            'flip_rate': avg_flip_rate,
+            'bias_magnitude': avg_bias_magnitude,
+            'boldness_score': boldness_score
+        }
+    
+    # ========================================================================
+    # STEP 3: Stability vs Boldness Correlation Analysis
+    # ========================================================================
+    
+    print("🔗 Analyzing stability-boldness correlations...")
+    
+    # Prepare data for correlation analysis
+    profiles = []
+    volatilities = []
+    boldness_scores = []
+    rescue_rates = []
+    accuracy_means = []
+    
+    for profile in profile_cols:
+        if profile in stability_data and profile in boldness_data:
+            profiles.append(profile)
+            volatilities.append(stability_data[profile]['accuracy_std'])
+            boldness_scores.append(boldness_data[profile]['boldness_score'])
+            rescue_rates.append(boldness_data[profile]['rescue_rate'])
+            accuracy_means.append(stability_data[profile]['accuracy_mean'])
+    
+    # Calculate correlations
+    correlations = {}
+    
+    if len(volatilities) >= 3:  # Need at least 3 points for meaningful correlation
+        
+        # Volatility vs Boldness
+        corr_vol_bold, p_val_vol_bold = pearsonr(volatilities, boldness_scores)
+        correlations['volatility_vs_boldness'] = {
+            'correlation': corr_vol_bold,
+            'p_value': p_val_vol_bold,
+            'significant': p_val_vol_bold < 0.05
+        }
+        
+        # Volatility vs Rescue Rate (moral value proxy)
+        corr_vol_rescue, p_val_vol_rescue = pearsonr(volatilities, rescue_rates)
+        correlations['volatility_vs_rescue'] = {
+            'correlation': corr_vol_rescue,
+            'p_value': p_val_vol_rescue,
+            'significant': p_val_vol_rescue < 0.05
+        }
+        
+        # Boldness vs Accuracy (performance tradeoff)
+        corr_bold_acc, p_val_bold_acc = pearsonr(boldness_scores, accuracy_means)
+        correlations['boldness_vs_accuracy'] = {
+            'correlation': corr_bold_acc,
+            'p_value': p_val_bold_acc,
+            'significant': p_val_bold_acc < 0.05
+        }
+        
+        print(f"\n📈 CORRELATION RESULTS:")
+        print(f"  Volatility vs Boldness: r={corr_vol_bold:.3f}, p={p_val_vol_bold:.4f} {'***' if p_val_vol_bold < 0.05 else ''}")
+        print(f"  Volatility vs Rescue Rate: r={corr_vol_rescue:.3f}, p={p_val_vol_rescue:.4f} {'***' if p_val_vol_rescue < 0.05 else ''}")
+        print(f"  Boldness vs Accuracy: r={corr_bold_acc:.3f}, p={p_val_bold_acc:.4f} {'***' if p_val_bold_acc < 0.05 else ''}")
+    
+    # ========================================================================
+    # STEP 4: Profile Classification and Insights
+    # ========================================================================
+    
+    print(f"\n🎯 PROFILE CLASSIFICATION:")
+    
+    # Classify profiles into archetypes
+    profile_archetypes = {}
+    
+    volatility_median = np.median(volatilities) if volatilities else 0
+    boldness_median = np.median(boldness_scores) if boldness_scores else 0
+    
+    for i, profile in enumerate(profiles):
+        vol = volatilities[i]
+        bold = boldness_scores[i]
+        rescue = rescue_rates[i]
+        acc = accuracy_means[i]
+        
+        # Determine archetype
+        if vol > volatility_median and bold > boldness_median:
+            archetype = "🌪️ Volatile Bold" 
+            description = "High risk, high moral value"
+        elif vol < volatility_median and bold > boldness_median:
+            archetype = "⚡ Stable Bold"
+            description = "Best of both worlds"
+        elif vol > volatility_median and bold < boldness_median:
+            archetype = "🎲 Volatile Cautious"
+            description = "High risk, low moral value"
+        else:
+            archetype = "🛡️ Stable Cautious"
+            description = "Low risk, predictable"
+        
+        profile_archetypes[profile] = {
+            'archetype': archetype,
+            'description': description,
+            'volatility': vol,
+            'boldness': bold,
+            'rescue_rate': rescue,
+            'accuracy': acc
+        }
+        
+        print(f"  {profile.replace('_passive', '')}: {archetype} - {description}")
+        print(f"    Volatility: {vol:.4f}, Boldness: {bold:.3f}, Rescue: {rescue:.3f}, Accuracy: {acc:.4f}")
+    
+    # ========================================================================
+    # STEP 5: Normative Value Assessment
+    # ========================================================================
+    
+    print(f"\n⚖️ NORMATIVE VALUE ASSESSMENT:")
+    
+    # Test the key hypothesis: Do volatile profiles provide moral value?
+    high_volatility_profiles = [p for p, data in profile_archetypes.items() 
+                               if data['volatility'] > volatility_median]
+    low_volatility_profiles = [p for p, data in profile_archetypes.items() 
+                              if data['volatility'] <= volatility_median]
+    
+    if high_volatility_profiles and low_volatility_profiles:
+        # Compare rescue rates
+        high_vol_rescue = [profile_archetypes[p]['rescue_rate'] for p in high_volatility_profiles]
+        low_vol_rescue = [profile_archetypes[p]['rescue_rate'] for p in low_volatility_profiles]
+        
+        high_vol_rescue_mean = np.mean(high_vol_rescue)
+        low_vol_rescue_mean = np.mean(low_vol_rescue)
+        
+        # Statistical test
+        
+        t_stat, p_val = ttest_ind(high_vol_rescue, low_vol_rescue)
+        
+        print(f"  High Volatility Profiles Rescue Rate: {high_vol_rescue_mean:.3f}")
+        print(f"  Low Volatility Profiles Rescue Rate: {low_vol_rescue_mean:.3f}")
+        print(f"  Difference: {high_vol_rescue_mean - low_vol_rescue_mean:.3f}")
+        print(f"  Statistical Test: t={t_stat:.3f}, p={p_val:.4f} {'***' if p_val < 0.05 else ''}")
+        
+        if high_vol_rescue_mean > low_vol_rescue_mean and p_val < 0.05:
+            conclusion = "✅ VOLATILE PROFILES PROVIDE SIGNIFICANT MORAL VALUE"
+        elif high_vol_rescue_mean > low_vol_rescue_mean:
+            conclusion = "⚠️ VOLATILE PROFILES SHOW HIGHER RESCUE RATES (NOT SIGNIFICANT)"
+        else:
+            conclusion = "❌ VOLATILE PROFILES DO NOT PROVIDE MORAL VALUE ADVANTAGE"
+        
+        print(f"\n🏆 CONCLUSION: {conclusion}")
+    
+    return {
+        'stability_data': stability_data,
+        'boldness_data': boldness_data,
+        'correlations': correlations,
+        'profile_archetypes': profile_archetypes,
+        'normative_assessment': {
+            'high_volatility_rescue': high_vol_rescue_mean if 'high_vol_rescue_mean' in locals() else 0,
+            'low_volatility_rescue': low_vol_rescue_mean if 'low_vol_rescue_mean' in locals() else 0, 
+            'statistical_test': {'t_stat': t_stat, 'p_value': p_val} if 't_stat' in locals() else None
+        }
+    }
+
+
+def plot_stability_boldness_analysis(stability_results, figsize=(16, 10)):
+    """
+    Create comprehensive visualizations for temporal stability vs boldness analysis.
+    
+    Generates 4-panel plot:
+    1. Stability vs Boldness Scatter
+    2. Volatility vs Rescue Rate  
+    3. Profile Archetype Distribution
+    4. Temporal Stability Trends
+    """
+    
+    fig, axes = plt.subplots(2, 2, figsize=figsize)
+    fig.suptitle('Temporal Stability vs Boldness Analysis', fontsize=16, fontweight='bold')
+    
+    # Extract data
+    stability_data = stability_results['stability_data']
+    boldness_data = stability_results['boldness_data']
+    archetypes = stability_results['profile_archetypes']
+    
+    # Prepare arrays
+    profiles = list(archetypes.keys())
+    volatilities = [archetypes[p]['volatility'] for p in profiles]
+    boldness_scores = [archetypes[p]['boldness'] for p in profiles]
+    rescue_rates = [archetypes[p]['rescue_rate'] for p in profiles]
+    accuracies = [archetypes[p]['accuracy'] for p in profiles]
+    
+    # Archetype colors
+    archetype_colors = {
+        '🌪️ Volatile Bold': '#d62728',      # Red
+        '⚡ Stable Bold': '#2ca02c',        # Green  
+        '🎲 Volatile Cautious': '#ff7f0e',  # Orange
+        '🛡️ Stable Cautious': '#1f77b4'    # Blue
+    }
+    
+    colors = [archetype_colors.get(archetypes[p]['archetype'], '#8c564b') for p in profiles]
+    
+    # ===== PANEL 1: Stability vs Boldness Scatter =====
+    ax = axes[0, 0]
+    
+    scatter = ax.scatter(volatilities, boldness_scores, c=colors, s=100, alpha=0.7, edgecolors='black')
+    
+    # Add profile labels for extreme cases
+    for i, profile in enumerate(profiles):
+        if volatilities[i] > np.percentile(volatilities, 75) or boldness_scores[i] > np.percentile(boldness_scores, 75):
+            ax.annotate(profile.replace('profile', 'P').replace('_passive', ''), 
+                       (volatilities[i], boldness_scores[i]),
+                       xytext=(5, 5), textcoords='offset points', fontsize=8)
+    
+    # Add correlation line if significant
+    if 'volatility_vs_boldness' in stability_results['correlations']:
+        corr_data = stability_results['correlations']['volatility_vs_boldness']
+        if corr_data['significant']:
+            z = np.polyfit(volatilities, boldness_scores, 1)
+            p = np.poly1d(z)
+            ax.plot(sorted(volatilities), p(sorted(volatilities)), "r--", alpha=0.8)
+            ax.text(0.05, 0.95, f"r={corr_data['correlation']:.3f}*", 
+                   transform=ax.transAxes, bbox=dict(boxstyle="round", facecolor='white', alpha=0.8))
+    
+    ax.set_xlabel('Volatility (Accuracy Std Dev)')
+    ax.set_ylabel('Boldness Score')
+    ax.set_title('Stability vs Boldness Tradeoff')
+    ax.grid(True, alpha=0.3)
+    
+    # ===== PANEL 2: Volatility vs Rescue Rate =====
+    ax = axes[0, 1]
+    
+    scatter = ax.scatter(volatilities, rescue_rates, c=colors, s=100, alpha=0.7, edgecolors='black')
+    
+    # Add correlation line if significant
+    if 'volatility_vs_rescue' in stability_results['correlations']:
+        corr_data = stability_results['correlations']['volatility_vs_rescue']
+        if corr_data['significant']:
+            z = np.polyfit(volatilities, rescue_rates, 1)
+            p = np.poly1d(z)
+            ax.plot(sorted(volatilities), p(sorted(volatilities)), "g--", alpha=0.8)
+            ax.text(0.05, 0.95, f"r={corr_data['correlation']:.3f}*", 
+                   transform=ax.transAxes, bbox=dict(boxstyle="round", facecolor='white', alpha=0.8))
+    
+    ax.set_xlabel('Volatility (Accuracy Std Dev)')
+    ax.set_ylabel('Rescue Rate (Moral Value)')
+    ax.set_title('Volatility vs Moral Value')
+    ax.grid(True, alpha=0.3)
+    
+    # ===== PANEL 3: Profile Archetype Distribution =====
+    ax = axes[1, 0]
+    
+    archetype_counts = {}
+    for profile_data in archetypes.values():
+        arch = profile_data['archetype']
+        archetype_counts[arch] = archetype_counts.get(arch, 0) + 1
+    
+    archetype_names = list(archetype_counts.keys())
+    counts = list(archetype_counts.values())
+    colors_pie = [archetype_colors.get(arch, '#8c564b') for arch in archetype_names]
+    
+    wedges, texts, autotexts = ax.pie(counts, labels=archetype_names, colors=colors_pie, 
+                                     autopct='%1.0f%%', startangle=90)
+    ax.set_title('Profile Archetype Distribution')
+    
+    # ===== PANEL 4: Temporal Stability Trends =====
+    ax = axes[1, 1]
+    
+    # Show accuracy trends across folds for a few representative profiles
+    representative_profiles = []
+    
+    # Get one profile from each archetype if possible
+    for archetype in archetype_colors.keys():
+        for profile, data in archetypes.items():
+            if data['archetype'] == archetype and profile not in representative_profiles:
+                representative_profiles.append(profile)
+                break
+    
+    # Limit to 4 most interesting profiles
+    representative_profiles = representative_profiles[:4]
+    
+    fold_numbers = list(range(1, len(list(stability_data.values())[0]['fold_accuracies']) + 1))
+    
+    for i, profile in enumerate(representative_profiles):
+        if profile in stability_data:
+            fold_accs = stability_data[profile]['fold_accuracies']
+            archetype = archetypes[profile]['archetype']
+            color = archetype_colors.get(archetype, '#8c564b')
+            
+            ax.plot(fold_numbers, fold_accs, 'o-', color=color, alpha=0.7, 
+                   label=f"{profile.replace('profile', 'P').replace('_passive', '')} ({archetype})")
+    
+    ax.set_xlabel('Cross-Validation Fold')
+    ax.set_ylabel('Accuracy')
+    ax.set_title('Temporal Stability Across Folds')
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    return fig
+
+
+def simplified_causal_modeling(merged_df, stability_results=None):
+    """
+    Simplified Causal Modeling for Bias Effects
+    
+    Models causal influence of profile traits on bias/alignment using:
+    - Linear regression with demographic and cognitive predictors
+    - Path analysis showing direct vs indirect effects
+    - Theoretical framework for understanding bias mechanisms
+    
+    Gives theoretical weight to findings for thesis contribution.
+    """
+    
+    print("=" * 80)
+    print("SIMPLIFIED CAUSAL MODELING: PROFILE TRAITS → BIAS OUTCOMES")
+    print("=" * 80)
+    
+    # ========================================================================
+    # STEP 1: Prepare Causal Variables
+    # ========================================================================
+    
+    profile_cols = [col for col in merged_df.columns if col.startswith("profile") and "_passive" in col]
+    
+    # Create causal dataset
+    causal_data = []
+    
+    # Get performance metrics
+    rescue_stats = rescue_stats_by_category(merged_df, category_col="stereotype_type")
+    bias_patterns = detect_systematic_biases(merged_df, category_col="stereotype_type")
+    
+    for i in range(1, 31):  # Profiles 1-30
+        profile_name = f"profile{i}_passive"
+        
+        if profile_name not in merged_df.columns:
+            continue
+        
+        # Causal predictors (profile traits)
+        gender = 1 if i in [1,2,3,4,5, 11,12,13,14,15, 21,22,23,24,25] else 0  # 1=Male, 0=Female
+        
+        # Ethnicity (dummy coding with White as reference)
+        white = 1 if i in range(1, 11) else 0
+        black = 1 if i in range(11, 21) else 0
+        asian = 1 if i in range(21, 31) else 0
+        
+        # Cognitive style (dummy coding with Balanced as reference)
+        expansive = 1 if i in [1,6,11,16,21,26] else 0
+        literal = 1 if i in [2,7,12,17,22,27] else 0
+        high_harm = 1 if i in [3,8,13,18,23,28] else 0
+        low_harm = 1 if i in [4,9,14,19,24,29] else 0
+        
+        # Outcome variables
+        accuracy = (merged_df[profile_name] == merged_df['true_label']).mean()
+        
+        # Rescue metrics
+        profile_rescue = rescue_stats[rescue_stats['profile'] == profile_name]
+        rescue_rate = profile_rescue['rescue_rate'].mean() if len(profile_rescue) > 0 else 0
+        extra_error_rate = profile_rescue['extra_err_rate'].mean() if len(profile_rescue) > 0 else 0
+        
+        # Bias metrics
+        profile_bias = bias_patterns[bias_patterns['profile'] == profile_name]
+        bias_magnitude = profile_bias['bias_magnitude'].mean() if len(profile_bias) > 0 else 0
+        flip_rate = profile_bias['flip_rate'].mean() if len(profile_bias) > 0 else 0
+        
+        # Add stability metrics if available
+        volatility = 0
+        if stability_results and profile_name in stability_results['stability_data']:
+            volatility = stability_results['stability_data'][profile_name]['accuracy_std']
+        
+        causal_data.append({
+            'profile': profile_name,
+            'gender_male': gender,
+            'ethnicity_white': white,
+            'ethnicity_black': black,
+            'ethnicity_asian': asian,
+            'cognitive_expansive': expansive,
+            'cognitive_literal': literal,
+            'cognitive_high_harm': high_harm,
+            'cognitive_low_harm': low_harm,
+            'accuracy': accuracy,
+            'rescue_rate': rescue_rate,
+            'extra_error_rate': extra_error_rate,
+            'bias_magnitude': bias_magnitude,
+            'flip_rate': flip_rate,
+            'volatility': volatility
+        })
+    
+    causal_df = pd.DataFrame(causal_data)
+    
+    print(f"📊 Causal dataset prepared with {len(causal_df)} profiles")
+    
+    # ========================================================================
+    # STEP 2: Linear Regression Models
+    # ========================================================================
+    
+    print(f"\n🔗 CAUSAL PATH ANALYSIS:")
+    
+    # Define predictor sets
+    demographic_predictors = ['gender_male', 'ethnicity_black', 'ethnicity_asian']  # White as reference
+    cognitive_predictors = ['cognitive_expansive', 'cognitive_literal', 'cognitive_high_harm', 'cognitive_low_harm']  # Balanced as reference
+    all_predictors = demographic_predictors + cognitive_predictors
+    
+    # Outcome variables to model
+    outcomes = ['accuracy', 'rescue_rate', 'extra_error_rate', 'bias_magnitude']
+    
+    causal_results = {}
+    
+    for outcome in outcomes:
+        print(f"\n--- MODELING: {outcome.upper()} ---")
+        
+        y = causal_df[outcome].values
+        
+        # Model 1: Demographics only
+        X_demo = causal_df[demographic_predictors].values
+        model_demo = LinearRegression().fit(X_demo, y)
+        r2_demo = model_demo.score(X_demo, y)
+        
+        # Model 2: Cognitive styles only
+        X_cog = causal_df[cognitive_predictors].values
+        model_cog = LinearRegression().fit(X_cog, y)
+        r2_cog = model_cog.score(X_cog, y)
+        
+        # Model 3: Full model (demographics + cognitive)
+        X_full = causal_df[all_predictors].values
+        model_full = LinearRegression().fit(X_full, y)
+        r2_full = model_full.score(X_full, y)
+        
+        # Calculate unique contributions
+        demo_unique = r2_full - r2_cog  # Variance explained by demographics beyond cognitive
+        cog_unique = r2_full - r2_demo   # Variance explained by cognitive beyond demographics  
+        shared = r2_demo + r2_cog - r2_full  # Shared variance
+        
+        print(f"  Demographics only R²: {r2_demo:.3f}")
+        print(f"  Cognitive only R²: {r2_cog:.3f}")
+        print(f"  Full model R²: {r2_full:.3f}")
+        print(f"  Demographics unique contribution: {demo_unique:.3f}")
+        print(f"  Cognitive unique contribution: {cog_unique:.3f}")
+        print(f"  Shared variance: {shared:.3f}")
+        
+        # Coefficient analysis for full model
+        coefficients = {}
+        for i, predictor in enumerate(all_predictors):
+            coef = model_full.coef_[i]
+            coefficients[predictor] = coef
+            if abs(coef) > 0.01:  # Only report meaningful coefficients
+                print(f"    {predictor}: β={coef:.3f}")
+        
+        causal_results[outcome] = {
+            'r2_demographics': r2_demo,
+            'r2_cognitive': r2_cog,
+            'r2_full': r2_full,
+            'demo_unique': demo_unique,
+            'cog_unique': cog_unique,
+            'shared_variance': shared,
+            'coefficients': coefficients,
+            'models': {
+                'demographics': model_demo,
+                'cognitive': model_cog,
+                'full': model_full
+            }
+        }
+    
+    # ========================================================================
+    # STEP 3: Causal Path Interpretation
+    # ========================================================================
+    
+    print(f"\n{'='*60}")
+    print("CAUSAL PATH INTERPRETATION")
+    print(f"{'='*60}")
+    
+    # Identify strongest causal pathways
+    strongest_predictors = {}
+    
+    for outcome, results in causal_results.items():
+        max_coef = 0
+        strongest_predictor = None
+        
+        for predictor, coef in results['coefficients'].items():
+            if abs(coef) > abs(max_coef):
+                max_coef = coef
+                strongest_predictor = predictor
+        
+        # Ensure we have a valid predictor, even if weak
+        if strongest_predictor is None and results['coefficients']:
+            # Take any predictor if none are strong
+            strongest_predictor = list(results['coefficients'].keys())[0]
+            max_coef = results['coefficients'][strongest_predictor]
+        
+        strongest_predictors[outcome] = {
+            'predictor': strongest_predictor,
+            'coefficient': max_coef,
+            'direction': 'increases' if max_coef > 0 else 'decreases'
+        }
+        
+        if strongest_predictor is not None:
+            print(f"\n{outcome.upper()}:")
+            print(f"  Strongest predictor: {strongest_predictor} (β={max_coef:.3f})")
+            print(f"  Effect: {strongest_predictor} {strongest_predictors[outcome]['direction']} {outcome}")
+        else:
+            print(f"\n{outcome.upper()}:")
+            print(f"  No significant predictors found")
+        
+        # Identify whether demographics or cognitive factors dominate
+        if results['demo_unique'] > results['cog_unique']:
+            dominant_factor = "demographic traits"
+            dominance_ratio = results['demo_unique'] / results['cog_unique'] if results['cog_unique'] > 0 else float('inf')
+        else:
+            dominant_factor = "cognitive traits" 
+            dominance_ratio = results['cog_unique'] / results['demo_unique'] if results['demo_unique'] > 0 else float('inf')
+        
+        print(f"  Dominant factor: {dominant_factor} (ratio: {dominance_ratio:.2f})")
+    
+    # ========================================================================
+    # STEP 4: Theoretical Framework
+    # ========================================================================
+    
+    print(f"\n{'='*60}")
+    print("THEORETICAL CAUSAL FRAMEWORK")
+    print(f"{'='*60}")
+    
+    print(f"\n🧠 CAUSAL MECHANISM HYPOTHESIS:")
+    print(f"  Profile Demographics → Cognitive Processing → Bias Outcomes")
+    
+    # Test mediation hypothesis: Do cognitive styles mediate demographic effects?
+    mediation_evidence = {}
+    
+    for outcome in outcomes:
+        demo_direct = causal_results[outcome]['demo_unique']
+        cog_contribution = causal_results[outcome]['cog_unique']
+        total_variance = causal_results[outcome]['r2_full']
+        
+        # Simple mediation indicator: cognitive factors explain more than demographics
+        mediation_strength = cog_contribution / (demo_direct + 0.001)  # Avoid division by zero
+        
+        if mediation_strength > 1.5:
+            mediation_type = "Strong mediation: Cognitive styles largely mediate demographic effects"
+        elif mediation_strength > 0.8:
+            mediation_type = "Partial mediation: Both demographics and cognitive styles matter"
+        else:
+            mediation_type = "Direct effects: Demographics dominate over cognitive processing"
+        
+        mediation_evidence[outcome] = {
+            'mediation_strength': mediation_strength,
+            'interpretation': mediation_type
+        }
+        
+        print(f"\n  {outcome.upper()}: {mediation_type}")
+        print(f"    Mediation ratio: {mediation_strength:.2f}")
+    
+    # ========================================================================
+    # STEP 5: Causal Recommendations
+    # ========================================================================
+    
+    print(f"\n{'='*60}")
+    print("CAUSAL-BASED RECOMMENDATIONS")
+    print(f"{'='*60}")
+    
+    # Identify which traits to manipulate for desired outcomes
+    recommendations = {}
+    
+    # For maximizing rescue rate (moral value)
+    rescue_predictors = causal_results['rescue_rate']['coefficients']
+    best_rescue_traits = sorted(rescue_predictors.items(), key=lambda x: x[1], reverse=True)[:3]
+    
+    print(f"\n🎯 TO MAXIMIZE RESCUE RATE (Moral Value):")
+    for trait, coef in best_rescue_traits:
+        if coef > 0.01:
+            print(f"  ✓ Select profiles with: {trait} (β={coef:.3f})")
+    
+    recommendations['maximize_rescue'] = best_rescue_traits
+    
+    # For minimizing extra errors (safety)
+    error_predictors = causal_results['extra_error_rate']['coefficients']
+    safest_traits = sorted(error_predictors.items(), key=lambda x: x[1])[:3]  # Lowest coefficients
+    
+    print(f"\n🛡️ TO MINIMIZE EXTRA ERRORS (Safety):")
+    for trait, coef in safest_traits:
+        if coef < -0.01:
+            print(f"  ✓ Select profiles with: {trait} (β={coef:.3f})")
+        elif coef < 0.01:
+            print(f"  ✓ Avoid profiles with: {trait} (β={coef:.3f})")
+    
+    recommendations['maximize_safety'] = safest_traits
+    
+    # For maximizing overall accuracy
+    accuracy_predictors = causal_results['accuracy']['coefficients']
+    best_accuracy_traits = sorted(accuracy_predictors.items(), key=lambda x: x[1], reverse=True)[:3]
+    
+    print(f"\n📈 TO MAXIMIZE ACCURACY (Performance):")
+    for trait, coef in best_accuracy_traits:
+        if coef > 0.005:
+            print(f"  ✓ Select profiles with: {trait} (β={coef:.3f})")
+    
+    recommendations['maximize_accuracy'] = best_accuracy_traits
+    
+    return {
+        'causal_data': causal_df,
+        'causal_results': causal_results,
+        'strongest_predictors': strongest_predictors,
+        'mediation_evidence': mediation_evidence,
+        'recommendations': recommendations,
+        'theoretical_framework': {
+            'hypothesis': "Profile Demographics → Cognitive Processing → Bias Outcomes",
+            'mediation_support': mediation_evidence,
+            'policy_implications': recommendations
+        }
+    }
+
+
+def visualize_causal_model(causal_results, figsize=(16, 12)):
+    """
+    Create comprehensive visualizations for causal modeling results.
+    
+    Generates 4-panel plot:
+    1. Variance Decomposition (Demographics vs Cognitive)
+    2. Causal Path Strengths (Coefficient Heatmap)
+    3. Mediation Analysis 
+    4. Causal Network Diagram
+    """
+    
+    fig, axes = plt.subplots(2, 2, figsize=figsize)
+    fig.suptitle('Causal Modeling: Profile Traits → Bias Outcomes', fontsize=16, fontweight='bold')
+    
+    causal_data = causal_results['causal_results']
+    outcomes = list(causal_data.keys())
+    
+    # ===== PANEL 1: Variance Decomposition =====
+    ax = axes[0, 0]
+    
+    demo_contrib = [causal_data[outcome]['demo_unique'] for outcome in outcomes]
+    cog_contrib = [causal_data[outcome]['cog_unique'] for outcome in outcomes]
+    shared_contrib = [causal_data[outcome]['shared_variance'] for outcome in outcomes]
+    
+    x = np.arange(len(outcomes))
+    width = 0.6
+    
+    # Stacked bar chart
+    p1 = ax.bar(x, demo_contrib, width, label='Demographics Only', color='#1f77b4', alpha=0.8)
+    p2 = ax.bar(x, cog_contrib, width, bottom=demo_contrib, label='Cognitive Only', color='#ff7f0e', alpha=0.8)
+    p3 = ax.bar(x, shared_contrib, width, bottom=np.array(demo_contrib) + np.array(cog_contrib), 
+               label='Shared Variance', color='#2ca02c', alpha=0.8)
+    
+    # Add total R² labels
+    for i, outcome in enumerate(outcomes):
+        total_r2 = causal_data[outcome]['r2_full']
+        ax.text(i, total_r2 + 0.02, f'R²={total_r2:.3f}', ha='center', va='bottom', fontweight='bold')
+    
+    ax.set_xlabel('Outcome Variables')
+    ax.set_ylabel('Variance Explained (R²)')
+    ax.set_title('Variance Decomposition: Demographics vs Cognitive')
+    ax.set_xticks(x)
+    ax.set_xticklabels([outcome.replace('_', ' ').title() for outcome in outcomes], rotation=45, ha='right')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # ===== PANEL 2: Coefficient Heatmap =====
+    ax = axes[0, 1]
+    
+    # Create coefficient matrix
+    predictors = ['gender_male', 'ethnicity_black', 'ethnicity_asian', 
+                 'cognitive_expansive', 'cognitive_literal', 'cognitive_high_harm', 'cognitive_low_harm']
+    
+    coef_matrix = np.zeros((len(predictors), len(outcomes)))
+    
+    for j, outcome in enumerate(outcomes):
+        for i, predictor in enumerate(predictors):
+            if predictor in causal_data[outcome]['coefficients']:
+                coef_matrix[i, j] = causal_data[outcome]['coefficients'][predictor]
+    
+    # Create heatmap
+    im = ax.imshow(coef_matrix, cmap='RdBu_r', aspect='auto', vmin=-0.1, vmax=0.1)
+    
+    # Add coefficient values
+    for i in range(len(predictors)):
+        for j in range(len(outcomes)):
+            text = ax.text(j, i, f'{coef_matrix[i, j]:.3f}', ha="center", va="center", 
+                          color="white" if abs(coef_matrix[i, j]) > 0.05 else "black", fontweight='bold')
+    
+    ax.set_xticks(np.arange(len(outcomes)))
+    ax.set_yticks(np.arange(len(predictors)))
+    ax.set_xticklabels([outcome.replace('_', ' ').title() for outcome in outcomes], rotation=45, ha='right')
+    ax.set_yticklabels([pred.replace('_', ' ').title() for pred in predictors])
+    ax.set_title('Causal Path Strengths (β coefficients)')
+    
+    # Add colorbar
+    cbar = plt.colorbar(im, ax=ax, shrink=0.8)
+    cbar.set_label('Standardized Coefficient')
+    
+    # ===== PANEL 3: Mediation Analysis =====
+    ax = axes[1, 0]
+    
+    mediation_evidence = causal_results['mediation_evidence']
+    
+    mediation_ratios = [mediation_evidence[outcome]['mediation_strength'] for outcome in outcomes]
+    colors = ['#2ca02c' if ratio > 1.5 else '#ff7f0e' if ratio > 0.8 else '#d62728' for ratio in mediation_ratios]
+    
+    bars = ax.bar(range(len(outcomes)), mediation_ratios, color=colors, alpha=0.7)
+    
+    # Add threshold lines
+    ax.axhline(y=1.5, color='green', linestyle='--', alpha=0.7, label='Strong Mediation')
+    ax.axhline(y=0.8, color='orange', linestyle='--', alpha=0.7, label='Partial Mediation')
+    
+    # Add ratio labels
+    for i, (bar, ratio) in enumerate(zip(bars, mediation_ratios)):
+        ax.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.1,
+                f'{ratio:.2f}', ha='center', va='bottom', fontweight='bold')
+    
+    ax.set_xlabel('Outcome Variables')
+    ax.set_ylabel('Mediation Ratio (Cognitive/Demographics)')
+    ax.set_title('Mediation Analysis: Do Cognitive Styles Mediate Demographics?')
+    ax.set_xticks(range(len(outcomes)))
+    ax.set_xticklabels([outcome.replace('_', ' ').title() for outcome in outcomes], rotation=45, ha='right')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # ===== PANEL 4: Simplified Network Diagram =====
+    ax = axes[1, 1]
+    
+    # Create a simplified network visualization
+    # Nodes: Demographics, Cognitive Styles, Outcomes
+    node_positions = {
+        'Demographics': (0.2, 0.8),
+        'Cognitive Styles': (0.2, 0.5),
+        'Accuracy': (0.8, 0.9),
+        'Rescue Rate': (0.8, 0.7),
+        'Extra Errors': (0.8, 0.5),
+        'Bias Magnitude': (0.8, 0.3)
+    }
+    
+    # Draw nodes
+    for node, (x, y) in node_positions.items():
+        if node in ['Demographics', 'Cognitive Styles']:
+            color = '#1f77b4' if node == 'Demographics' else '#ff7f0e'
+            size = 1000
+        else:
+            color = '#2ca02c'
+            size = 800
+        
+        ax.scatter(x, y, s=size, c=color, alpha=0.7, edgecolors='black', linewidth=2)
+        ax.text(x, y-0.05, node, ha='center', va='top', fontweight='bold', fontsize=10)
+    
+    # Draw connections (simplified based on strongest effects)
+    strongest_predictors = causal_results['strongest_predictors']
+    
+    for outcome, pred_info in strongest_predictors.items():
+        outcome_pos = node_positions.get(outcome.replace('_', ' ').title())
+        if outcome_pos and pred_info['predictor'] is not None:  # Check for None predictor
+            predictor_name = pred_info['predictor']
+            
+            # Determine if predictor is demographic or cognitive
+            if ('gender' in predictor_name or 'ethnicity' in predictor_name or 
+                'demographic' in predictor_name):
+                start_pos = node_positions['Demographics']
+            elif ('cognitive' in predictor_name):
+                start_pos = node_positions['Cognitive Styles']
+            else:
+                # Default to demographics if unclear
+                start_pos = node_positions['Demographics']
+            
+            # Draw arrow (limit line width to reasonable values)
+            line_width = min(abs(pred_info['coefficient']) * 50, 5)  # Cap at 5
+            arrow_props = dict(arrowstyle='->', lw=max(line_width, 0.5),  # Minimum 0.5
+                             color='red' if pred_info['coefficient'] < 0 else 'green', alpha=0.6)
+            ax.annotate('', xy=outcome_pos, xytext=start_pos, arrowprops=arrow_props)
+    
+    # Draw Demographics → Cognitive Styles connection
+    ax.annotate('', xy=node_positions['Cognitive Styles'], xytext=node_positions['Demographics'], 
+               arrowprops=dict(arrowstyle='->', lw=2, color='blue', alpha=0.5))
+    
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0.2, 1)
+    ax.set_title('Causal Network: Profile Traits → Outcomes')
+    ax.axis('off')
+    
+    # Add legend
+    ax.text(0.05, 0.05, 'Green arrows: Positive effects\nRed arrows: Negative effects\nThickness ∝ Effect size', 
+           transform=ax.transAxes, bbox=dict(boxstyle="round", facecolor='white', alpha=0.8), fontsize=9)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    return fig
+
+
+def run_tier3_analysis(merged_df):
+    """
+    Run complete Tier 3 analysis pipeline.
+    
+    Executes:
+    1. Temporal Stability vs Boldness Analysis
+    2. Simplified Causal Modeling
+    3. Comprehensive Visualizations
+    4. Theoretical Integration
+    
+    Returns integrated results for thesis conclusions.
+    """
+    
+    print("🚀 EXECUTING TIER 3 ANALYSIS PIPELINE")
+    print("="*80)
+    
+    # 1. Temporal Stability vs Boldness Analysis
+    print("\n⏱️ Running Temporal Stability vs Boldness Analysis...")
+    stability_results = temporal_stability_vs_boldness_analysis(merged_df, n_folds=5)
+    
+    # 2. Simplified Causal Modeling
+    print("\n🔗 Running Simplified Causal Modeling...")
+    causal_results = simplified_causal_modeling(merged_df, stability_results)
+    
+    # 3. Generate Visualizations
+    print("\n📊 Creating Temporal Stability Visualizations...")
+    stability_viz = plot_stability_boldness_analysis(stability_results)
+    
+    print("\n🧠 Creating Causal Model Visualizations...")
+    causal_viz = visualize_causal_model(causal_results)
+    
+    # 4. Generate Theoretical Integration
+    print("\n" + "="*80)
+    print("TIER 3 THEORETICAL INTEGRATION")
+    print("="*80)
+    
+    # Key insights from stability analysis
+    stability_insight = stability_results['normative_assessment']
+    high_vol_rescue = stability_insight.get('high_volatility_rescue', 0)
+    low_vol_rescue = stability_insight.get('low_volatility_rescue', 0)
+    
+    # Key insights from causal analysis
+    causal_insight = causal_results['theoretical_framework']
+    strongest_predictors = causal_results['strongest_predictors']
+    
+    print(f"\n🧠 THEORETICAL INSIGHTS:")
+    
+    # Volatility-Boldness Finding
+    if high_vol_rescue > low_vol_rescue:
+        volatility_conclusion = "✅ Volatile profiles provide higher moral value through increased rescue rates"
+        volatility_implication = "Risk-taking in AI annotation may be normatively justified"
+    else:
+        volatility_conclusion = "❌ Stable profiles outperform volatile ones in moral value"
+        volatility_implication = "Consistency should be prioritized over boldness in AI systems"
+    
+    print(f"   • {volatility_conclusion}")
+    print(f"   • Implication: {volatility_implication}")
+    
+    # Causal Mechanism Finding
+    rescue_predictor = strongest_predictors.get('rescue_rate', {}).get('predictor', 'Unknown')
+    accuracy_predictor = strongest_predictors.get('accuracy', {}).get('predictor', 'Unknown')
+    
+    # Handle None predictors
+    if rescue_predictor is None:
+        rescue_predictor = 'No significant predictor'
+    if accuracy_predictor is None:
+        accuracy_predictor = 'No significant predictor'
+    
+    print(f"   • Strongest predictor of moral value (rescue): {rescue_predictor}")
+    print(f"   • Strongest predictor of performance (accuracy): {accuracy_predictor}")
+    
+    # Mediation findings
+    mediation_summary = []
+    for outcome, evidence in causal_results['mediation_evidence'].items():
+        if evidence['mediation_strength'] > 1.5:
+            mediation_summary.append(f"{outcome}: Strong cognitive mediation")
+        elif evidence['mediation_strength'] > 0.8:
+            mediation_summary.append(f"{outcome}: Partial mediation")
+    
+    if mediation_summary:
+        print(f"   • Mediation effects found: {', '.join(mediation_summary)}")
+    
+    # ========================================================================
+    # STEP 5: Thesis-Level Conclusions
+    # ========================================================================
+    
+    print(f"\n{'='*60}")
+    print("THESIS-LEVEL CONCLUSIONS")
+    print(f"{'='*60}")
+    
+    conclusions = []
+    
+    # Conclusion 1: Stability-Boldness Tradeoff
+    if high_vol_rescue > low_vol_rescue + 0.02:  # Meaningful difference
+        conclusions.append({
+            'finding': 'Volatile profiles provide superior moral value',
+            'evidence': f'High-volatility rescue rate: {high_vol_rescue:.3f} vs Low-volatility: {low_vol_rescue:.3f}',
+            'implication': 'AI systems should incorporate controlled risk-taking for better moral outcomes'
+        })
+    
+    # Conclusion 2: Causal Mechanisms
+    demo_dominance = []
+    cog_dominance = []
+    
+    for outcome, results in causal_results['causal_results'].items():
+        if results['demo_unique'] > results['cog_unique']:
+            demo_dominance.append(outcome)
+        else:
+            cog_dominance.append(outcome)
+    
+    if len(cog_dominance) > len(demo_dominance):
+        conclusions.append({
+            'finding': 'Cognitive styles dominate over demographics in bias formation',
+            'evidence': f'Cognitive factors dominate in {len(cog_dominance)}/{len(causal_results["causal_results"])} outcomes',
+            'implication': 'Bias mitigation should focus on cognitive framing rather than demographic representation'
+        })
+    else:
+        conclusions.append({
+            'finding': 'Demographics remain primary drivers of bias',
+            'evidence': f'Demographic factors dominate in {len(demo_dominance)}/{len(causal_results["causal_results"])} outcomes',
+            'implication': 'Diverse demographic representation is crucial for bias mitigation'
+        })
+    
+    # Conclusion 3: System Design Recommendations
+    recommendations = causal_results['recommendations']
+    
+    # Find the most recommended trait across all objectives
+    trait_counts = {}
+    for objective, traits in recommendations.items():
+        for trait, coef in traits:
+            if trait is not None:  # Only count non-None traits
+                trait_counts[trait] = trait_counts.get(trait, 0) + 1
+    
+    most_important_trait = max(trait_counts, key=trait_counts.get) if trait_counts else 'No clear pattern'
+    
+    conclusions.append({
+        'finding': f'{most_important_trait} is the most critical trait for system design',
+        'evidence': f'Appears in {trait_counts.get(most_important_trait, 0)}/3 optimization objectives',
+        'implication': f'AI systems should prioritize profiles with {most_important_trait} characteristics'
+    })
+    
+    # Print conclusions
+    for i, conclusion in enumerate(conclusions, 1):
+        print(f"\n🎯 CONCLUSION {i}: {conclusion['finding']}")
+        print(f"   Evidence: {conclusion['evidence']}")
+        print(f"   Implication: {conclusion['implication']}")
+    
+    return {
+        'stability_analysis': stability_results,
+        'causal_analysis': causal_results,
+        'visualizations': {
+            'stability_plot': stability_viz,
+            'causal_plot': causal_viz
+        },
+        'theoretical_integration': {
+            'volatility_conclusion': volatility_conclusion,
+            'causal_mechanisms': strongest_predictors,
+            'mediation_evidence': causal_results['mediation_evidence']
+        },
+        'thesis_conclusions': conclusions
     }

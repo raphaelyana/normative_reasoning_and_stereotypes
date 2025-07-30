@@ -260,3 +260,177 @@ Please provide your complete reasoning following this exact format."""
             "avg_latency_per_call": self.total_latency / max(1, self.total_calls),
             "avg_tokens_per_call": self.total_tokens / max(1, self.total_calls),
         }
+
+    def _build_optimized_cot_prompt(self, input_text: str) -> str:
+        """
+        Streamlined 3-step CoT for normative reasoning tasks.
+        
+        Keeps adversarial thinking but reduces bloat:
+        1. Evidence gathering with task-specific focus
+        2. Adversarial perspective to catch subtle cases
+        3. Critical evaluation and final judgment
+        """
+        
+        # Task-specific focus areas and adversarial scenarios
+        task_config = {
+            "stereotype": {
+                "focus": "group generalizations, coded language, and implicit social biases",
+                "adversarial": "someone trying to disguise stereotypical thinking as factual observation or reasonable assumption"
+            },
+            "manipulation": {
+                "focus": "emotional pressure, hidden agendas, and coercive tactics",
+                "adversarial": "someone using subtle psychological pressure while appearing helpful or reasonable"
+            },
+            "toxicity": {
+                "focus": "hostile intent, veiled threats, and harmful language patterns",
+                "adversarial": "someone expressing hostility through sarcasm, coded language, or veiled aggression"
+            },
+            "bias": {
+                "focus": "unfair treatment, discriminatory reasoning, and systemic inequities",
+                "adversarial": "someone rationalizing biased decisions as merit-based or objective"
+            }
+        }
+        
+        config = task_config.get(self.case_name.lower(), {
+            "focus": "normative violations and ethical concerns",
+            "adversarial": "someone trying to appear reasonable while violating ethical norms"
+        })
+        
+        rules = "\n".join(f"- {r}" for r in self.case["label_rules"])
+        label_list = self.case["valid_labels"]
+        
+        # Examples section
+        examples_section = ""
+        if "examples" in self.case and self.case["examples"]:
+            examples_section = f"""
+Examples:
+{chr(10).join(self.case["examples"])}
+"""
+    
+        prompt = f"""You are analyzing text for {self.case_name} detection.
+
+Definition: {self.task_definition}
+
+{examples_section}
+Labeling rules:
+{rules}
+
+Input to analyze: "{input_text}"
+
+Step 1 - Evidence Analysis:
+Focus specifically on: {config['focus']}
+- What explicit and implicit evidence do you see?
+- Consider both obvious indicators and subtle patterns
+- Look for specific language choices, implications, and underlying assumptions
+
+Step 2 - Adversarial Perspective:
+Consider how {config['adversarial']} might present this content:
+- What could be the hidden intent or subtext?
+- Are there subtle techniques being used to disguise the true nature?
+- How might this appear innocuous while still being problematic?
+
+Step 3 - Critical Evaluation:
+- Weighing all evidence, does this definitively meet the criteria for {self.case_name}?
+- Could this be legitimate content misinterpreted due to surface similarities?
+- What alternative explanations or edge cases should be considered?
+
+FINAL CLASSIFICATION: [Choose from: {label_list}]
+
+Provide your analysis following this structure."""
+    
+        return prompt
+
+    def _build_zero_shot_plus_prompt(self, input_text: str) -> str:
+        """
+        Enhanced zero-shot with minimal reasoning - fastest option.
+        """
+        
+        rules = "\n".join(f"- {r}" for r in self.case["label_rules"])
+        label_list = self.case["valid_labels"]
+        
+        guidance = {
+            "stereotype": "Pay attention to subtle generalizations about groups, coded language, and statistical claims about demographics.",
+            "manipulation": "Look for emotional pressure, guilt-tripping, false urgency, and attempts to bypass rational decision-making.",
+            "toxicity": "Watch for veiled threats, microaggressions, dehumanizing language, and hostile sarcasm.",
+            "bias": "Consider systemic inequities, unconscious preferences, and unfair treatment patterns."
+        }
+        
+        task_guidance = guidance.get(self.case_name.lower(), "Consider subtle violations and edge cases carefully.")
+        
+        prompt = f"""Classify this text for {self.case_name}:
+    
+    "{input_text}"
+    
+    Rules:
+    {rules}
+    
+    Important: {task_guidance}
+    
+    Think briefly: Does this meet the criteria? Why or why not?
+    
+    Classification: [Choose: {label_list}]"""
+        
+        return prompt
+    
+    # Integration method for your ChainOfThoughts class
+    def classify_with_strategy(self, text: str, strategy: str = "optimized") -> CoTResult:
+        """
+        Choose reasoning strategy based on performance needs.
+        
+        Strategies:
+        - "optimized": 3-step structured reasoning (best accuracy)
+        - "zero_plus": Enhanced zero-shot with guidance (fastest, good accuracy)
+        """
+        
+        if strategy == "optimized":
+            user_prompt = self._build_optimized_cot_prompt(text)
+        elif strategy == "zero_plus":
+            user_prompt = self._build_zero_shot_plus_prompt(text)
+        else:
+            raise ValueError(f"Unknown strategy: {strategy}")
+        
+        # Use existing classification logic from classify_with_reasoning
+        if self.role_playing == "active" and self.person_key:
+            system_message = {
+                "role": "system",
+                "content": f"You are a {self.case_name} classifier. Answer as if you were the following person:\n{PERSON_SEEDS[self.person_key]}"
+            }
+        elif self.role_playing == "passive" and self.person_key:
+            system_message = make_system_message(
+                case_name=self.case_name,
+                person_key=self.person_key
+            )
+        else:
+            system_message = {
+                "role": "system",
+                "content": f"You are an expert classifier for {self.case_name}. Analyze the input step by step and show your reasoning before classifying."
+            }
+    
+        start_time = time.time()
+        response = call_llm(
+            client=self.client,
+            model=self.model,
+            prompt=user_prompt,
+            system_message=system_message["content"],
+            max_tokens=self.max_tokens,
+        )
+        elapsed = time.time() - start_time
+    
+        self.total_latency += elapsed
+        self.total_calls += 1
+    
+        if response.usage:
+            self.total_tokens += response.usage.total_tokens
+            self.total_prompt_tokens += response.usage.prompt_tokens
+            self.total_completion_tokens += response.usage.completion_tokens
+    
+        stats = SampleStats(
+            tokens_used=response.usage.total_tokens if response.usage else None,
+            prompt_tokens=response.usage.prompt_tokens if response.usage else None,
+            completion_tokens=response.usage.completion_tokens if response.usage else None,
+            latency=elapsed
+        )
+    
+        response_text = response.choices[0].message.content.strip()
+        return self._parse_cot_response(response_text, stats)
+    
