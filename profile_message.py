@@ -100,6 +100,29 @@ PERSON_SEEDS_SYSTEMATIC = {
     "profile30": "You are an Asian woman who takes a balanced approach, considering both explicit content and potential implications when evaluating statements."
 }
 
+# Gender groups (15 personas each)
+MEN_PROFILES = [f"profile{i}" for i in [1,2,3,4,5, 11,12,13,14,15, 21,22,23,24,25]]
+WOMEN_PROFILES = [f"profile{i}" for i in [6,7,8,9,10, 16,17,18,19,20, 26,27,28,29,30]]
+
+# Ethnicity groups (10 personas each)  
+WHITE_PROFILES = [f"profile{i}" for i in range(1, 11)]
+BLACK_PROFILES = [f"profile{i}" for i in range(11, 21)]
+ASIAN_PROFILES = [f"profile{i}" for i in range(21, 31)]
+
+# Cognitive style groups (6 personas each)
+EXPANSIVE_PROFILES = [f"profile{i}" for i in [1,6,11,16,21,26]]        # Consider implications
+LITERAL_PROFILES = [f"profile{i}" for i in [2,7,12,17,22,27]]          # Focus on explicit content  
+HIGH_HARM_PROFILES = [f"profile{i}" for i in [3,8,13,18,23,28]]        # Cautious about harm
+LOW_HARM_PROFILES = [f"profile{i}" for i in [4,9,14,19,24,29]]         # Higher harm threshold
+BALANCED_PROFILES = [f"profile{i}" for i in [5,10,15,20,25,30]]        # Middle approach
+
+# Intersectional groups (5 personas each)
+WHITE_MEN = [f"profile{i}" for i in range(1, 6)]
+WHITE_WOMEN = [f"profile{i}" for i in range(6, 11)]
+BLACK_MEN = [f"profile{i}" for i in range(11, 16)]
+BLACK_WOMEN = [f"profile{i}" for i in range(16, 21)]
+ASIAN_MEN = [f"profile{i}" for i in range(21, 26)]
+ASIAN_WOMEN = [f"profile{i}" for i in range(26, 31)]
 
 
 

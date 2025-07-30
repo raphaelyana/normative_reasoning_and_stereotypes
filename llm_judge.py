@@ -76,19 +76,14 @@ class _BaseJudge:
         raw = self._chat_sync(prompt)
         return self._parse(raw)
 
-    def is_likely_wrong(self, text: str, target_label: str, threshold: float = 0.6) -> bool:
+    def is_likely_wrong(self, pred_label: str, target_label: str, confidence: float, threshold: float = 0.6) -> bool:
         try:
-            output = self.evaluate(text)
-            label = output.get("label")
-            confidence = output.get("confidence", 0.0)
-            return (label != target_label) or (confidence < threshold)
+            return (pred_label != target_label) or (confidence < threshold)
         except Exception:
             return True
         
-    def is_likely_uncertain(self, text: str, threshold: float = 0.6) -> bool:
+    def is_likely_uncertain(self, confidence: float, threshold: float = 0.95) -> bool:
         try:
-            output = self.evaluate(text)
-            confidence = output.get("confidence", 0.0)
             return confidence < threshold
         except Exception:
             return True
