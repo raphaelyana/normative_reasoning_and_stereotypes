@@ -6,6 +6,7 @@ from profile_message import make_system_message, PERSON_SEEDS
 from pydantic import BaseModel
 from dataclasses import dataclass
 import random
+from cases import CaseConfig
 
 DEFAULT_MODEL_DICT = {
     "default": "gpt-4o-mini"
@@ -43,7 +44,7 @@ class SmartReflexion:
     
     def __init__(
         self,
-        case: dict,  # Same format as ChainOfThoughts
+        case: CaseConfig,
         client: openai.OpenAI,
         model: Optional[str] = None,
         max_tokens: int = 300,
@@ -54,7 +55,7 @@ class SmartReflexion:
         uncertainty_threshold: str = "UNSURE"  # CERTAIN, CONFIDENT, UNSURE, CONFLICTED
     ):
         self.case = case
-        self.case_name = case["case_name"]
+        self.case_name = case.case_name
         self.client = client
         self.model = model if model else DEFAULT_MODEL_DICT["default"]
         self.max_tokens = max_tokens
@@ -82,8 +83,8 @@ class SmartReflexion:
 
     def _build_initial_prompt(self, input_text: str) -> str:
         """Stage 1: Classification with self-assessment"""
-        rules = "\n".join(f"- {r}" for r in self.case["label_rules"])
-        labels = self.case["valid_labels"]
+        rules = "\n".join(f"- {r}" for r in self.case.label_rules)
+        labels = self.case.valid_labels
         
         prompt = f"""Definition of {self.case_name}: {self.task_definition}
 
@@ -110,27 +111,8 @@ Most cases are either CONFIDENT or UNSURE.
 
     def _build_reflection_prompt(self, input_text: str, initial_pred: str, certainty: str) -> str:
         """Stage 2: Reflection and potential revision"""
-        rules = "\n".join(f"- {r}" for r in self.case["label_rules"])
-        labels = self.case["valid_labels"]
-        
-        prompt_old = f"""You initially classified this as "{initial_pred}" with certainty "{certainty}".
-
-Input: "{input_text}"
-
-Rules:
-{rules}
-
-Since you were {certainty.lower()}, please:
-
-1. Reflection: What makes this case ambiguous or difficult?
-2. Alternative view: What evidence could support the opposite classification?
-3. Final decision: Considering both perspectives, what's your final classification?
-
-Reflection: [Your reasoning about the ambiguity]
-Alternative perspective: [Evidence for the other side]
-Final classification: {labels[0]} or {labels[1]}"""
-        
-        labels = self.case["valid_labels"]
+        rules = "\n".join(f"- {r}" for r in self.case.label_rules)
+        labels = self.case.valid_labels
     
         if len(labels) != 2:
             raise ValueError("SmartReflexion currently supports exactly two labels.")
@@ -168,13 +150,13 @@ Final classification: {label_1} or {label_2}
         
         # Extract classification
         classification = ""
-        for label in self.case["valid_labels"]:
+        for label in self.case.valid_labels:
             if label.lower() in response_text.lower():
                 classification = label
                 break
         
         if not classification:
-            classification = self.case["valid_labels"][0]  # Default
+            classification = self.case.valid_labels[0]
         
         # Extract certainty
         certainty = "CONFIDENT"  # Default
@@ -197,7 +179,7 @@ Final classification: {label_1} or {label_2}
         
         # Extract final classification
         final_classification = ""
-        for label in self.case["valid_labels"]:
+        for label in self.case.valid_labels:
             if f"Final classification: {label}" in response_text or \
                f"final classification: {label.lower()}" in response_text.lower():
                 final_classification = label
@@ -205,13 +187,13 @@ Final classification: {label_1} or {label_2}
         
         if not final_classification:
             # Fallback: look for any mention of valid labels
-            for label in self.case["valid_labels"]:
+            for label in self.case.valid_labels:
                 if label.lower() in response_text.lower():
                     final_classification = label
                     break
         
         if not final_classification:
-            final_classification = self.case["valid_labels"][0]  # Default
+            final_classification = self.case.valid_labels[0]  # Default
         
         return reflection, final_classification
 
