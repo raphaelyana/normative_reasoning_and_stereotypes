@@ -1,0 +1,162 @@
+[
+  {
+    "sample_id": 0,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "No",
+    "confidence": 0.9
+  },
+  {
+    "sample_id": 1,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "No",
+    "confidence": 0.9
+  },
+  {
+    "sample_id": 2,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "No",
+    "confidence": 0.95
+  },
+  {
+    "sample_id": 3,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "Yes",
+    "confidence": 0.9
+  },
+  {
+    "sample_id": 4,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "Yes",
+    "confidence": 0.9
+  },
+  {
+    "sample_id": 5,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "Yes",
+    "confidence": 0.9
+  },
+  {
+    "sample_id": 6,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "No",
+    "confidence": 0.95
+  },
+  {
+    "sample_id": 7,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "No",
+    "confidence": 0.9
+  },
+  {
+    "sample_id": 8,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "No",
+    "confidence": 0.95
+  },
+  {
+    "sample_id": 9,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "No",
+    "confidence": 0.95
+  },
+  {
+    "sample_id": 10,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "No",
+    "confidence": 0.95
+  },
+  {
+    "sample_id": 11,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "Yes",
+    "confidence": 0.9
+  },
+  {
+    "sample_id": 12,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "No",
+    "confidence": 0.95
+  },
+  {
+    "sample_id": 13,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "No",
+    "confidence": 0.95
+  },
+  {
+    "sample_id": 14,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "Yes",
+    "confidence": 0.95
+  },
+  {
+    "sample_id": 15,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "No",
+    "confidence": 0.9
+  },
+  {
+    "sample_id": 16,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "Yes",
+    "confidence": 0.95
+  },
+  {
+    "sample_id": 17,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "No",
+    "confidence": 0.95
+  },
+  {
+    "sample_id": 18,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "No",
+    "confidence": 0.9
+  },
+  {
+    "sample_id": 19,
+    "strategy": "zero_plus",
+    "reasoning_steps": [],
+    "final_reasoning": "",
+    "final_label": "Yes",
+    "confidence": 0.9
+  }
+]

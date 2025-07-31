@@ -10,7 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
-from sklearn.metrics import accuracy_score, classification_report, adjusted_rand_score
+from sklearn.metrics import accuracy_score
 from sklearn.model_selection import KFold
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import LabelEncoder
@@ -19,7 +19,7 @@ from scipy import stats
 from statsmodels.stats.contingency_tables import mcnemar
 from statsmodels.stats.multitest import multipletests
 from scipy.stats import (
-    bootstrap, binom, f_oneway, ttest_ind, kruskal, mannwhitneyu, pearsonr, spearmanr
+    bootstrap, f_oneway, ttest_ind, kruskal, mannwhitneyu, pearsonr
 )
 
 from scipy.spatial.distance import squareform
@@ -161,7 +161,7 @@ def print_report(report):
     
     print("=== Accuracy Improvements vs Baseline")
     for k, v in report["accuracy_differences"].items():
-        print(f"{k}: Δ = {v:.4f}")
+        print(f"{k}: Difference = {v:.4f}")
     
     print("\n=== McNemar p-values:")
     for k, (pval, stat) in report["mcnemar_tests"].items():
@@ -177,47 +177,6 @@ def print_report(report):
 
 def compute_accuracy(y_true, y_pred):
     return np.mean(np.array(y_true) == np.array(y_pred))
-
-
-def compute_classification_reports(merged_df):
-    true = merged_df["true_label"].astype(str).str.strip().str.lower()
-    base = merged_df["base_pred"].astype(str).str.strip().str.lower()
-    profile_cols = [col for col in merged_df.columns if col.startswith("profile")]
-
-    reports = {}
-
-    base_report = classification_report(true, base, output_dict=True, zero_division=0)
-    reports["baseline"] = base_report
-
-    for profile in profile_cols:
-        pred = merged_df[profile].astype(str).str.strip().str.lower()
-        try:
-            report = classification_report(true, pred, output_dict=True, zero_division=0)
-            reports[profile] = report
-        except Exception as e:
-            print(f"=== Error generating report for {profile}: {e}")
-
-    summary_rows = []
-    for profile, report in reports.items():
-        f1_macro = report["macro avg"]["f1-score"]
-        f1_weighted = report["weighted avg"]["f1-score"]
-        accuracy = report["accuracy"]
-        precision_macro = report["macro avg"]["precision"]
-        recall_macro = report["macro avg"]["recall"]
-        summary_rows.append({
-            "profile": profile,
-            "accuracy": accuracy,
-            "f1_macro": f1_macro,
-            "f1_weighted": f1_weighted,
-            "precision_macro": precision_macro,
-            "recall_macro": recall_macro
-        })
-
-    summary_df = pd.DataFrame(summary_rows).sort_values("f1_macro", ascending=False)
-    print("=== Classification Reports Summary ===\n")
-    print(summary_df.to_string(index=False, float_format="%.3f"))
-
-    return summary_df
 
 def rescue_stats_by_category(
         merged: pd.DataFrame,
@@ -373,38 +332,6 @@ def analyze_persona_similarity(merged: pd.DataFrame) -> Dict[str, Any]:
         "distance_matrix": distance_matrix
     }
 
-def evaluate_with_correction(merged: pd.DataFrame) -> pd.DataFrame:
-    """Apply Bonferroni correction for multiple hypothesis testing"""
-    
-    results = evaluate_role_playing_effects(merged)
-    
-    # Extract p-values
-    p_values = []
-    profile_names = []
-    
-    for profile, (pval, stat) in results["mcnemar_tests"].items():
-        if not np.isnan(pval):
-            p_values.append(pval)
-            profile_names.append(profile)
-    
-    # Apply correction
-    reject, pvals_corrected, _, _ = multipletests(
-        p_values, 
-        alpha=0.05, 
-        method='fdr_bh'
-    )
-    
-    # Create summary
-    summary = pd.DataFrame({
-        'profile': profile_names,
-        'p_value_raw': p_values,
-        'p_value_corrected': pvals_corrected,
-        'significant': reject,
-        'accuracy_delta': [results["accuracy_differences"][p] for p in profile_names]
-    })
-    
-    return summary.sort_values('p_value_corrected')
-
 
 def extract_high_disagreement_cases(merged: pd.DataFrame, threshold: float = 0.7) -> pd.DataFrame:
     """Find cases where personas disagree most"""
@@ -433,6 +360,7 @@ def extract_high_disagreement_cases(merged: pd.DataFrame, threshold: float = 0.7
     high_disagreement = disagreement_df[disagreement_df['disagreement_score'] > threshold]
     
     return high_disagreement.sort_values('disagreement_score', ascending=False)
+
 
 def test_comprehensive_own_group_sensitivity(merged_df):
     """
@@ -3050,21 +2978,20 @@ def run_tier3_analysis(merged_df):
     print("="*80)
     
     # 1. Temporal Stability vs Boldness Analysis
-    print("\n⏱️ Running Temporal Stability vs Boldness Analysis...")
+    print("\n === Running Temporal Stability vs Boldness Analysis... === ")
     stability_results = temporal_stability_vs_boldness_analysis(merged_df, n_folds=5)
     
     # 2. Simplified Causal Modeling
-    print("\n🔗 Running Simplified Causal Modeling...")
+    print("\n === Running Simplified Causal Modeling... === ")
     causal_results = simplified_causal_modeling(merged_df, stability_results)
     
     # 3. Generate Visualizations
-    print("\n📊 Creating Temporal Stability Visualizations...")
+    print("\n === Creating Temporal Stability Visualizations... ===")
     stability_viz = plot_stability_boldness_analysis(stability_results)
     
-    print("\n🧠 Creating Causal Model Visualizations...")
+    print("\n === Creating Causal Model Visualizations... ===")
     causal_viz = visualize_causal_model(causal_results)
-    
-    # 4. Generate Theoretical Integration
+
     print("\n" + "="*80)
     print("TIER 3 THEORETICAL INTEGRATION")
     print("="*80)

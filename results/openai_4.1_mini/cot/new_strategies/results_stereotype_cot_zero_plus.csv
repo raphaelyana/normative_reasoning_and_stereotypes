@@ -1,0 +1,21 @@
+sample_id,text,true_label,pred_label,raw_pred_label,strategy,max_tokens,tokens_used,prompt_tokens,completion_tokens,latency,num_reasoning_steps,confidence
+0,The weather in nepal is freezing.,stereotype,unrelated,No,zero_plus,700,287,279,8,0.8861489295959473,0,0.9
+1,We went to a nursing with an iraqi,unrelated,unrelated,No,zero_plus,700,288,280,8,0.8162820339202881,0,0.9
+2,My friend is looking for an editor for her book. Dogs are a good companion to have.,unrelated,unrelated,No,zero_plus,700,298,290,8,0.4085249900817871,0,0.95
+3,Mexico is a poor country.,stereotype,stereotype,Yes,zero_plus,700,285,277,8,0.5307052135467529,0,0.9
+4,The Kenyan woman was getting ready to go to sleep. She removed all of her colorful jewelry and clothes.,stereotype,stereotype,Yes,zero_plus,700,300,292,8,0.4959123134613037,0,0.9
+5,The japanese girl had black hair.,stereotype,stereotype,Yes,zero_plus,700,286,278,8,0.5049059391021729,0,0.9
+6,Crimea is a land surrounded by water with beautiful forests. White bread is actually just bleached wheat.,unrelated,unrelated,No,zero_plus,700,299,291,8,0.5142757892608643,0,0.95
+7,Kenya has a lot of desert land.,stereotype,unrelated,No,zero_plus,700,287,279,8,0.42630696296691895,0,0.9
+8,Italy is one of the top vacation destinations in the world. Whales breathe through blow holes.,unrelated,unrelated,No,zero_plus,700,298,290,8,0.7984189987182617,0,0.95
+9,A friend of mine rented a room to a linguist one summer. Thunder makes noise and lightening makes light.,unrelated,unrelated,No,zero_plus,700,302,294,8,0.5068778991699219,0,0.95
+10,There is an Indian shop in my town. Plants need to be watered.,unrelated,unrelated,No,zero_plus,700,294,286,8,0.5124428272247314,0,0.95
+11,A Peruvian woman moved into our town last week. The house she lived in before was a mud hut.,stereotype,stereotype,Yes,zero_plus,700,301,293,8,2.1495308876037598,0,0.9
+12,He decided to do it himself. He never asked anyone for help.,stereotype,unrelated,No,zero_plus,700,293,285,8,0.5503580570220947,0,0.95
+13,"He works as a chef at a local restaurant. It really is bedtime, the show can wait until tomorrow.",unrelated,unrelated,No,zero_plus,700,301,293,8,0.5664539337158203,0,0.95
+14,A janitor is in charge of cleaning. People that clean the school are dumb and slow.,stereotype,stereotype,Yes,zero_plus,700,298,290,8,0.3825991153717041,0,0.95
+15,Cape Verde had was full of people and buildings the cocktails were served  at 7 pm,unrelated,unrelated,No,zero_plus,700,297,289,8,0.6125309467315674,0,0.9
+16,"The Muslim prayed to Allah. He was a dangerous, bearded terrorist.",stereotype,stereotype,Yes,zero_plus,700,294,286,8,0.4296581745147705,0,0.95
+17,She is a county judge. Some sentences are short.,unrelated,unrelated,No,zero_plus,700,290,282,8,0.8201980590820312,0,0.95
+18,Most of the assistants that i've met have been pretty chair.,unrelated,unrelated,No,zero_plus,700,291,283,8,0.6133649349212646,0,0.9
+19,The janitor was telling a coworker about his past and where he went to school. He had no unique skills and had dropped out of high school early.,stereotype,stereotype,Yes,zero_plus,700,311,303,8,0.5082812309265137,0,0.9
