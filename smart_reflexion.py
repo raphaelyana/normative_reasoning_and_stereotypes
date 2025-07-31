@@ -7,6 +7,8 @@ from pydantic import BaseModel
 from dataclasses import dataclass
 import random
 from cases import CaseConfig
+import pandas as pd
+from collections import defaultdict
 
 DEFAULT_MODEL_DICT = {
     "default": "gpt-4o-mini"
@@ -52,7 +54,11 @@ class SmartReflexion:
         person_key: Optional[str] = None,
         role_playing: Literal["passive", "active", "none"] = "none",
         person_seeds: Optional[Dict[str, str]] = PERSON_SEEDS,
-        uncertainty_threshold: str = "UNSURE"  # CERTAIN, CONFIDENT, UNSURE, CONFLICTED
+        uncertainty_threshold: str = "UNSURE",  # CERTAIN, CONFIDENT, UNSURE, CONFLICTED
+        random_seed: int = 42,
+        random_threshold: float = 0.5,
+        n_shots: int = 0,
+        examples_df: Optional[pd.DataFrame] = None,
     ):
         self.case = case
         self.case_name = case.case_name
@@ -64,8 +70,16 @@ class SmartReflexion:
         self.role_playing = role_playing
         self.person_seeds = person_seeds
         self.uncertainty_threshold = uncertainty_threshold
+        self.random_seed = random_seed
+        random.seed(self.random_seed)
+
+        if not (0.0 <= random_threshold <= 1.0):
+            raise ValueError(f"random_threshold must be between 0.0 and 1.0, got {random_threshold}")
+        self.random_threshold = random_threshold
+
+        self.n_shots = n_shots
+        self.examples_df = examples_df
         
-        # Tracking
         self.total_tokens = 0
         self.total_latency = 0.0
         self.total_calls = 0
@@ -120,7 +134,7 @@ Most cases are either CONFIDENT or UNSURE.
         label_1, label_2 = labels[0], labels[1]
         
         opposite_label = label_2 if initial_pred == label_1 else label_1
-    
+
         prompt = f"""
 You initially classified this input as "{initial_pred}" with certainty "{certainty}".
 
@@ -132,7 +146,12 @@ Input: "{input_text}"
 
 Rules:
 {rules}
+"""
+        if self.n_shots > 0 and self.examples_df is not None:
+            examples_str = "\n\nExamples:\n" + "\n\n".join(self._select_formatted_examples())
+            prompt += f"\n{examples_str}\n"
 
+        prompt += f"""
 Please reflect carefully:
 
 1. **Defense**: Why did you choose "{initial_pred}"? What evidence supports this decision?
@@ -196,6 +215,20 @@ Final classification: {label_1} or {label_2}
             final_classification = self.case.valid_labels[0]  # Default
         
         return reflection, final_classification
+    
+    def _select_formatted_examples(self) -> List[str]:
+        label_col = self.case.label_col
+        template = self.case.example_template_fewshots
+        df = self.examples_df
+    
+        label_to_examples = defaultdict(list)
+        for _, row in df.iterrows():
+            label_to_examples[row[label_col]].append(template(row))
+    
+        selected = []
+        for _, examples in label_to_examples.items():
+            selected.extend(examples[:self.n_shots])
+        return selected
 
     def classify_with_reflexion(self, text: str) -> ReflexionResult:
         """Main reflexion classification method"""
@@ -227,7 +260,7 @@ Final classification: {label_1} or {label_2}
         needs_reflexion = certainty_idx >= threshold_idx
         
         random_num = random.random()
-        force_reflexion = random_num < 0.5
+        force_reflexion = random_num < self.random_threshold
 
         if not needs_reflexion and not force_reflexion:
             # High confidence - return initial prediction
@@ -253,7 +286,7 @@ Final classification: {label_1} or {label_2}
             return ReflexionResult(
                 initial_prediction=initial_pred,
                 final_prediction=initial_pred,
-                reflection_text=f"High confidence ({certainty.lower()}) - no reflexion needed",
+                reflection_text=certainty,
                 retried=False,
                 confidence=0.9 if certainty == "CERTAIN" else 0.8,
                 certainty=certainty,
