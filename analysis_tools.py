@@ -1,9 +1,11 @@
 import os
 import glob
 import json
+import re
 from collections import Counter
 from itertools import combinations
 from typing import List, Dict, Any
+
 
 import pandas as pd
 import numpy as np
@@ -40,7 +42,7 @@ def load_and_merge_profiles(
     merged = df_base[[sample_id_col, label_col, pred_col]].rename(columns={pred_col: "base_pred"})
 
     profile_files = glob.glob(role_playing_glob_pattern)
-    print(f"🔍 Found {len(profile_files)} profile result files.")
+    print(f"=== Found {len(profile_files)} profile result files.")
 
     for file in profile_files:
         profile_folder = os.path.basename(os.path.dirname(file))
@@ -72,179 +74,860 @@ def load_and_merge_profiles(
         merged[col] = merged[col].astype(str).str.strip().str.lower()
 
     fixed_columns = [sample_id_col, label_col, "base_pred"]
-    profile_columns = sorted([col for col in merged.columns if col not in fixed_columns])
-    merged = merged[fixed_columns + profile_columns]
+    meta_columns = [col for col in extra_cols if col in merged.columns]
+
+    profile_columns = [
+        col for col in merged.columns
+        if col.startswith("profile") and col not in fixed_columns + meta_columns
+    ]
+
+    # Sort numerically by profile number
+    def extract_profile_number(col_name):
+        match = re.search(r"profile(\d+)", col_name)
+        return int(match.group(1)) if match else float('inf')
+
+    profile_columns = sorted(profile_columns, key=extract_profile_number)
+
+    # Final column ordering
+    final_columns = fixed_columns + meta_columns + profile_columns
+    merged = merged[final_columns]
 
     print("=== Merged DataFrame ready with columns:\n", merged.columns.tolist())
     return merged
 
 
-
-def evaluate_role_playing_effects(merged: pd.DataFrame):
-    results = {}
-    base = merged["base_pred"].astype(str).str.strip().str.lower()
-    true = merged["true_label"].astype(str).str.strip().str.lower()
-
-    profile_cols = [col for col in merged.columns if col.startswith("profile")]
-    profiles = merged[profile_cols].apply(lambda col: col.astype(str).str.strip().str.lower())
-
-    base_acc = accuracy_score(true, base)
-    acc_diffs = {}
-    for profile in profile_cols:
-        acc = accuracy_score(true, profiles[profile])
-        acc_diffs[profile] = acc - base_acc
-
-    results["accuracy_differences"] = acc_diffs
-
-    mcnemar_pvals = {}
-    for profile in profile_cols:
-        both_correct = ((base == true) & (profiles[profile] == true)).sum()
-        base_only    = ((base == true) & (profiles[profile] != true)).sum()
-        profile_only = ((base != true) & (profiles[profile] == true)).sum()
-        both_wrong   = ((base != true) & (profiles[profile] != true)).sum()
-
-        table = [[both_correct, base_only],
-                 [profile_only, both_wrong]]
-
-        try:
-            mcnemar_result = mcnemar(table, exact=True)
-            mcnemar_pvals[profile] = (mcnemar_result.pvalue, mcnemar_result.statistic)
-        except Exception as e:
-            mcnemar_pvals[profile] = (np.nan, f"Error: {e}")
-
-    results["mcnemar_tests"] = mcnemar_pvals
-
-    def paired_diff(data, idx):
-        return np.mean(data[1][idx] == true) - np.mean(data[0][idx] == true)
-
-    bootstrap_cis = {}
-    for profile in profile_cols:
-        try:
-            data = (base.values, profiles[profile].values)
-            res = bootstrap(data, paired_diff, confidence_level=0.95, n_resamples=1000, method="percentile", random_state=0)
-            bootstrap_cis[profile] = (res.confidence_interval.low, res.confidence_interval.high)
-        except Exception as e:
-            bootstrap_cis[profile] = (np.nan, np.nan)
-
-    results["bootstrap_confidence_intervals"] = bootstrap_cis
-
-    active_profiles = [col for col in profile_cols if "active" in col]
-    passive_profiles = [col for col in profile_cols if "passive" in col]
-
-    def majority_vote(df):
-        mode_df = df.mode(axis=1)
-        if mode_df.shape[1] == 0:
-            return pd.Series([""] * df.shape[0], index=df.index)
-        return mode_df.iloc[:, 0].fillna("")
-
-    active_vote = majority_vote(profiles[active_profiles])
-    passive_vote = majority_vote(profiles[passive_profiles])
-    active_acc = accuracy_score(true, active_vote)
-    passive_acc = accuracy_score(true, passive_vote)
-
-    results["aggregate_active_vs_passive"] = {
-        "active_accuracy": active_acc,
-        "passive_accuracy": passive_acc,
-        "delta": active_acc - passive_acc
-    }
-
-    agreements = {}
-    for a, b in combinations(profile_cols, 2):
-        agreements[f"{a} vs {b}"] = np.mean(profiles[a] == profiles[b])
-    results["pairwise_agreement"] = agreements
-
-    return results
-
-
-
-def print_report(report):
-    
-    print("=== Accuracy Improvements vs Baseline")
-    for k, v in report["accuracy_differences"].items():
-        print(f"{k}: Difference = {v:.4f}")
-    
-    print("\n=== McNemar p-values:")
-    for k, (pval, stat) in report["mcnemar_tests"].items():
-        print(f"{k}: p = {pval:.4f}, stat = {stat:.2f}")
-    
-    print("\n=== Aggregate Active vs Passive")
-    print(report["aggregate_active_vs_passive"])
-    
-    print("\n=== Pairwise Agreement between Profiles")
-    for k, v in report["pairwise_agreement"].items():
-        print(f"{k}: agreement = {v:.3f}")
-
-
 def compute_accuracy(y_true, y_pred):
     return np.mean(np.array(y_true) == np.array(y_pred))
 
-def rescue_stats_by_category(
-        merged: pd.DataFrame,
-        category_col: str,
-        baseline_col: str = "base_pred",
-        label_col: str = "true_label",
-        profile_prefix: str = "profile"
+
+# ============================================================================
+# Preliminary Analysis
+# ============================================================================
+
+
+def test_comprehensive_demographic_accuracy_differences(merged_df):
+    """
+    Comprehensive analysis of demographic group accuracy differences.
+    
+    Provides foundational evidence of classification patterns across demographic
+    groups before running advanced statistical models. Tests for systematic
+    differences in accuracy across gender, ethnicity, cognitive styles, and
+    intersectional categories.
+    
+    Parameters:
+    -----------
+    merged_df : pandas.DataFrame
+        DataFrame containing profile columns and true_label column
+    
+    Returns:
+    --------
+    dict : Dictionary containing statistical test results for all group comparisons
+    """
+    
+    results = {}
+
+    # Profile definitions by demographic groups
+    MEN_PROFILES = [f"profile{i}_passive" for i in [1,2,3,4,5, 11,12,13,14,15, 21,22,23,24,25]]
+    WOMEN_PROFILES = [f"profile{i}_passive" for i in [6,7,8,9,10, 16,17,18,19,20, 26,27,28,29,30]]
+    
+    WHITE_PROFILES = [f"profile{i}_passive" for i in range(1, 11)]
+    BLACK_PROFILES = [f"profile{i}_passive" for i in range(11, 21)]
+    ASIAN_PROFILES = [f"profile{i}_passive" for i in range(21, 31)]
+    
+    # Cognitive style profiles
+    EXPANSIVE_PROFILES = [f"profile{i}_passive" for i in [1,6,11,16,21,26]]        
+    LITERAL_PROFILES = [f"profile{i}_passive" for i in [2,7,12,17,22,27]]         
+    HIGH_HARM_PROFILES = [f"profile{i}_passive" for i in [3,8,13,18,23,28]]        
+    LOW_HARM_PROFILES = [f"profile{i}_passive" for i in [4,9,14,19,24,29]]       
+    BALANCED_PROFILES = [f"profile{i}_passive" for i in [5,10,15,20,25,30]]
+    
+    # Intersectional groups
+    WHITE_MEN = [f"profile{i}_passive" for i in range(1, 6)]
+    WHITE_WOMEN = [f"profile{i}_passive" for i in range(6, 11)]
+    BLACK_MEN = [f"profile{i}_passive" for i in range(11, 16)]
+    BLACK_WOMEN = [f"profile{i}_passive" for i in range(16, 21)]
+    ASIAN_MEN = [f"profile{i}_passive" for i in range(21, 26)]
+    ASIAN_WOMEN = [f"profile{i}_passive" for i in range(26, 31)]
+
+    def calculate_group_accuracy(profiles, df):
+        """Calculate accuracy metrics for a group of profiles."""
+        accuracies = []
+        for profile in profiles:
+            if profile in df.columns:
+                acc = (df[profile] == df['true_label']).mean()
+                accuracies.append(acc)
+        return accuracies
+
+    def compare_groups(group1_profiles, group2_profiles, group1_name, group2_name, df):
+        """Perform statistical comparison between two demographic groups."""
+        acc1 = calculate_group_accuracy(group1_profiles, df)
+        acc2 = calculate_group_accuracy(group2_profiles, df)
+        
+        if acc1 and acc2:
+            t_stat, p_val = ttest_ind(acc1, acc2)
+            pooled_std = np.sqrt((np.var(acc1) + np.var(acc2)) / 2)
+            effect_size = (np.mean(acc1) - np.mean(acc2)) / pooled_std if pooled_std > 0 else 0
+            
+            return {
+                f'{group1_name}_accuracy': np.mean(acc1),
+                f'{group2_name}_accuracy': np.mean(acc2),
+                'difference': np.mean(acc1) - np.mean(acc2),
+                'p_value': p_val,
+                'significant': p_val < 0.05,
+                'effect_size': effect_size,
+                'sample_sizes': f"{group1_name}: {len(acc1)}, {group2_name}: {len(acc2)}",
+                'interpretation': f'{"Significant" if p_val < 0.05 else "Non-significant"} accuracy difference between groups'
+            }
+        return None
+
+    # Gender comparison
+    gender_result = compare_groups(MEN_PROFILES, WOMEN_PROFILES, 'men', 'women', merged_df)
+    if gender_result:
+        results['men_vs_women'] = gender_result
+
+    # Ethnicity comparisons
+    ethnicity_pairs = [
+        (WHITE_PROFILES, BLACK_PROFILES, 'white', 'black'),
+        (WHITE_PROFILES, ASIAN_PROFILES, 'white', 'asian'),
+        (BLACK_PROFILES, ASIAN_PROFILES, 'black', 'asian')
+    ]
+    
+    for profiles1, profiles2, name1, name2 in ethnicity_pairs:
+        result = compare_groups(profiles1, profiles2, name1, name2, merged_df)
+        if result:
+            results[f'{name1}_vs_{name2}'] = result
+
+    # Cognitive style comparisons
+    cognitive_pairs = [
+        (EXPANSIVE_PROFILES, LITERAL_PROFILES, 'expansive', 'literal'),
+        (HIGH_HARM_PROFILES, LOW_HARM_PROFILES, 'high_harm_sensitivity', 'low_harm_sensitivity'),
+        (EXPANSIVE_PROFILES, BALANCED_PROFILES, 'expansive', 'balanced'),
+        (LITERAL_PROFILES, BALANCED_PROFILES, 'literal', 'balanced'),
+        (HIGH_HARM_PROFILES, BALANCED_PROFILES, 'high_harm_sensitivity', 'balanced'),
+        (LOW_HARM_PROFILES, BALANCED_PROFILES, 'low_harm_sensitivity', 'balanced')
+    ]
+    
+    for profiles1, profiles2, name1, name2 in cognitive_pairs:
+        result = compare_groups(profiles1, profiles2, name1, name2, merged_df)
+        if result:
+            results[f'cognitive_{name1}_vs_{name2}'] = result
+
+    # Intersectional comparisons
+    intersectional_groups = [
+        (WHITE_MEN, 'white_men'),
+        (WHITE_WOMEN, 'white_women'),
+        (BLACK_MEN, 'black_men'),
+        (BLACK_WOMEN, 'black_women'),
+        (ASIAN_MEN, 'asian_men'),
+        (ASIAN_WOMEN, 'asian_women')
+    ]
+
+    for i, (profiles1, name1) in enumerate(intersectional_groups):
+        for profiles2, name2 in intersectional_groups[i+1:]:
+            result = compare_groups(profiles1, profiles2, name1, name2, merged_df)
+            if result:
+                results[f'intersectional_{name1}_vs_{name2}'] = result
+
+    # Majority vs minority group analysis
+    NON_WHITE_PROFILES = BLACK_PROFILES + ASIAN_PROFILES
+    result = compare_groups(WHITE_PROFILES, NON_WHITE_PROFILES, 'white', 'non_white', merged_df)
+    if result:
+        results['white_vs_non_white'] = result
+    
+    # White men vs everyone else
+    EVERYONE_ELSE = list(set(WOMEN_PROFILES + BLACK_PROFILES + ASIAN_PROFILES))
+    result = compare_groups(WHITE_MEN, EVERYONE_ELSE, 'white_men', 'everyone_else', merged_df)
+    if result:
+        results['white_men_vs_everyone_else'] = result
+
+    # Category-specific analysis (if stereotype_type exists)
+    if 'stereotype_type' in merged_df.columns:
+        categories = merged_df['stereotype_type'].unique()
+        
+        for category in categories:
+            if category is not None:
+                category_df = merged_df[merged_df['stereotype_type'] == category]
+                
+                if len(category_df) > 5:
+                    # Gender differences within category
+                    result = compare_groups(MEN_PROFILES, WOMEN_PROFILES, 'men', 'women', category_df)
+                    if result:
+                        results[f'category_{category}_men_vs_women'] = result
+                    
+                    # Ethnicity differences within category
+                    result = compare_groups(WHITE_PROFILES, NON_WHITE_PROFILES, 'white', 'non_white', category_df)
+                    if result:
+                        results[f'category_{category}_white_vs_non_white'] = result
+
+    # Summary statistics
+    significant_comparisons = sum(1 for result in results.values() if result.get('significant', False))
+    total_comparisons = len(results)
+    
+    # Effect size analysis
+    effect_sizes = [(key, result.get('effect_size', 0)) for key, result in results.items() if 'effect_size' in result]
+    effect_sizes.sort(key=lambda x: abs(x[1]), reverse=True)
+    
+    # Group performance summary
+    group_accuracies = {}
+    all_groups = [
+        (MEN_PROFILES, 'men'),
+        (WOMEN_PROFILES, 'women'),
+        (WHITE_PROFILES, 'white'),
+        (BLACK_PROFILES, 'black'),
+        (ASIAN_PROFILES, 'asian'),
+        (WHITE_MEN, 'white_men'),
+        (BLACK_WOMEN, 'black_women')
+    ]
+    
+    for profiles, name in all_groups:
+        accuracies = calculate_group_accuracy(profiles, merged_df)
+        if accuracies:
+            group_accuracies[name] = {
+                'mean_accuracy': np.mean(accuracies),
+                'std_accuracy': np.std(accuracies),
+                'n_profiles': len(accuracies)
+            }
+    
+    results['summary'] = {
+        'total_comparisons': total_comparisons,
+        'significant_comparisons': significant_comparisons,
+        'significance_rate': significant_comparisons / total_comparisons if total_comparisons > 0 else 0,
+        'largest_effects': effect_sizes[:5],
+        'group_performance_summary': group_accuracies
+    }
+    
+    return results
+
+
+def print_comprehensive_demographic_results(results):
+    """
+    Generate comprehensive report of demographic accuracy differences analysis.
+    
+    Parameters:
+    -----------
+    results : dict
+        Results dictionary from test_comprehensive_demographic_accuracy_differences()
+    
+    Returns:
+    --------
+    dict : Dictionary of significant results for further analysis
+    """
+    
+    print("\n" + "="*80)
+    print("COMPREHENSIVE DEMOGRAPHIC ACCURACY DIFFERENCES ANALYSIS")  
+    print("="*80)
+    
+    if not results:
+        print("No results found in the analysis.")
+        return {}
+    
+    # Executive Summary
+    if 'summary' in results:
+        summary = results['summary']
+        print(f"\nEXECUTIVE SUMMARY")
+        print("-" * 40)
+        print(f"Total Comparisons Performed: {summary['total_comparisons']}")
+        print(f"Significant Differences Found: {summary['significant_comparisons']}")
+        print(f"Statistical Significance Rate: {summary['significance_rate']:.1%}")
+        
+        # Effect size ranking
+        print(f"\nLARGEST EFFECT SIZES")
+        print("-" * 40)
+        for i, (comparison, effect_size) in enumerate(summary['largest_effects'][:5], 1):
+            magnitude = "Large" if abs(effect_size) > 0.8 else "Medium" if abs(effect_size) > 0.5 else "Small"
+            print(f"{i:2d}. {comparison:<35} Effect Size: {effect_size:6.3f} ({magnitude})")
+        
+        # Group performance ranking
+        print(f"\nGROUP PERFORMANCE RANKING")
+        print("-" * 40)
+        group_perf = summary['group_performance_summary']
+        sorted_groups = sorted(group_perf.items(), key=lambda x: x[1]['mean_accuracy'], reverse=True)
+        print(f"{'Rank':<6}{'Group':<15}{'Accuracy':<12}{'Std Dev':<10}{'N Profiles'}")
+        print("-" * 50)
+        for i, (group, stats) in enumerate(sorted_groups, 1):
+            print(f"{i:<6}{group:<15}{stats['mean_accuracy']:<12.3f}{stats['std_accuracy']:<10.3f}{stats['n_profiles']}")
+    
+    print(f"\n" + "="*80)
+    print("DETAILED STATISTICAL RESULTS")
+    print("="*80)
+    
+    def format_comparison_result(test_name, result):
+        """Format individual comparison results for clean display."""
+        sig_indicator = "[SIGNIFICANT]" if result['significant'] else "[NON-SIG]    "
+        
+        # Extract group names and accuracies dynamically
+        groups = test_name.replace('intersectional_', '').replace('cognitive_', '').replace('category_', '').split('_vs_')
+        if len(groups) == 2:
+            group1, group2 = groups
+            acc1_key = f'{group1}_accuracy'
+            acc2_key = f'{group2}_accuracy'
+            
+            group1_acc = result.get(acc1_key, 'N/A')
+            group2_acc = result.get(acc2_key, 'N/A')
+            
+            if isinstance(group1_acc, (int, float)) and isinstance(group2_acc, (int, float)):
+                acc_display = f"{group1.replace('_', ' ').title()}: {group1_acc:.3f} | {group2.replace('_', ' ').title()}: {group2_acc:.3f}"
+            else:
+                acc_display = "Accuracy data unavailable"
+        else:
+            acc_display = "Complex comparison"
+        
+        return f"{sig_indicator} {test_name:<35} | {acc_display}"
+    
+    # Gender Comparisons
+    print(f"\nGENDER COMPARISONS")
+    print("-" * 60)
+    gender_tests = [k for k in results.keys() if 'men_vs_women' in k]
+    if not gender_tests:
+        print("No gender comparisons available")
+    else:
+        for test in gender_tests:
+            result = results[test]
+            print(format_comparison_result(test, result))
+            print(f"         Difference: {result['difference']:+.3f} | p-value: {result['p_value']:.3f} | Effect Size: {result.get('effect_size', 0):.3f}")
+    
+    # Ethnicity Comparisons  
+    print(f"\nETHNICITY COMPARISONS")
+    print("-" * 60)
+    ethnicity_tests = [k for k in results.keys() if any(eth in k for eth in ['white_vs_black', 'white_vs_asian', 'black_vs_asian'])]
+    if not ethnicity_tests:
+        print("No ethnicity comparisons available")
+    else:
+        for test in ethnicity_tests:
+            result = results[test]
+            print(format_comparison_result(test, result))
+            print(f"         Difference: {result['difference']:+.3f} | p-value: {result['p_value']:.3f} | Effect Size: {result.get('effect_size', 0):.3f}")
+    
+    # Cognitive Style Comparisons
+    print(f"\nCOGNITIVE STYLE COMPARISONS")
+    print("-" * 60)
+    cognitive_tests = [k for k in results.keys() if k.startswith('cognitive_')]
+    if not cognitive_tests:
+        print("No cognitive style comparisons available")
+    else:
+        for test in cognitive_tests:
+            result = results[test]
+            clean_test = test.replace('cognitive_', '')
+            print(format_comparison_result(clean_test, result))
+            print(f"         Difference: {result['difference']:+.3f} | p-value: {result['p_value']:.3f} | Effect Size: {result.get('effect_size', 0):.3f}")
+    
+    # Significant Intersectional Results
+    print(f"\nSIGNIFICANT INTERSECTIONAL COMPARISONS")
+    print("-" * 60)
+    intersectional_tests = [k for k in results.keys() if k.startswith('intersectional_') and results[k]['significant']]
+    if not intersectional_tests:
+        print("No significant intersectional differences detected")
+    else:
+        for test in intersectional_tests[:10]:  # Show top 10
+            result = results[test]
+            clean_test = test.replace('intersectional_', '')
+            print(f"[SIGNIFICANT] {clean_test}")
+            print(f"         Difference: {result['difference']:+.3f} | p-value: {result['p_value']:.3f} | Effect Size: {result.get('effect_size', 0):.3f}")
+    
+    # Majority/Minority Analysis
+    print(f"\nMAJORITY/MINORITY GROUP ANALYSIS")
+    print("-" * 60)
+    majority_tests = [k for k in results.keys() if any(x in k for x in ['white_vs_non_white', 'white_men_vs_everyone'])]
+    if not majority_tests:
+        print("No majority/minority comparisons available")
+    else:
+        for test in majority_tests:
+            result = results[test]
+            print(format_comparison_result(test, result))
+            print(f"         Difference: {result['difference']:+.3f} | p-value: {result['p_value']:.3f} | Effect Size: {result.get('effect_size', 0):.3f}")
+    
+    # Category-Specific Results
+    category_tests = [k for k in results.keys() if k.startswith('category_') and results[k]['significant']]
+    if category_tests:
+        print(f"\nCATEGORY-SPECIFIC SIGNIFICANT PATTERNS")
+        print("-" * 60)
+        for test in category_tests:
+            result = results[test]
+            clean_test = test.replace('category_', '')
+            print(f"[SIGNIFICANT] {clean_test}")
+            print(f"         Difference: {result['difference']:+.3f} | p-value: {result['p_value']:.3f}")
+    
+    # Key Insights and Interpretation
+    print(f"\n" + "="*80)
+    print("ANALYSIS INTERPRETATION")
+    print("="*80)
+    
+    sig_results = {k: v for k, v in results.items() if v.get('significant', False) and k != 'summary'}
+    total_tests = len([k for k in results.keys() if k != 'summary'])
+    
+    print(f"\nBIAS ASSESSMENT")
+    print("-" * 40)
+    if len(sig_results) > total_tests * 0.3:
+        bias_level = "HIGH"
+        recommendation = "Immediate bias mitigation required across multiple demographic dimensions"
+    elif len(sig_results) > total_tests * 0.1:
+        bias_level = "MODERATE"
+        recommendation = "Targeted bias mitigation needed for specific group comparisons"
+    else:
+        bias_level = "LOW"
+        recommendation = "System demonstrates good demographic balance with minimal bias"
+    
+    print(f"Bias Level: {bias_level}")
+    print(f"Recommendation: {recommendation}")
+    
+    # Effect size interpretation
+    if 'summary' in results and results['summary']['largest_effects']:
+        largest_effect = results['summary']['largest_effects'][0]
+        print(f"\nLARGEST BIAS DETECTED")
+        print("-" * 40)
+        print(f"Comparison: {largest_effect[0]}")
+        print(f"Effect Size: {largest_effect[1]:.3f}")
+        
+        magnitude = "substantial" if abs(largest_effect[1]) > 0.8 else "moderate" if abs(largest_effect[1]) > 0.5 else "small"
+        print(f"Magnitude: {magnitude.title()} practical significance")
+    
+    # Pattern analysis
+    cognitive_sig = len([k for k in sig_results if k.startswith('cognitive_')])
+    demographic_sig = len([k for k in sig_results if not k.startswith('cognitive_') and not k.startswith('category_')])
+    
+    print(f"\nPATTERN ANALYSIS")
+    print("-" * 40)
+    if cognitive_sig > demographic_sig:
+        print("Primary variation source: Cognitive processing styles")
+        print("Implication: Individual differences in reasoning approach drive accuracy variations")
+    elif demographic_sig > cognitive_sig:
+        print("Primary variation source: Demographic characteristics")
+        print("Implication: Systematic demographic bias present in classification system")
+    else:
+        print("Balanced variation: Both cognitive and demographic factors contribute equally")
+    
+    return sig_results
+
+
+
+
+
+
+
+def extract_high_disagreement_cases(
+    merged: pd.DataFrame, 
+    threshold: float = 0.7,
+    sample_id_col: str = "sample_id",
+    label_col: str = "true_label",
+    baseline_col: str = "base_pred",
+    profile_prefix: str = "profile"
 ) -> pd.DataFrame:
     """
-    Return a long-format DataFrame with, for every (category, profile):
-        N_cat           – total samples in category
-        rescued         – baseline wrong & profile correct
-        rescue_rate     – rescued / baseline_errors_cat
-        extra_errors    – baseline correct & profile wrong
-        extra_err_rate  – extra_errors / baseline_correct_cat
-        profile_acc     – accuracy of the profile on the category
-        baseline_acc    – accuracy of the baseline on the category
+    Identify cases with high disagreement among profile predictions.
+    
+    This function analyzes prediction consensus across profiles to identify
+    samples where profiles show substantial disagreement. High disagreement
+    cases often represent challenging or ambiguous samples that warrant
+    closer examination for bias analysis and model improvement.
+    
+    Parameters:
+    -----------
+    merged : pd.DataFrame
+        DataFrame containing profile predictions and metadata
+    threshold : float, default=0.7
+        Minimum disagreement score (0-1) to classify as high disagreement.
+        Score represents proportion of profiles disagreeing with modal prediction.
+    sample_id_col : str, default="sample_id"
+        Column name containing unique sample identifiers
+    label_col : str, default="true_label"
+        Column name containing ground truth labels
+    baseline_col : str, default="base_pred"
+        Column name containing baseline model predictions
+    profile_prefix : str, default="profile"
+        Prefix for identifying profile prediction columns
+    
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame containing high disagreement cases with columns:
+        - sample_id: Unique identifier for the sample
+        - disagreement_score: Proportion of profiles disagreeing with mode (0-1)
+        - prediction_distribution: Counter object showing prediction frequency
+        - modal_prediction: Most common prediction across profiles
+        - minority_predictions: List of non-modal predictions
+        - true_label: Ground truth label
+        - base_pred: Baseline model prediction
+        - consensus_strength: Strength of modal prediction (inverse of disagreement)
+        - prediction_entropy: Information-theoretic measure of disagreement
+    
+    Raises:
+    -------
+    ValueError
+        If required columns are missing or no profile columns found
     """
+    
+    # Input validation
+    required_cols = [sample_id_col, label_col, baseline_col]
+    missing_cols = [col for col in required_cols if col not in merged.columns]
+    if missing_cols:
+        raise ValueError(f"Missing required columns: {missing_cols}")
+    
+    # Identify profile columns
+    profile_cols = [col for col in merged.columns if col.startswith(profile_prefix)]
+    if not profile_cols:
+        raise ValueError(f"No columns found with prefix '{profile_prefix}'")
+    
+    print(f"Analyzing disagreement across {len(profile_cols)} profiles...")
+    print(f"Using disagreement threshold: {threshold}")
+    
+    disagreement_records = []
+    
+    # Analyze each sample
+    for idx, row in merged.iterrows():
+        # Extract predictions from all profiles
+        profile_predictions = [row[col] for col in profile_cols]
+        
+        # Calculate prediction distribution
+        prediction_counts = Counter(profile_predictions)
+        total_profiles = len(profile_predictions)
+        
+        # Identify modal prediction (most common)
+        modal_prediction = prediction_counts.most_common(1)[0][0]
+        modal_count = prediction_counts[modal_prediction]
+        
+        # Calculate disagreement metrics
+        disagreement_score = (total_profiles - modal_count) / total_profiles
+        consensus_strength = modal_count / total_profiles
+        
+        # Calculate prediction entropy for information-theoretic disagreement measure
+        probabilities = [count / total_profiles for count in prediction_counts.values()]
+        prediction_entropy = -sum(p * np.log2(p) if p > 0 else 0 for p in probabilities)
+        
+        # Identify minority predictions
+        minority_predictions = [pred for pred, count in prediction_counts.items() if pred != modal_prediction]
+        
+        # Compile record
+        record = {
+            'sample_id': row[sample_id_col],
+            'disagreement_score': disagreement_score,
+            'prediction_distribution': dict(prediction_counts),
+            'modal_prediction': modal_prediction,
+            'minority_predictions': minority_predictions,
+            'consensus_strength': consensus_strength,
+            'prediction_entropy': prediction_entropy,
+            'true_label': row[label_col],
+            'base_pred': row[baseline_col],
+            'total_profiles': total_profiles,
+            'modal_count': modal_count,
+            'minority_count': total_profiles - modal_count
+        }
+        disagreement_records.append(record)
+    
+    # Create DataFrame and filter for high disagreement
+    disagreement_df = pd.DataFrame(disagreement_records)
+    high_disagreement_cases = disagreement_df[disagreement_df['disagreement_score'] > threshold].copy()
+    
+    # Sort by disagreement score (highest first)
+    high_disagreement_cases = high_disagreement_cases.sort_values(
+        'disagreement_score', 
+        ascending=False
+    ).reset_index(drop=True)
+    
+    # Add analysis metadata
+    total_samples = len(disagreement_df)
+    high_disagreement_count = len(high_disagreement_cases)
+    
+    print(f"\nDISAGREEMENT ANALYSIS SUMMARY")
+    print("-" * 50)
+    print(f"Total samples analyzed: {total_samples:,}")
+    print(f"High disagreement cases (>{threshold}): {high_disagreement_count:,}")
+    print(f"High disagreement rate: {high_disagreement_count/total_samples:.1%}")
+    
+    if high_disagreement_count > 0:
+        print(f"Average disagreement score: {high_disagreement_cases['disagreement_score'].mean():.3f}")
+        print(f"Maximum disagreement score: {high_disagreement_cases['disagreement_score'].max():.3f}")
+        print(f"Average prediction entropy: {high_disagreement_cases['prediction_entropy'].mean():.3f}")
+    
+    return high_disagreement_cases
 
+
+def print_disagreement_analysis(high_disagreement_df: pd.DataFrame, top_n: int = 10) -> None:
+    """
+    Print comprehensive analysis of high disagreement cases.
+    
+    Parameters:
+    -----------
+    high_disagreement_df : pd.DataFrame
+        Output from extract_high_disagreement_cases function
+    top_n : int, default=10
+        Number of top cases to display in detailed analysis
+    """
+    
+    if high_disagreement_df.empty:
+        print("No high disagreement cases found.")
+        return
+    
+    print("\n" + "="*80)
+    print("HIGH DISAGREEMENT CASES ANALYSIS")
+    print("="*80)
+    
+    # Summary statistics
+    print(f"\nSUMMARY STATISTICS")
+    print("-" * 40)
+    print(f"Total high disagreement cases: {len(high_disagreement_df):,}")
+    print(f"Average disagreement score: {high_disagreement_df['disagreement_score'].mean():.3f}")
+    print(f"Standard deviation: {high_disagreement_df['disagreement_score'].std():.3f}")
+    print(f"Range: {high_disagreement_df['disagreement_score'].min():.3f} - {high_disagreement_df['disagreement_score'].max():.3f}")
+    print(f"Average prediction entropy: {high_disagreement_df['prediction_entropy'].mean():.3f}")
+    
+    # Top disagreement cases
+    print(f"\nTOP {top_n} HIGHEST DISAGREEMENT CASES")
+    print("-" * 60)
+    print(f"{'Rank':<6}{'Sample ID':<15}{'Disagreement':<13}{'Entropy':<10}{'Modal Pred':<12}{'True Label'}")
+    print("-" * 80)
+    
+    for idx, (_, row) in enumerate(high_disagreement_df.head(top_n).iterrows(), 1):
+        print(f"{idx:<6}{str(row['sample_id']):<15}{row['disagreement_score']:<13.3f}"
+              f"{row['prediction_entropy']:<10.3f}{str(row['modal_prediction']):<12}{str(row['true_label'])}")
+    
+    # Prediction distribution analysis
+    print(f"\nPREDICTION DISTRIBUTION PATTERNS")
+    print("-" * 50)
+    
+    # Analyze common prediction patterns
+    all_distributions = high_disagreement_df['prediction_distribution'].tolist()
+    pattern_counts = Counter()
+    
+    for dist in all_distributions:
+        # Convert to sorted tuple for pattern matching
+        pattern = tuple(sorted(dist.items()))
+        pattern_counts[pattern] += 1
+    
+    print("Most common disagreement patterns:")
+    for pattern, count in pattern_counts.most_common(5):
+        pattern_str = ", ".join([f"{pred}: {cnt}" for pred, cnt in pattern])
+        print(f"  {pattern_str} (appears {count} times)")
+    
+    # Accuracy analysis
+    print(f"\nACCURACY ANALYSIS FOR HIGH DISAGREEMENT CASES")
+    print("-" * 50)
+    
+    # Compare modal prediction accuracy vs true labels
+    modal_correct = high_disagreement_df['modal_prediction'] == high_disagreement_df['true_label']
+    baseline_correct = high_disagreement_df['base_pred'] == high_disagreement_df['true_label']
+    
+    print(f"Modal prediction accuracy: {modal_correct.mean():.3f}")
+    print(f"Baseline prediction accuracy: {baseline_correct.mean():.3f}")
+    print(f"Cases where modal prediction is correct: {modal_correct.sum()} / {len(high_disagreement_df)}")
+    print(f"Cases where baseline is correct: {baseline_correct.sum()} / {len(high_disagreement_df)}")
+    
+    # Consensus strength analysis
+    print(f"\nCONSENSUS STRENGTH DISTRIBUTION")
+    print("-" * 40)
+    consensus_bins = pd.cut(high_disagreement_df['consensus_strength'], 
+                           bins=[0, 0.3, 0.4, 0.5, 0.6, 1.0], 
+                           labels=['Very Low (≤30%)', 'Low (30-40%)', 'Medium (40-50%)', 
+                                  'High (50-60%)', 'Very High (>60%)'])
+    
+    consensus_dist = consensus_bins.value_counts().sort_index()
+    for category, count in consensus_dist.items():
+        percentage = count / len(high_disagreement_df) * 100
+        print(f"  {category}: {count} cases ({percentage:.1f}%)")
+
+
+
+
+
+
+
+
+
+
+
+def rescue_stats_by_category(
+    merged: pd.DataFrame,
+    category_col: str,
+    baseline_col: str = "base_pred",
+    label_col: str = "true_label",
+    profile_prefix: str = "profile"
+) -> pd.DataFrame:
+    """
+    Analyze rescue statistics for each category and profile combination.
+    
+    This function computes comprehensive rescue metrics for each profile within each
+    category, measuring how often profiles correct baseline errors versus introducing
+    new errors. Essential for understanding profile-specific performance patterns
+    across different data segments.
+    
+    Parameters:
+    -----------
+    merged : pd.DataFrame
+        DataFrame containing predictions, true labels, and category information
+    category_col : str
+        Column name containing category labels for analysis segmentation
+    baseline_col : str, default="base_pred"
+        Column name containing baseline model predictions
+    label_col : str, default="true_label"
+        Column name containing ground truth labels
+    profile_prefix : str, default="profile"
+        Prefix for identifying profile prediction columns
+    
+    Returns:
+    --------
+    pd.DataFrame
+        Long-format DataFrame with rescue statistics for each (category, profile) pair.
+        Columns include:
+        - category: Category identifier
+        - profile: Profile identifier
+        - N_cat: Total samples in category
+        - rescued: Count of baseline errors corrected by profile
+        - rescue_rate: Proportion of baseline errors rescued
+        - extra_errors: Count of new errors introduced by profile
+        - extra_err_rate: Proportion of baseline correct predictions made incorrect
+        - profile_acc: Profile accuracy within category
+        - baseline_acc: Baseline accuracy within category
+    
+    Raises:
+    -------
+    ValueError
+        If category_col is not found in the DataFrame
+    """
+    
+    # Input validation
     if category_col not in merged.columns:
-        raise ValueError(f"{category_col} not in DataFrame")
-
+        raise ValueError(f"Category column '{category_col}' not found in DataFrame")
+    
+    if baseline_col not in merged.columns:
+        raise ValueError(f"Baseline column '{baseline_col}' not found in DataFrame")
+    
+    if label_col not in merged.columns:
+        raise ValueError(f"Label column '{label_col}' not found in DataFrame")
+    
+    # Standardize labels for consistent comparison
     y_true = merged[label_col].astype(str).str.strip().str.lower()
     y_base = merged[baseline_col].astype(str).str.strip().str.lower()
-
+    
+    # Identify profile columns
     profile_cols: List[str] = [c for c in merged.columns if c.startswith(profile_prefix)]
-    out_rows = []
+    
+    if not profile_cols:
+        raise ValueError(f"No columns found with prefix '{profile_prefix}'")
+    
+    output_records = []
+    
+    # Process each category
+    for category_value, category_df in merged.groupby(category_col):
+        category_size = len(category_df)
+        
+        # Extract category-specific true labels and baseline predictions
+        y_true_category = y_true.loc[category_df.index]
+        y_base_category = y_base.loc[category_df.index]
+        
+        # Calculate baseline performance metrics
+        baseline_correct_mask = (y_base_category == y_true_category)
+        baseline_errors_count = (~baseline_correct_mask).sum()
+        baseline_correct_count = baseline_correct_mask.sum()
+        baseline_accuracy = baseline_correct_count / category_size
+        
+        # Analyze each profile within this category
+        for profile_name in profile_cols:
+            # Standardize profile predictions
+            y_profile_category = category_df[profile_name].astype(str).str.strip().str.lower()
+            profile_correct_mask = (y_profile_category == y_true_category)
+            
+            # Calculate rescue metrics
+            rescued_errors = ((~baseline_correct_mask) & profile_correct_mask).sum()
+            additional_errors = (baseline_correct_mask & (~profile_correct_mask)).sum()
+            
+            # Calculate rates (handle division by zero)
+            rescue_rate = rescued_errors / baseline_errors_count if baseline_errors_count > 0 else 0.0
+            additional_error_rate = additional_errors / baseline_correct_count if baseline_correct_count > 0 else 0.0
+            
+            # Profile accuracy within category
+            profile_accuracy = profile_correct_mask.mean()
+            
+            # Compile results
+            record = {
+                'category': category_value,
+                'profile': profile_name,
+                'N_cat': category_size,
+                'rescued': int(rescued_errors),
+                'rescue_rate': rescue_rate,
+                'extra_errors': int(additional_errors),
+                'extra_err_rate': additional_error_rate,
+                'profile_acc': profile_accuracy,
+                'baseline_acc': baseline_accuracy
+            }
+            output_records.append(record)
+    
+    # Create and sort results DataFrame
+    results_df = pd.DataFrame(output_records)
+    results_df = results_df.sort_values(["category", "rescued"], ascending=[True, False])
+    
+    return results_df
 
-    for cat, df_cat in merged.groupby(category_col):
-        n_cat = len(df_cat)
-        y_true_cat = y_true.loc[df_cat.index]
-        y_base_cat = y_base.loc[df_cat.index]
 
-        base_correct = (y_base_cat == y_true_cat)
+def analyze_rescue_performance(rescue_stats_df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Generate comprehensive analysis of rescue statistics performance.
+    
+    Parameters:
+    -----------
+    rescue_stats_df : pd.DataFrame
+        Output from rescue_stats_by_category function
+    
+    Returns:
+    --------
+    Dict[str, Any]
+        Comprehensive analysis including top performers, category insights, and summary metrics
+    """
+    
+    if rescue_stats_df.empty:
+        return {"error": "Empty rescue statistics DataFrame provided"}
+    
+    analysis = {}
+    
+    # Overall performance metrics
+    analysis['summary'] = {
+        'total_categories': rescue_stats_df['category'].nunique(),
+        'total_profiles': rescue_stats_df['profile'].nunique(),
+        'total_samples': rescue_stats_df['N_cat'].sum(),
+        'total_rescues': rescue_stats_df['rescued'].sum(),
+        'total_extra_errors': rescue_stats_df['extra_errors'].sum(),
+        'avg_rescue_rate': rescue_stats_df['rescue_rate'].mean(),
+        'avg_extra_error_rate': rescue_stats_df['extra_err_rate'].mean()
+    }
+    
+    # Top performing profiles by rescue rate
+    analysis['top_rescue_performers'] = (
+        rescue_stats_df.nlargest(10, 'rescue_rate')[
+            ['profile', 'category', 'rescue_rate', 'rescued', 'profile_acc']
+        ].to_dict('records')
+    )
+    
+    # Profiles with highest extra error rates (potential problems)
+    analysis['highest_error_risk'] = (
+        rescue_stats_df.nlargest(10, 'extra_err_rate')[
+            ['profile', 'category', 'extra_err_rate', 'extra_errors', 'profile_acc']
+        ].to_dict('records')
+    )
+    
+    # Category-level analysis
+    category_stats = rescue_stats_df.groupby('category').agg({
+        'rescue_rate': ['mean', 'std', 'max'],
+        'extra_err_rate': ['mean', 'std', 'max'],
+        'profile_acc': ['mean', 'std'],
+        'N_cat': 'first'
+    }).round(3)
+    
+    analysis['category_performance'] = category_stats.to_dict('index')
+    
+    # Profile-level analysis
+    profile_stats = rescue_stats_df.groupby('profile').agg({
+        'rescue_rate': ['mean', 'std'],
+        'extra_err_rate': ['mean', 'std'],
+        'profile_acc': ['mean', 'std'],
+        'rescued': 'sum',
+        'extra_errors': 'sum'
+    }).round(3)
+    
+    analysis['profile_performance'] = profile_stats.to_dict('index')
+    
+    return analysis
 
-        base_errors_cat  = (~base_correct).sum()
-        base_correct_cat = base_correct.sum()
 
-        base_acc_cat = base_correct_cat / n_cat
 
-        for prof in profile_cols:
-            y_prof_cat = df_cat[prof].astype(str).str.strip().str.lower()
 
-            prof_correct = (y_prof_cat == y_true_cat)
-
-            rescued      = ((~base_correct) & prof_correct).sum()
-            extra_errors = (base_correct & (~prof_correct)).sum()
-
-            rescue_rate    = rescued      / base_errors_cat  if base_errors_cat  else 0.0
-            extra_err_rate = extra_errors / base_correct_cat if base_correct_cat else 0.0
-
-            row = dict(
-                category       = cat,
-                profile        = prof,
-                N_cat          = n_cat,
-                rescued        = int(rescued),
-                rescue_rate    = rescue_rate,
-                extra_errors   = int(extra_errors),
-                extra_err_rate = extra_err_rate,
-                profile_acc    = prof_correct.mean(),
-                baseline_acc   = base_acc_cat,
-            )
-            out_rows.append(row)
-
-    stats_df = pd.DataFrame(out_rows)
-    stats_df = stats_df.sort_values(["category", "rescued"], ascending=[True, False])
-
-    return stats_df
 
 
 
@@ -331,324 +1014,6 @@ def analyze_persona_similarity(merged: pd.DataFrame) -> Dict[str, Any]:
         "linkage_matrix": linkage_matrix,
         "distance_matrix": distance_matrix
     }
-
-
-def extract_high_disagreement_cases(merged: pd.DataFrame, threshold: float = 0.7) -> pd.DataFrame:
-    """Find cases where personas disagree most"""
-    
-    profile_cols = [col for col in merged.columns if col.startswith("profile")]
-    
-    # Calculate disagreement score for each sample
-    disagreement_scores = []
-    
-    for idx, row in merged.iterrows():
-        predictions = [row[col] for col in profile_cols]
-        
-        # Proportion of profiles that disagree with mode
-        mode = max(set(predictions), key=predictions.count)
-        disagreement = sum(1 for p in predictions if p != mode) / len(predictions)
-        
-        disagreement_scores.append({
-            'sample_id': row['sample_id'],
-            'disagreement_score': disagreement,
-            'predictions': Counter(predictions),
-            'true_label': row['true_label'],
-            'base_pred': row['base_pred']
-        })
-    
-    disagreement_df = pd.DataFrame(disagreement_scores)
-    high_disagreement = disagreement_df[disagreement_df['disagreement_score'] > threshold]
-    
-    return high_disagreement.sort_values('disagreement_score', ascending=False)
-
-
-def test_comprehensive_own_group_sensitivity(merged_df):
-    """
-    Test ALL demographic groups for own-group sensitivity effects.
-    This tests if each group handles stereotypes about their demographics differently.
-    """
- 
-    results = {}
-    
-    if 'stereotype_type' in merged_df.columns:
-        
-        # =================================================================
-        # TEST 1: ALL ETHNICITIES ON RACE STEREOTYPES
-        # =================================================================
-        race_subset = merged_df[merged_df['stereotype_type'] == 'race']
-        if len(race_subset) > 0:
-            
-            WHITE_PROFILES = [f"profile{i}_passive" for i in range(1, 11)]
-            BLACK_PROFILES = [f"profile{i}_passive" for i in range(11, 21)]
-            ASIAN_PROFILES = [f"profile{i}_passive" for i in range(21, 31)]
-            
-            white_on_race = []
-            black_on_race = []
-            asian_on_race = []
-            
-            for profile in WHITE_PROFILES:
-                if profile in race_subset.columns:
-                    acc = (race_subset[profile] == race_subset['true_label']).mean()
-                    white_on_race.append(acc)
-            
-            for profile in BLACK_PROFILES:
-                if profile in race_subset.columns:
-                    acc = (race_subset[profile] == race_subset['true_label']).mean()
-                    black_on_race.append(acc)
-                    
-            for profile in ASIAN_PROFILES:
-                if profile in race_subset.columns:
-                    acc = (race_subset[profile] == race_subset['true_label']).mean()
-                    asian_on_race.append(acc)
-            
-            if white_on_race and black_on_race:
-                t_stat, p_val = ttest_ind(white_on_race, black_on_race)
-                results['white_vs_black_on_race'] = {
-                    'white_accuracy': np.mean(white_on_race),
-                    'black_accuracy': np.mean(black_on_race),
-                    'difference': np.mean(white_on_race) - np.mean(black_on_race),
-                    'p_value': p_val,
-                    'significant': p_val < 0.05,
-                    'race_samples': len(race_subset),
-                    'interpretation': 'Higher accuracy suggests better alignment with annotator reasoning on race stereotypes'
-                }
-            
-            if white_on_race and asian_on_race:
-                t_stat, p_val = ttest_ind(white_on_race, asian_on_race)
-                results['white_vs_asian_on_race'] = {
-                    'white_accuracy': np.mean(white_on_race),
-                    'asian_accuracy': np.mean(asian_on_race),
-                    'difference': np.mean(white_on_race) - np.mean(asian_on_race),
-                    'p_value': p_val,
-                    'significant': p_val < 0.05,
-                    'race_samples': len(race_subset),
-                    'interpretation': 'Higher accuracy suggests better alignment with annotator reasoning on race stereotypes'
-                }
-            
-            if black_on_race and asian_on_race:
-                t_stat, p_val = ttest_ind(black_on_race, asian_on_race)
-                results['black_vs_asian_on_race'] = {
-                    'black_accuracy': np.mean(black_on_race),
-                    'asian_accuracy': np.mean(asian_on_race),
-                    'difference': np.mean(black_on_race) - np.mean(asian_on_race),
-                    'p_value': p_val,
-                    'significant': p_val < 0.05,
-                    'race_samples': len(race_subset),
-                    'interpretation': 'Higher accuracy suggests better alignment with annotator reasoning on race stereotypes'
-                }
-            
-            # Store individual group means for summary
-            results['race_stereotype_summary'] = {
-                'white_mean': np.mean(white_on_race) if white_on_race else None,
-                'black_mean': np.mean(black_on_race) if black_on_race else None,
-                'asian_mean': np.mean(asian_on_race) if asian_on_race else None,
-                'best_performing_group': None,
-                'worst_performing_group': None
-            }
-            
-            # Identify best and worst performing groups
-            group_means = {}
-            if white_on_race:
-                group_means['white'] = np.mean(white_on_race)
-            if black_on_race:
-                group_means['black'] = np.mean(black_on_race)
-            if asian_on_race:
-                group_means['asian'] = np.mean(asian_on_race)
-            
-            if group_means:
-                best_group = max(group_means, key=group_means.get)
-                worst_group = min(group_means, key=group_means.get)
-                results['race_stereotype_summary']['best_performing_group'] = best_group
-                results['race_stereotype_summary']['worst_performing_group'] = worst_group
-        
-        # =================================================================
-        # TEST 2: MEN VS WOMEN ON GENDER STEREOTYPES
-        # =================================================================
-        gender_subset = merged_df[merged_df['stereotype_type'] == 'gender']
-        if len(gender_subset) > 0:
-            
-            MEN_PROFILES = [f"profile{i}_passive" for i in [1,2,3,4,5, 11,12,13,14,15, 21,22,23,24,25]]
-            WOMEN_PROFILES = [f"profile{i}_passive" for i in [6,7,8,9,10, 16,17,18,19,20, 26,27,28,29,30]]
-            
-            men_on_gender = []
-            women_on_gender = []
-            
-            for profile in MEN_PROFILES:
-                if profile in gender_subset.columns:
-                    acc = (gender_subset[profile] == gender_subset['true_label']).mean()
-                    men_on_gender.append(acc)
-            
-            for profile in WOMEN_PROFILES:
-                if profile in gender_subset.columns:
-                    acc = (gender_subset[profile] == gender_subset['true_label']).mean()
-                    women_on_gender.append(acc)
-            
-            if men_on_gender and women_on_gender:
-                t_stat, p_val = ttest_ind(men_on_gender, women_on_gender)
-                results['men_vs_women_on_gender'] = {
-                    'men_accuracy': np.mean(men_on_gender),
-                    'women_accuracy': np.mean(women_on_gender),
-                    'difference': np.mean(men_on_gender) - np.mean(women_on_gender),
-                    'p_value': p_val,
-                    'significant': p_val < 0.05,
-                    'gender_samples': len(gender_subset),
-                    'interpretation': 'Higher accuracy suggests better alignment with annotator reasoning on gender stereotypes'
-                }
-        
-        # =================================================================
-        # TEST 3: INTERSECTIONAL EFFECTS (e.g., Black women on gender vs race)
-        # =================================================================
-        
-        # Black women on race vs gender stereotypes
-        BLACK_WOMEN = [f"profile{i}_passive" for i in range(16, 21)]
-        
-        if race_subset is not None and len(race_subset) > 0 and gender_subset is not None and len(gender_subset) > 0:
-            
-            black_women_on_race = []
-            black_women_on_gender = []
-            
-            for profile in BLACK_WOMEN:
-                if profile in race_subset.columns:
-                    acc = (race_subset[profile] == race_subset['true_label']).mean()
-                    black_women_on_race.append(acc)
-                    
-                if profile in gender_subset.columns:
-                    acc = (gender_subset[profile] == gender_subset['true_label']).mean()
-                    black_women_on_gender.append(acc)
-            
-            if black_women_on_race and black_women_on_gender:
-                t_stat, p_val = ttest_ind(black_women_on_race, black_women_on_gender)
-                results['black_women_race_vs_gender'] = {
-                    'race_accuracy': np.mean(black_women_on_race),
-                    'gender_accuracy': np.mean(black_women_on_gender),
-                    'difference': np.mean(black_women_on_race) - np.mean(black_women_on_gender),
-                    'p_value': p_val,
-                    'significant': p_val < 0.05,
-                    'interpretation': 'Difference in how Black women handle race vs gender stereotypes'
-                }
-        
-        # =================================================================
-        # TEST 4: WHITE MEN VS EVERYONE ELSE (testing for majority bias)
-        # =================================================================
-        
-        # Combine all stereotype types
-        WHITE_MEN = [f"profile{i}_passive" for i in range(1, 6)]
-        EVERYONE_ELSE = [f"profile{i}_passive" for i in list(range(6, 31))]  # Everyone except white men
-        
-        white_men_acc = []
-        everyone_else_acc = []
-        
-        for profile in WHITE_MEN:
-            if profile in merged_df.columns:
-                acc = (merged_df[profile] == merged_df['true_label']).mean()
-                white_men_acc.append(acc)
-        
-        for profile in EVERYONE_ELSE:
-            if profile in merged_df.columns:
-                acc = (merged_df[profile] == merged_df['true_label']).mean()
-                everyone_else_acc.append(acc)
-        
-        if white_men_acc and everyone_else_acc:
-            t_stat, p_val = ttest_ind(white_men_acc, everyone_else_acc)
-            results['white_men_vs_everyone'] = {
-                'white_men_accuracy': np.mean(white_men_acc),
-                'everyone_else_accuracy': np.mean(everyone_else_acc),
-                'difference': np.mean(white_men_acc) - np.mean(everyone_else_acc),
-                'p_value': p_val,
-                'significant': p_val < 0.05,
-                'interpretation': 'Tests if White men align better with annotators across all stereotype types'
-            }
-    
-    return results
-
-def print_comprehensive_own_group_results(results):
-    """
-    Print the comprehensive own-group sensitivity results in a clear format.
-    """
-    
-    print("\n" + "=" * 80)
-    print("COMPREHENSIVE OWN-GROUP SENSITIVITY ANALYSIS")
-    print("=" * 80)
-    
-    # Race stereotype comparisons
-    print("\n=== RACE STEREOTYPE HANDLING ===")
-    
-    if 'race_stereotype_summary' in results:
-        summary = results['race_stereotype_summary']
-        print("Individual group performance on race stereotypes:")
-        if summary['white_mean'] is not None:
-            print(f"  White personas: {summary['white_mean']:.4f}")
-        if summary['black_mean'] is not None:
-            print(f"  Black personas: {summary['black_mean']:.4f}")
-        if summary['asian_mean'] is not None:
-            print(f"  Asian personas: {summary['asian_mean']:.4f}")
-        
-        if summary['best_performing_group'] and summary['worst_performing_group']:
-            print(f"\n  Best performing: {summary['best_performing_group']}")
-            print(f"  Worst performing: {summary['worst_performing_group']}")
-    
-    # Pairwise comparisons for race
-    race_comparisons = [k for k in results.keys() if 'on_race' in k and 'vs' in k]
-    for comparison in race_comparisons:
-        data = results[comparison]
-        significance_marker = "***" if data['significant'] else ""
-        print(f"\n{comparison}: {significance_marker}")
-        print(f"  Difference: {data['difference']:.4f}")
-        print(f"  P-value: {data['p_value']:.4f}")
-        print(f"  Samples: {data.get('race_samples', 'N/A')}")
-    
-    # Gender stereotype comparison
-    print("\n=== GENDER STEREOTYPE HANDLING ===")
-    if 'men_vs_women_on_gender' in results:
-        data = results['men_vs_women_on_gender']
-        significance_marker = "***" if data['significant'] else ""
-        print(f"Men vs Women on gender stereotypes: {significance_marker}")
-        print(f"  Men accuracy: {data['men_accuracy']:.4f}")
-        print(f"  Women accuracy: {data['women_accuracy']:.4f}")
-        print(f"  Difference: {data['difference']:.4f}")
-        print(f"  P-value: {data['p_value']:.4f}")
-        print(f"  Samples: {data['gender_samples']}")
-    
-    # Intersectional effects
-    print("\n=== INTERSECTIONAL EFFECTS ===")
-    if 'black_women_race_vs_gender' in results:
-        data = results['black_women_race_vs_gender']
-        significance_marker = "***" if data['significant'] else ""
-        print(f"Black women: Race vs Gender stereotypes: {significance_marker}")
-        print(f"  Race accuracy: {data['race_accuracy']:.4f}")
-        print(f"  Gender accuracy: {data['gender_accuracy']:.4f}")
-        print(f"  Difference: {data['difference']:.4f}")
-        print(f"  P-value: {data['p_value']:.4f}")
-    
-    # Majority group analysis
-    print("\n=== MAJORITY GROUP ANALYSIS ===")
-    if 'white_men_vs_everyone' in results:
-        data = results['white_men_vs_everyone']
-        significance_marker = "***" if data['significant'] else ""
-        print(f"White men vs Everyone else: {significance_marker}")
-        print(f"  White men accuracy: {data['white_men_accuracy']:.4f}")
-        print(f"  Everyone else accuracy: {data['everyone_else_accuracy']:.4f}")
-        print(f"  Difference: {data['difference']:.4f}")
-        print(f"  P-value: {data['p_value']:.4f}")
-        print(f"  {data['interpretation']}")
-    
-    # Summary of significant findings
-    significant_findings = [k for k, v in results.items() if isinstance(v, dict) and v.get('significant', False)]
-    
-    print("\n" + "=" * 50)
-    print("SUMMARY OF SIGNIFICANT FINDINGS")
-    print("=" * 50)
-    
-    if significant_findings:
-        print(f"Found {len(significant_findings)} significant own-group effects:")
-        for finding in significant_findings:
-            data = results[finding]
-            print(f"  • {finding}: p={data['p_value']:.4f}, diff={data['difference']:.4f}")
-    else:
-        print("No significant own-group sensitivity effects detected.")
-    
-    return significant_findings
-
 
 
 # ============================================================================

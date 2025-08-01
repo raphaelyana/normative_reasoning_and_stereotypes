@@ -29,3 +29,5 @@ tree_of_thought_file.ipynb
 playground.ipynb
 case_studies.py
 utils_visualisation.py
+analysis_dump.py
+analysis_tools.py
