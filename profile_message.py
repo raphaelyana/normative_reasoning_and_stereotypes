@@ -1,4 +1,39 @@
 from typing import Optional, Literal
+import enum
+from dataclasses import dataclass
+
+def make_system_message(
+    case_name: str,
+    person_key: Optional[str] = None,
+) -> dict:
+    
+    """
+    Build the dict {"role": "system", "content": "..."} expected by call_llm().
+    
+    Parameters
+    ----------
+    case_name
+        Name of the classification task (e.g. "StereotypeDetection").
+    person_key
+        Key in PERSON_SEEDS or None for a neutral system prompt.
+    """
+
+    if person_key is None:
+        base = (
+            f"You are a classifier for {case_name}. "
+            "Decide if the reasoning is an example or not."
+        )
+        return {"role": "system", "content": base}
+    
+    try:
+        seed = PERSON_SEEDS[person_key]
+    except KeyError as e:
+        raise KeyError(
+            f"Unknown persona_key '{person_key}'. "
+            f"Valid keys: {list(PERSON_SEEDS)}"
+        ) from e
+
+    return {"role": "system", "content": seed}
 
 PERSON_SEEDS = {
     # Progressive / Left-leaning
@@ -52,6 +87,7 @@ PERSON_SEEDS_CORE = {
     "profile5": "You are a White woman with traditional values who is cautious about over-labelling statements as biased.",
     "profile6": "You are a Middle-Eastern man who favors literal interpretation and prioritizes free speech concerns.",
 }
+
 
 
 PERSON_SEEDS_SYSTEMATIC = {
@@ -126,35 +162,80 @@ ASIAN_WOMEN = [f"profile{i}" for i in range(26, 31)]
 
 
 
-def make_system_message(
-    case_name: str,
-    person_key: Optional[str] = None,
-) -> dict:
-    
-    """
-    Build the dict {"role": "system", "content": "..."} expected by call_llm().
-    
-    Parameters
-    ----------
-    case_name
-        Name of the classification task (e.g. "StereotypeDetection").
-    person_key
-        Key in PERSON_SEEDS or None for a neutral system prompt.
-    """
+PERSON_SEEDS_GENDER_ETHNICS = {
+    # 2 Genders (Men, Women) × 3 Ethnicities (White, Black, Asian) = ... groups
+    "profile1": "You are a White man.",
+    "profile2": "You are a White woman.",
+} 
 
-    if person_key is None:
-        base = (
-            f"You are a classifier for {case_name}. "
-            "Decide if the reasoning is an example or not."
-        )
-        return {"role": "system", "content": base}
-    
-    try:
-        seed = PERSON_SEEDS[person_key]
-    except KeyError as e:
-        raise KeyError(
-            f"Unknown persona_key '{person_key}'. "
-            f"Valid keys: {list(PERSON_SEEDS)}"
-        ) from e
 
-    return {"role": "system", "content": seed}
+
+
+### Adaptable groups classes : permits to update the groups dynamically
+
+class Gender(str, enum.Enum):
+    man = "man"
+    woman = "woman"
+    nonbinary = "nonbinary"
+
+class Ethnicity(str, enum.Enum):
+    white = "white"
+    black = "black"
+    asian = "asian"
+    latine = "latine"
+
+class CogStyle(str, enum.Enum):
+    expansive = "expansive"
+    literal = "literal"
+    high_harm = "high_harm"
+    low_harm = "low_harm"
+    balanced = "balanced"
+
+@dataclass(frozen=True, slots=True)
+class ProfileMeta:
+    gender: Gender
+    ethnicity: Ethnicity
+    cog_style: Optional[CogStyle] = None
+
+
+PROFILE_META_SYSTEMATIC = {
+    "profile1": ProfileMeta(Gender.man, Ethnicity.white, CogStyle.expansive),
+    "profile2": ProfileMeta(Gender.man, Ethnicity.white, CogStyle.literal),
+    "profile3": ProfileMeta(Gender.man, Ethnicity.white, CogStyle.high_harm),
+    "profile4": ProfileMeta(Gender.man, Ethnicity.white, CogStyle.low_harm),
+    "profile5": ProfileMeta(Gender.man, Ethnicity.white, CogStyle.balanced),
+    "profile6": ProfileMeta(Gender.woman, Ethnicity.white, ),
+    "profile7": ProfileMeta(Gender.woman, Ethnicity.white, ),
+    "profile8": ProfileMeta(Gender.woman, Ethnicity.white, ),
+    "profile9": ProfileMeta(Gender.woman, Ethnicity.white, ),
+    "profile10": ProfileMeta(Gender.woman, Ethnicity.white, CogStyle.balanced),
+    
+    "profile11": ProfileMeta(Gender.man, Ethnicity.black, CogStyle.expansive),
+    "profile12": ProfileMeta(Gender.man, Ethnicity.black, CogStyle.literal),
+    "profile13": ProfileMeta(Gender.man, Ethnicity.black, CogStyle.high_harm),
+    "profile14": ProfileMeta(Gender.man, Ethnicity.black, CogStyle.low_harm),
+    "profile15": ProfileMeta(Gender.man, Ethnicity.black, CogStyle.balanced),
+    "profile16": ProfileMeta(Gender.woman, Ethnicity.black, CogStyle.expansive),
+    "profile17": ProfileMeta(Gender.woman, Ethnicity.black, CogStyle.literal),
+    "profile18": ProfileMeta(Gender.woman, Ethnicity.black, CogStyle.high_harm),
+    "profile19": ProfileMeta(Gender.woman, Ethnicity.black, CogStyle.low_harm),
+    "profile20": ProfileMeta(Gender.woman, Ethnicity.black, CogStyle.balanced),
+
+    "profile21": ProfileMeta(Gender.man, Ethnicity.asian, CogStyle.expansive),
+    "profile22": ProfileMeta(Gender.man, Ethnicity.asian, CogStyle.literal),
+    "profile23": ProfileMeta(Gender.man, Ethnicity.asian, CogStyle.high_harm),
+    "profile24": ProfileMeta(Gender.man, Ethnicity.asian, CogStyle.low_harm),
+    "profile25": ProfileMeta(Gender.man, Ethnicity.asian, CogStyle.balanced),
+    "profile26": ProfileMeta(Gender.woman, Ethnicity.asian, CogStyle.expansive),
+    "profile27": ProfileMeta(Gender.woman, Ethnicity.asian, CogStyle.literal),
+    "profile28": ProfileMeta(Gender.woman, Ethnicity.asian, CogStyle.high_harm),
+    "profile29": ProfileMeta(Gender.woman, Ethnicity.asian, CogStyle.low_harm),
+    "profile30": ProfileMeta(Gender.woman, Ethnicity.asian, CogStyle.balanced),
+}
+
+def get_profile_traits(profile_id: str, group_keys=("gender", "ethnicity", "cognitive_style")) -> dict:
+    pid = profile_id.replace("_passive", "")
+    meta = PROFILE_META_SYSTEMATIC.get(pid, None)
+    if not meta:
+        return {key: "Unknown" for key in group_keys}
+    return {key: getattr(meta, key, "Unknown") for key in group_keys}

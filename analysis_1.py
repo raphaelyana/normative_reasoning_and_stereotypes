@@ -28,13 +28,13 @@ from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 
 
 from analysis_0 import *
+from profile_message import get_profile_traits, PROFILE_META_SYSTEMATIC, ProfileMeta
 
 
 
-
-def factorial_analysis_3way_anova(merged_df):
+def factorial_analysis_3way_anova(merged_df, group_keys=("gender", "ethnicity", "cognitive_style")):
     """
-    3-way ANOVA: Gender × Ethnicity × Cognitive_Style → Performance Metrics
+    Configurable N-way ANOVA: Trait x Trait x Trait -> Performance Metrics
     
     Tests which profile traits (gender, ethnicity, cognitive style) affect:
     - Accuracy
@@ -42,48 +42,22 @@ def factorial_analysis_3way_anova(merged_df):
     - Bias magnitude
     - Extra error rate
     
-    Returns comprehensive statistical analysis of main effects and interactions.
+    Parameters:
+    - merged_df: DataFrame containing predictions and true labels
+    - group_keys: tuple of metadata fields to extract and analyze
+
+    Returns:
+    - dict with performance data, anova results, and significant effects
     """
     
     # Define persona groups with _passive suffix
     profile_cols = [col for col in merged_df.columns if col.startswith("profile") and "_passive" in col]
     
     # Create mapping from profile to traits
-    profile_traits = {}
-    for i in range(1, 31):
-        profile_name = f"profile{i}_passive"
-        
-        # Gender assignment
-        if i in [1,2,3,4,5, 11,12,13,14,15, 21,22,23,24,25]:
-            gender = 'Male'
-        else:
-            gender = 'Female'
-        
-        # Ethnicity assignment  
-        if i in range(1, 11):
-            ethnicity = 'White'
-        elif i in range(11, 21):
-            ethnicity = 'Black'
-        else:
-            ethnicity = 'Asian'
-        
-        # Cognitive style assignment
-        if i in [1,6,11,16,21,26]:
-            cognitive_style = 'Expansive'
-        elif i in [2,7,12,17,22,27]:
-            cognitive_style = 'Literal'
-        elif i in [3,8,13,18,23,28]:
-            cognitive_style = 'High_Harm'
-        elif i in [4,9,14,19,24,29]:
-            cognitive_style = 'Low_Harm'
-        else:  # [5,10,15,20,25,30]
-            cognitive_style = 'Balanced'
-        
-        profile_traits[profile_name] = {
-            'gender': gender,
-            'ethnicity': ethnicity, 
-            'cognitive_style': cognitive_style
-        }
+    profile_traits = {
+        profile: get_profile_traits(profile, group_keys=("gender", "ethnicity", "cognitive_style"))
+        for profile in profile_cols
+    }
     
     # Calculate performance metrics for each profile
     performance_data = []
@@ -141,51 +115,60 @@ def factorial_analysis_3way_anova(merged_df):
         print(f"{'='*60}")
         
         # Gender main effect
-        male_vals = performance_df[performance_df['gender'] == 'Male'][dv].values
-        female_vals = performance_df[performance_df['gender'] == 'Female'][dv].values
-        
-        if len(male_vals) > 0 and len(female_vals) > 0:
-            t_stat, p_val = ttest_ind(male_vals, female_vals)
-            dv_results['gender_main_effect'] = {
-                'male_mean': np.mean(male_vals),
-                'female_mean': np.mean(female_vals),
-                'difference': np.mean(female_vals) - np.mean(male_vals),
-                't_statistic': t_stat,
-                'p_value': p_val,
-                'significant': p_val < 0.05,
-                'effect_size_d': (np.mean(female_vals) - np.mean(male_vals)) / np.sqrt((np.var(male_vals) + np.var(female_vals)) / 2)
-            }
+        genders = performance_df["gender"].dropna().unique()
+
+        if len(genders) == 2:
+            g1, g2 = genders
+            g1_vals = performance_df[performance_df['gender'] == g1][dv].values
+            g2_vals = performance_df[performance_df['gender'] == g2][dv].values
+
+            if len(g1_vals) > 0 and len(g2_vals) > 0:
+                t_stat, p_val = ttest_ind(g1_vals, g2_vals)
+                dv_results['gender_main_effect'] = {
+                    'group1': g1,
+                    'group2': g2,
+                    'group1_mean': np.mean(g1_vals),
+                    'group2_mean': np.mean(g2_vals),
+                    'difference': np.mean(g2_vals) - np.mean(g1_vals),
+                    't_statistic': t_stat,
+                    'p_value': p_val,
+                    'significant': p_val < 0.05,
+                    'effect_size_d': (np.mean(g2_vals) - np.mean(g1_vals)) / np.sqrt((np.var(g1_vals) + np.var(g2_vals)) / 2)
+                }
             
-            print(f"GENDER MAIN EFFECT:")
-            print(f"  Male mean: {np.mean(male_vals):.4f}")
-            print(f"  Female mean: {np.mean(female_vals):.4f}")
-            print(f"  Difference: {np.mean(female_vals) - np.mean(male_vals):.4f}")
+            print(f"GENDER MAIN EFFECT ({g1} vs {g2}):")
+            print(f"  {g1} mean: {np.mean(g1_vals):.4f}")
+            print(f"  {g2} mean: {np.mean(g2_vals):.4f}")
             print(f"  p-value: {p_val:.4f} {'***' if p_val < 0.05 else ''}")
             print(f"  Cohen's d: {dv_results['gender_main_effect']['effect_size_d']:.3f}")
         
         # Ethnicity main effect
-        white_vals = performance_df[performance_df['ethnicity'] == 'White'][dv].values
-        black_vals = performance_df[performance_df['ethnicity'] == 'Black'][dv].values
-        asian_vals = performance_df[performance_df['ethnicity'] == 'Asian'][dv].values
+        ethnicities = performance_df["ethnicity"].dropna().unique()
+        ethnicity_groups = [
+            performance_df[performance_df["ethnicity"] == eth][dv].values
+            for eth in ethnicities
+        ]
         
-        if len(white_vals) > 0 and len(black_vals) > 0 and len(asian_vals) > 0:
-            f_stat, p_val = f_oneway(white_vals, black_vals, asian_vals)
+        if all(len(vals)>0 for vals in ethnicity_groups) and len(ethnicity_groups)>=2:
+            f_stat, p_val = f_oneway(*ethnicity_groups)
             dv_results['ethnicity_main_effect'] = {
-                'white_mean': np.mean(white_vals),
-                'black_mean': np.mean(black_vals),
-                'asian_mean': np.mean(asian_vals),
+                'ethnicity_means': {
+                    eth: np.mean(performance_df[performance_df["ethnicity"] == eth][dv].values)
+                    for eth in ethnicities
+                },
                 'f_statistic': f_stat,
                 'p_value': p_val,
                 'significant': p_val < 0.05
             }
-            
+                    
             print(f"\nETHNICITY MAIN EFFECT:")
-            print(f"  White mean: {np.mean(white_vals):.4f}")
-            print(f"  Black mean: {np.mean(black_vals):.4f}")
-            print(f"  Asian mean: {np.mean(asian_vals):.4f}")
+            for eth in ethnicities:
+                mean_val = performance_df[performance_df["ethnicity"] == eth][dv].mean()
+                print(f"  {eth} mean: {mean_val:.4f}")
             print(f"  F-statistic: {f_stat:.3f}")
             print(f"  p-value: {p_val:.4f} {'***' if p_val < 0.05 else ''}")
         
+
         # Cognitive style main effect
         cognitive_styles = performance_df['cognitive_style'].unique()
         cognitive_vals = []
@@ -212,13 +195,14 @@ def factorial_analysis_3way_anova(merged_df):
             print(f"  F-statistic: {f_stat:.3f}")
             print(f"  p-value: {p_val:.4f} {'***' if p_val < 0.05 else ''}")
         
+
         # Two-way interactions (Gender × Ethnicity)
         print(f"\nINTERACTION EFFECTS:")
         interaction_means = {}
-        for gender in ['Male', 'Female']:
-            for ethnicity in ['White', 'Black', 'Asian']:
+        for gender in genders:
+            for ethnicity in ethnicities:
                 subset = performance_df[
-                    (performance_df['gender'] == gender) & 
+                    (performance_df['gender'] == gender) &
                     (performance_df['ethnicity'] == ethnicity)
                 ][dv].values
                 if len(subset) > 0:
@@ -229,6 +213,8 @@ def factorial_analysis_3way_anova(merged_df):
         
         results[dv] = dv_results
     
+
+
     # Summary of significant effects
     print(f"\n{'='*60}")
     print("FACTORIAL ANOVA SUMMARY")
@@ -279,45 +265,22 @@ def plot_risk_benefit_frontier(merged_df, figsize=(12, 8)):
     }).reset_index()
     
     # Add demographic info for coloring
-    profile_traits = {}
-    for i in range(1, 31):
-        profile_name = f"profile{i}_passive"
-        
-        if i in [1,2,3,4,5, 11,12,13,14,15, 21,22,23,24,25]:
-            gender = 'Male'
-        else:
-            gender = 'Female'
-        
-        if i in range(1, 11):
-            ethnicity = 'White'
-        elif i in range(11, 21):
-            ethnicity = 'Black'
-        else:
-            ethnicity = 'Asian'
-        
-        if i in [1,6,11,16,21,26]:
-            cognitive_style = 'Expansive'
-        elif i in [2,7,12,17,22,27]:
-            cognitive_style = 'Literal'
-        elif i in [3,8,13,18,23,28]:
-            cognitive_style = 'High_Harm'
-        elif i in [4,9,14,19,24,29]:
-            cognitive_style = 'Low_Harm'
-        else:
-            cognitive_style = 'Balanced'
-        
-        profile_traits[profile_name] = {
-            'gender': gender,
-            'ethnicity': ethnicity,
-            'cognitive_style': cognitive_style,
-            'intersectional': f"{gender}_{ethnicity}"
-        }
-    
+    profile_traits = {
+        profile: get_profile_traits(profile, group_keys=["gender", "ethnicity", "cognitive_style"])
+        for profile in profile_performance["profile"]
+    }
+
     # Add trait information to performance data
-    for trait_name in ['gender', 'ethnicity', 'cognitive_style', 'intersectional']:
-        profile_performance[trait_name] = profile_performance['profile'].map(
-            lambda x: profile_traits.get(x, {}).get(trait_name, 'Unknown')
+    group_keys = ["gender", "ethnicity", "cognitive_style"]
+
+    for trait_name in group_keys:
+        profile_performance[trait_name] = profile_performance["profile"].map(
+            lambda p: profile_traits.get(p, {}).get(trait_name, "Unknown")
         )
+    
+    profile_performance["intersectional"] = profile_performance.apply(
+        lambda row: f"{row['gender']}_{row['ethnicity']}", axis=1
+    )
     
     # Create the plot
     fig, axes = plt.subplots(2, 2, figsize=figsize)
@@ -527,8 +490,8 @@ def calculate_effect_sizes(performance_df, anova_results):
         
         # Gender main effect
         if 'gender_main_effect' in dv_results and dv_results['gender_main_effect'].get('significant', False):
-            male_vals = performance_df[performance_df['gender'] == 'Male'][dv].values
-            female_vals = performance_df[performance_df['gender'] == 'Female'][dv].values
+            genders = performance_df["gender"].dropna().unique()
+            ethnicities = performance_df["ethnicity"].dropna().unique()
             
             effect_size = calculate_cohens_d(male_vals, female_vals, 'male', 'female')
             if effect_size:
