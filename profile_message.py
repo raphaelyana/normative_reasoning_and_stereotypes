@@ -1,6 +1,7 @@
-from typing import Optional, Literal
 import enum
+from enum import Enum
 from dataclasses import dataclass
+from typing import Optional, Literal
 
 def make_system_message(
     case_name: str,

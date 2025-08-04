@@ -4,6 +4,7 @@ import json
 from collections import Counter
 from itertools import combinations, product
 from typing import List, Dict, Any, Tuple, Optional
+from enum import Enum
 
 import pandas as pd
 import numpy as np
@@ -21,6 +22,8 @@ from statsmodels.stats.multitest import multipletests
 from scipy.stats import (
     bootstrap, f_oneway, ttest_ind, kruskal, mannwhitneyu, pearsonr
 )
+from statsmodels.formula.api import ols
+import statsmodels.api as sm
 
 from scipy.spatial.distance import squareform
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
@@ -144,7 +147,7 @@ def factorial_analysis_nway_anova(merged_df, group_keys=("gender", "ethnicity", 
                 print(f"  F-statistic: {f_stat:.3f}")
                 print(f"  p-value: {p_val:.4f} {'***' if p_val < 0.05 else ''}")
 
-        print(f"\nINTERACTION EFFECTS ({group_keys[0]} × {group_keys[1]}):")
+        print(f"\nINTERACTION EFFECTS ({group_keys[0]} x {group_keys[1]}):")
         levels1 = performance_df[group_keys[0]].dropna().unique()
         levels2 = performance_df[group_keys[1]].dropna().unique()
                
@@ -157,9 +160,21 @@ def factorial_analysis_nway_anova(merged_df, group_keys=("gender", "ethnicity", 
             if len(subset) > 0:
                 key = f"{val1}_{val2}"
                 interaction_means[key] = np.mean(subset)
-                print(f"  {val1} × {val2}: {np.mean(subset):.4f}")
+                print(f"  {val1} x {val2}: {np.mean(subset):.4f}")
    
         dv_results["interaction_means"] = interaction_means
+
+        p_val_interaction = ols_interaction_pvalue(performance_df, dv, group_keys[0], group_keys[1])
+        if p_val_interaction is not None:
+            print(f"  → OLS p-value for {group_keys[0]} x {group_keys[1]}: {p_val_interaction:.4f}")
+            dv_results[f"{group_keys[0]}_x_{group_keys[1]}_interaction_effect"] = {
+                'p_value': p_val_interaction,
+                'significant': p_val_interaction < 0.05,
+                'method': 'OLS'
+            }
+        else:
+            print(f"  → OLS p-value not available for {group_keys[0]} x {group_keys[1]}")
+
         results[dv] = dv_results
             
 
@@ -175,7 +190,11 @@ def factorial_analysis_nway_anova(merged_df, group_keys=("gender", "ethnicity", 
                 print(f"  ✓ {key}: p={res['p_value']:.4f}")
                 significant_effects.append(f"{dv}_{key}")
             elif isinstance(res, dict):
-                print(f"    {key}: p={res['p_value']:.4f}")
+                if "p_value" in res:
+                    print(f"    {key}: p={res['p_value']:.4f}")
+                else:
+                    formatted_res = {k: f"{v:.4g}" if isinstance(v, float) else v for k, v in res.items()}
+                    print(f"    {key}: {formatted_res}")
 
     print(f"\nTotal significant effects found: {len(significant_effects)}")
 
@@ -412,6 +431,33 @@ def calculate_effect_sizes(performance_df, anova_results, group_keys=("gender", 
                                         print(f"  {dv} - {name1} vs {name2}: d = {effect_size['cohens_d']:.3f} ({effect_size['magnitude']})")
 
     return effect_sizes
+
+
+
+def ols_interaction_pvalue(df, dv, factor1, factor2):
+    """
+    Run OLS regression with interaction term and return the p-value for the interaction.
+
+    Parameters:
+    - df: DataFrame with data
+    - dv: dependent variable (e.g. "accuracy")
+    - factor1: first factor (e.g. "gender")
+    - factor2: second factor (e.g. "ethnicity")
+
+    Returns:
+    - interaction_p: float or None
+    """
+    try:
+        formula = f"{dv} ~ C({factor1}) * C({factor2})"
+        model = ols(formula, data=df).fit()
+        anova_table = sm.stats.anova_lm(model, typ=2)
+
+        interaction_term = f"C({factor1}):C({factor2})"
+        p_value = anova_table.loc[interaction_term, "PR(>F)"]
+        return p_value
+    except Exception as e:
+        print(f"⚠️ Interaction OLS failed: {e}")
+        return None
 
 
 
