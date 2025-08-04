@@ -195,7 +195,7 @@ class CogStyle(str, enum.Enum):
 class ProfileMeta:
     gender: Gender
     ethnicity: Ethnicity
-    cog_style: Optional[CogStyle] = None
+    cognitive_style: Optional[CogStyle] = None
 
 
 PROFILE_META_SYSTEMATIC = {
@@ -204,10 +204,10 @@ PROFILE_META_SYSTEMATIC = {
     "profile3": ProfileMeta(Gender.man, Ethnicity.white, CogStyle.high_harm),
     "profile4": ProfileMeta(Gender.man, Ethnicity.white, CogStyle.low_harm),
     "profile5": ProfileMeta(Gender.man, Ethnicity.white, CogStyle.balanced),
-    "profile6": ProfileMeta(Gender.woman, Ethnicity.white, ),
-    "profile7": ProfileMeta(Gender.woman, Ethnicity.white, ),
-    "profile8": ProfileMeta(Gender.woman, Ethnicity.white, ),
-    "profile9": ProfileMeta(Gender.woman, Ethnicity.white, ),
+    "profile6": ProfileMeta(Gender.woman, Ethnicity.white, CogStyle.expansive),
+    "profile7": ProfileMeta(Gender.woman, Ethnicity.white, CogStyle.literal),
+    "profile8": ProfileMeta(Gender.woman, Ethnicity.white, CogStyle.high_harm),
+    "profile9": ProfileMeta(Gender.woman, Ethnicity.white, CogStyle.low_harm),
     "profile10": ProfileMeta(Gender.woman, Ethnicity.white, CogStyle.balanced),
     
     "profile11": ProfileMeta(Gender.man, Ethnicity.black, CogStyle.expansive),
@@ -233,9 +233,34 @@ PROFILE_META_SYSTEMATIC = {
     "profile30": ProfileMeta(Gender.woman, Ethnicity.asian, CogStyle.balanced),
 }
 
+
+
+
 def get_profile_traits(profile_id: str, group_keys=("gender", "ethnicity", "cognitive_style")) -> dict:
+    """
+    Return the trait values associated with a single profile ID.
+
+    This is used in **sample-level or profile-level annotations**, such as
+    logging trait information during case analysis or disagreement detection.
+
+    Parameters:
+    -----------
+    profile_id : str
+        The ID of the profile (e.g., 'profile3_passive').
+    group_keys : tuple
+        Traits to extract from the profile metadata.
+
+    Returns:
+    --------
+    dict : Mapping of trait_name → trait_value for the profile.
+    Unknown is returned if the profile is not in the metadata.
+    """
+
     pid = profile_id.replace("_passive", "")
     meta = PROFILE_META_SYSTEMATIC.get(pid, None)
     if not meta:
         return {key: "Unknown" for key in group_keys}
-    return {key: getattr(meta, key, "Unknown") for key in group_keys}
+    return {
+        key: getattr(meta, key).value if isinstance(getattr(meta, key, None), Enum) else getattr(meta, key, "Unknown")
+        for key in group_keys
+    }
