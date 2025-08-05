@@ -6,7 +6,7 @@ from utils import call_llm
 import re
 import json
 from pydantic import BaseModel
-from profile_message import PERSON_SEEDS, make_system_message
+from profiles.profile_message import PERSON_SEEDS, make_system_message
 from typing import Literal
 
 DEFAULT_MODEL_DICT = {

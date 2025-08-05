@@ -25,7 +25,8 @@ from scipy.stats import (
 from scipy.spatial.distance import squareform
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 
-from profile_message import PROFILE_META_SYSTEMATIC
+from profiles.schema import *
+from profiles.profile_sets import PERSON_SYSTEMATIC
 
 
 # ============================================================================
@@ -67,8 +68,8 @@ def test_comprehensive_demographic_accuracy_differences(merged_df, group_keys=("
             if not p.startswith("profile"):
                 continue
             base_id = p.replace("_active", "").replace("_passive", "")
-            traits = PROFILE_META_SYSTEMATIC.get(base_id)
-            if traits and getattr(traits, trait_name, None) == trait_value:
+            traits = PERSON_SYSTEMATIC.get_traits(base_id)
+            if traits.get(trait_name) == trait_value:
                 matching_profiles.append(p)
         return matching_profiles
     
@@ -87,7 +88,6 @@ def test_comprehensive_demographic_accuracy_differences(merged_df, group_keys=("
         #print(f"{group2_name} profiles: {group2_profiles}")
         #print("Accuracies Group 1:", calculate_group_accuracy(group1_profiles, df))
         #print("Accuracies Group 2:", calculate_group_accuracy(group2_profiles, df))
-
 
         if not acc1 or not acc2:
             print(f"⚠️ Skipping comparison between {group1_name} and {group2_name}: No data")
@@ -117,7 +117,10 @@ def test_comprehensive_demographic_accuracy_differences(merged_df, group_keys=("
 
 
     # Ethnicity comparisons
-    ethnicities = set(traits.ethnicity for traits in PROFILE_META_SYSTEMATIC.values())
+    ethnicities = set(
+        PERSON_SYSTEMATIC.get_traits(pid).get("ethnicity")
+        for pid in PERSON_SYSTEMATIC.metadata
+    )
     eth_pairs = combinations(sorted(ethnicities), 2)
     for e1, e2 in eth_pairs:
         p1 = get_profiles_by_trait("ethnicity", e1)
@@ -129,9 +132,9 @@ def test_comprehensive_demographic_accuracy_differences(merged_df, group_keys=("
     # Cognitive style comparisons
     if "cognitive_style" in group_keys:
         styles = set(
-            getattr(traits, "cognitive_style", None)
-            for traits in PROFILE_META_SYSTEMATIC.values()
-            if hasattr(traits, "cognitive_style") and getattr(traits, "cognitive_style") is not None
+            PERSON_SYSTEMATIC.get_traits(pid).get("cognitive_style")
+            for pid in PERSON_SYSTEMATIC.metadata
+            if PERSON_SYSTEMATIC.get_traits(pid).get("cognitive_style") is not None
         )
         cog_pairs = combinations(sorted(styles), 2)
         for s1, s2 in cog_pairs:
@@ -144,29 +147,28 @@ def test_comprehensive_demographic_accuracy_differences(merged_df, group_keys=("
     # Intersectional comparisons
     genders = ["man", "woman"] if "gender" in group_keys else []
     ethnicities = set(
-        getattr(traits, "ethnicity", None)
-        for traits in PROFILE_META_SYSTEMATIC.values()
-        if hasattr(traits, "ethnicity")
+        PERSON_SYSTEMATIC.get_traits(pid).get("ethnicity")
+        for pid in PERSON_SYSTEMATIC.metadata
     )
     
     for g1, g2 in combinations(genders, 2):
         for eth in ethnicities:
             g1_profiles = [
-                f"{p}_passive" for p, traits in PROFILE_META_SYSTEMATIC.items()
-                if getattr(traits, "gender", None) == g1 and getattr(traits, "ethnicity", None) == eth
+                f"{pid}_passive" for pid in PERSON_SYSTEMATIC.metadata
+                if PERSON_SYSTEMATIC.get_traits(pid).get("gender") == g1 and PERSON_SYSTEMATIC.get_traits(pid).get("ethnicity") == eth
             ]
             g2_profiles = [
-                f"{p}_passive" for p, traits in PROFILE_META_SYSTEMATIC.items()
-                if getattr(traits, "gender", None) == g2 and getattr(traits, "ethnicity", None) == eth
+                f"{pid}_passive" for pid in PERSON_SYSTEMATIC.metadata
+                if PERSON_SYSTEMATIC.get_traits(pid).get("gender") == g2 and PERSON_SYSTEMATIC.get_traits(pid).get("ethnicity") == eth
             ]
             if g1_profiles and g2_profiles:
                 res = compare_groups(
                     g1_profiles, g2_profiles,
-                    f"{eth.value}_{g1}", f"{eth.value}_{g2}",
+                    f"{eth}_{g1}", f"{eth}_{g2}",
                     merged_df
                 )
                 if res:
-                    results[f"intersectional_{eth.value}_{g1}_vs_{g2}"] = res
+                    results[f"intersectional_{eth}_{g1}_vs_{g2}"] = res
 
     # Summary statistics
     significant_comparisons = sum(1 for result in results.values() if result.get('significant', False))
@@ -466,15 +468,6 @@ def print_disagreement_analysis(high_disagreement_df: pd.DataFrame, top_n: int =
     for category, count in consensus_dist.items():
         pct = count / len(high_disagreement_df) * 100
         print(f"  {category}: {count} cases ({pct:.1f}%)")
-
-
-
-
-
-
-
-
-
 
 
 def rescue_stats_by_category(
@@ -911,7 +904,7 @@ def analyze_systematic_bias_patterns(
 
 
 
-def analyze_persona_similarity(merged: pd.DataFrame) -> Dict[str, Any]:
+def analyze_persona_similarity(merged: pd.DataFrame, person_set: PersonSet) -> Dict[str, Any]:
     """
     Enhanced persona clustering analysis with demographic mapping and validation
     """
@@ -954,11 +947,8 @@ def analyze_persona_similarity(merged: pd.DataFrame) -> Dict[str, Any]:
     
     def get_demographic_info(profile_name: str) -> str:
         """Extract demographic info from PROFILE_META_SYSTEMATIC using ProfileMeta."""
-        base_name = profile_name.replace("_passive", "")
-        meta = PROFILE_META_SYSTEMATIC.get(base_name, None)
-        if not meta:
-            return "unknown"
-        return f"{meta.ethnicity.value}_{meta.gender.value}"
+        traits = person_set.get_traits(profile_name)
+        return f"{traits['ethnicity']}_{traits['gender']}"
     
     cluster_analysis = {}
     demographic_distribution = {}
@@ -1188,7 +1178,7 @@ def run_full_preliminary_analysis(merged_df: pd.DataFrame, df: Optional[pd.DataF
     
 
     print("\n\n=== PERSONA SIMILARITY CLUSTERING ===")
-    persona_similarity = analyze_persona_similarity(merged_df)
+    persona_similarity = analyze_persona_similarity(merged_df, person_set=PERSON_SYSTEMATIC)
     print_persona_similarity_analysis(persona_similarity)
     results['persona_similarity'] = persona_similarity
 

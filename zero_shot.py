@@ -4,8 +4,8 @@ from enum import Enum
 import openai
 import time
 from utils import call_llm
-from profile_message import PERSON_SEEDS
-from profile_message import make_system_message
+from profiles.profile_message import PERSON_SEEDS
+from profiles.profile_message import make_system_message
 import re
 from cases import CaseConfig
 from typing import Literal

@@ -5,7 +5,7 @@ from utils import call_llm
 import re
 import pandas as pd
 from cases import CaseConfig
-from profile_message import make_system_message, PERSON_SEEDS
+from profiles.profile_message import make_system_message, PERSON_SEEDS
 import time
 
 DEFAULT_MODEL_DICT = {

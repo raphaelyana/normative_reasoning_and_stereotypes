@@ -2,7 +2,7 @@ from typing import Optional, Dict, Literal
 import time
 import openai
 from utils import call_llm
-from profile_message import make_system_message, PERSON_SEEDS
+from profiles.profile_message import make_system_message, PERSON_SEEDS
 from cases import CaseConfig
 from llm_judge import NormativeJudge
 

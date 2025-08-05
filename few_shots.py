@@ -6,8 +6,8 @@ from utils import call_llm
 import re
 import pandas as pd
 from cases import CaseConfig
-from profile_message import make_system_message
-from profile_message import PERSON_SEEDS
+from profiles.profile_message import make_system_message
+from profiles.profile_message import PERSON_SEEDS
 from typing import Literal
 
 DEFAULT_MODEL_DICT = {

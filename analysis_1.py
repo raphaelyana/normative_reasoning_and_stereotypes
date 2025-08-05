@@ -30,7 +30,7 @@ from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 
 
 from analysis_0 import *
-from profile_message import get_profile_traits, PROFILE_META_SYSTEMATIC, ProfileMeta
+from profiles.profile_message import get_profile_traits, PROFILE_META_SYSTEMATIC, ProfileMeta
 
 
 

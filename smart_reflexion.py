@@ -2,7 +2,7 @@ from typing import Optional, Dict, Literal, List
 import time
 import openai
 from utils import call_llm
-from profile_message import make_system_message, PERSON_SEEDS
+from profiles.profile_message import make_system_message, PERSON_SEEDS
 from pydantic import BaseModel
 from dataclasses import dataclass
 import random
