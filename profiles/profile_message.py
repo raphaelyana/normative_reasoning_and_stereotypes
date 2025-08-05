@@ -3,12 +3,12 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import Optional
 
-from schema import (
+from profiles.schema import (
     PersonMeta, 
     Gender, Ethnicity, CogStyle, 
     PersonSet
 )
-from profile_sets import (
+from profiles.profile_sets import (
     PERSON_SYSTEMATIC,
     PERSON_CORE,
     PERSON_MAIN

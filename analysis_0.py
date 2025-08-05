@@ -1,7 +1,7 @@
 import os
 import glob
 import json
-from collections import Counter
+from collections import Counter, defaultdict
 from itertools import combinations
 from typing import List, Dict, Any, Tuple, Optional
 
@@ -19,7 +19,7 @@ from scipy import stats
 from statsmodels.stats.contingency_tables import mcnemar
 from statsmodels.stats.multitest import multipletests
 from scipy.stats import (
-    bootstrap, f_oneway, ttest_ind, kruskal, mannwhitneyu, pearsonr
+    bootstrap, f_oneway, ttest_ind, kruskal, mannwhitneyu, pearsonr, sem, t
 )
 
 from scipy.spatial.distance import squareform
@@ -34,7 +34,7 @@ from profiles.profile_sets import PERSON_SYSTEMATIC
 # ============================================================================
 
 
-def test_comprehensive_demographic_accuracy_differences(merged_df, group_keys=("gender", "ethnicity", "cognitive_style")) -> Dict[str, Any]:
+def test_comprehensive_demographic_accuracy_differences(merged_df, group_keys=("gender", "ethnicity", "cognitive_style"), person_set: PersonSet = PERSON_SYSTEMATIC) -> Dict[str, Any]:
     """
     Comprehensive analysis of demographic group accuracy differences.
     
@@ -68,7 +68,7 @@ def test_comprehensive_demographic_accuracy_differences(merged_df, group_keys=("
             if not p.startswith("profile"):
                 continue
             base_id = p.replace("_active", "").replace("_passive", "")
-            traits = PERSON_SYSTEMATIC.get_traits(base_id)
+            traits = person_set.get_traits(base_id)
             if traits.get(trait_name) == trait_value:
                 matching_profiles.append(p)
         return matching_profiles
@@ -118,8 +118,8 @@ def test_comprehensive_demographic_accuracy_differences(merged_df, group_keys=("
 
     # Ethnicity comparisons
     ethnicities = set(
-        PERSON_SYSTEMATIC.get_traits(pid).get("ethnicity")
-        for pid in PERSON_SYSTEMATIC.metadata
+        person_set.get_traits(pid).get("ethnicity")
+        for pid in person_set.metadata
     )
     eth_pairs = combinations(sorted(ethnicities), 2)
     for e1, e2 in eth_pairs:
@@ -132,9 +132,9 @@ def test_comprehensive_demographic_accuracy_differences(merged_df, group_keys=("
     # Cognitive style comparisons
     if "cognitive_style" in group_keys:
         styles = set(
-            PERSON_SYSTEMATIC.get_traits(pid).get("cognitive_style")
-            for pid in PERSON_SYSTEMATIC.metadata
-            if PERSON_SYSTEMATIC.get_traits(pid).get("cognitive_style") is not None
+            person_set.get_traits(pid).get("cognitive_style")
+            for pid in person_set.metadata
+            if person_set.get_traits(pid).get("cognitive_style") is not None
         )
         cog_pairs = combinations(sorted(styles), 2)
         for s1, s2 in cog_pairs:
@@ -147,19 +147,19 @@ def test_comprehensive_demographic_accuracy_differences(merged_df, group_keys=("
     # Intersectional comparisons
     genders = ["man", "woman"] if "gender" in group_keys else []
     ethnicities = set(
-        PERSON_SYSTEMATIC.get_traits(pid).get("ethnicity")
-        for pid in PERSON_SYSTEMATIC.metadata
+        person_set.get_traits(pid).get("ethnicity")
+        for pid in person_set.metadata
     )
     
     for g1, g2 in combinations(genders, 2):
         for eth in ethnicities:
             g1_profiles = [
-                f"{pid}_passive" for pid in PERSON_SYSTEMATIC.metadata
-                if PERSON_SYSTEMATIC.get_traits(pid).get("gender") == g1 and PERSON_SYSTEMATIC.get_traits(pid).get("ethnicity") == eth
+                f"{pid}_passive" for pid in person_set.metadata
+                if person_set.get_traits(pid).get("gender") == g1 and person_set.get_traits(pid).get("ethnicity") == eth
             ]
             g2_profiles = [
-                f"{pid}_passive" for pid in PERSON_SYSTEMATIC.metadata
-                if PERSON_SYSTEMATIC.get_traits(pid).get("gender") == g2 and PERSON_SYSTEMATIC.get_traits(pid).get("ethnicity") == eth
+                f"{pid}_passive" for pid in person_set.metadata
+                if person_set.get_traits(pid).get("gender") == g2 and person_set.get_traits(pid).get("ethnicity") == eth
             ]
             if g1_profiles and g2_profiles:
                 res = compare_groups(
@@ -690,11 +690,11 @@ def detect_systematic_biases(
         - profile: Profile identifier  
         - bias_direction: Direction of bias ("more_positive" or "more_negative")
         - bias_magnitude: Magnitude of directional bias (proportion of category)
-        - n_flips: Total number of prediction flips from baseline
-        - flip_rate: Proportion of predictions that differ from baseline
+        - n_mislabelling: Total number of prediction mislabelling from baseline
+        - mislabelling_rate: Proportion of predictions that differ from baseline
         - category_size: Number of samples in category
-        - positive_flips: Baseline negative -> Profile positive flips
-        - negative_flips: Baseline positive -> Profile negative flips
+        - positive_mislabelling: Baseline negative -> Profile positive mislabelling (e.g., labelling too many as stereotypes)
+        - negative_mislabelling: Baseline positive -> Profile negative mislabelling (e.g., labelling too many as unrelated)
     
     Raises:
     -------
@@ -720,6 +720,7 @@ def detect_systematic_biases(
         category_data = merged[merged[category_col] == category_value]
         baseline = category_data[baseline_col]
         size = len(category_data)
+        global_size = len(merged)
 
         if size == 0:
             continue
@@ -727,35 +728,38 @@ def detect_systematic_biases(
         for profile in profile_cols:
             profile_preds = category_data[profile]
 
-            pos_flips = ((baseline == negative_label) & (profile_preds == positive_label)).sum()
-            neg_flips = ((baseline == positive_label) & (profile_preds == negative_label)).sum()
-            total_flips = pos_flips + neg_flips
-            flip_rate = total_flips / size
+            pos_mislabelling = ((baseline == negative_label) & (profile_preds == positive_label)).sum()
+            neg_mislabelling = ((baseline == positive_label) & (profile_preds == negative_label)).sum()
+            total_mislabelling = pos_mislabelling + neg_mislabelling
+            mislabelling = total_mislabelling / size
 
-            if pos_flips > neg_flips:
+            if pos_mislabelling > neg_mislabelling:
                 bias_direction = "more_positive"
-                bias_magnitude = (pos_flips - neg_flips) / size
-            elif neg_flips > pos_flips:
+                bias_magnitude = (pos_mislabelling - neg_mislabelling) / size
+            elif neg_mislabelling > pos_mislabelling:
                 bias_direction = "more_negative"
-                bias_magnitude = (neg_flips - pos_flips) / size
+                bias_magnitude = (neg_mislabelling - pos_mislabelling) / size
             else:
                 bias_direction = "neutral"
                 bias_magnitude = 0.0
+
+            weighted_bias_magnitude = bias_magnitude*(size/global_size)
 
             bias_patterns.append({
                 "category": category_value,
                 "profile": profile,
                 "bias_direction": bias_direction,
                 "bias_magnitude": bias_magnitude,
-                "n_flips": total_flips,
-                "flip_rate": flip_rate,
+                "weighted_bias_magnitude": weighted_bias_magnitude,
+                "n_mislabelling": total_mislabelling,
+                "mislabelling_rate": mislabelling,
                 "category_size": size,
-                "positive_flips": pos_flips,
-                "negative_flips": neg_flips
+                "positive_mislabelling": pos_mislabelling,
+                "negative_mislabelling": neg_mislabelling,
             })
 
     bias_df = pd.DataFrame(bias_patterns)
-    bias_df = bias_df.sort_values("bias_magnitude", ascending=False, key=abs)
+    bias_df = bias_df.sort_values("weighted_bias_magnitude", ascending=False, key=abs)
 
     return bias_df
 
@@ -803,6 +807,7 @@ def analyze_systematic_bias_patterns(
         baseline_col=baseline_col,
         profile_prefix=profile_prefix
     )
+    bias_patterns = bias_patterns.sort_values("weighted_bias_magnitude", ascending=False, key=abs)
 
     # Dataset composition
     category_sizes = merged_df.groupby(category_col).size().reset_index()
@@ -824,11 +829,11 @@ def analyze_systematic_bias_patterns(
 
     print(f"\nTOP 20 STRONGEST BIAS PATTERNS")
     print("-" * 90)
-    print(f"{'Category':<15}{'Profile':<20}{'Direction':<15}{'Magnitude':<12}{'Flips':<8}{'Cat.Size'}")
+    print(f"{'Category':<15}{'Profile':<20}{'Direction':<15}{'Mag.':<10}{'Weighted':<10}{'Mislab.':<10}{'Cat.Size'}")
     print("-" * 90)
     for _, row in bias_patterns.head(20).iterrows():
         print(f"{str(row['category']):<15}{str(row['profile']):<20}{row['bias_direction']:<15}"
-              f"{row['bias_magnitude']:<12.3f}{row['n_flips']:<8}{row['category_size']}")
+              f"{row['bias_magnitude']:<10.3f}{row['weighted_bias_magnitude']:<10.3f}{row['n_mislabelling']:<8}{row['category_size']}")
 
     # Reliability analysis
     large = bias_patterns[bias_patterns['category_size'] >= 100]
@@ -852,6 +857,7 @@ def analyze_systematic_bias_patterns(
 
     bias_patterns['statistically_meaningful'] = bias_patterns.apply(assess_bias_significance, axis=1)
     meaningful = bias_patterns[bias_patterns['statistically_meaningful']].copy()
+    meaningful = meaningful.sort_values("weighted_bias_magnitude", key=abs, ascending=False)
 
     print(f"\nSTATISTICALLY MEANINGFUL BIAS PATTERNS")
     print("-" * 70)
@@ -859,7 +865,7 @@ def analyze_systematic_bias_patterns(
 
     print(f"\nTOP 15 STATISTICALLY MEANINGFUL PATTERNS")
     print("-" * 90)
-    print(f"{'Category':<15}{'Profile':<20}{'Direction':<15}{'Magnitude':<12}{'Size':<8}{'Threshold'}")
+    print(f"{'Category':<15}{'Profile':<20}{'Direction':<15}{'Mag.':<10}{'Weighted':<10}{'Size':<8}{'Threshold'}")
     print("-" * 90)
     for _, row in meaningful.head(15).iterrows():
         threshold = (
@@ -868,28 +874,30 @@ def analyze_systematic_bias_patterns(
             "≥5.0%"
         )
         print(f"{str(row['category']):<15}{str(row['profile']):<20}{row['bias_direction']:<15}"
-              f"{row['bias_magnitude']:<12.3f}{row['category_size']:<8}{threshold}")
+              f"{row['bias_magnitude']:<10.3f}{row['weighted_bias_magnitude']:<10.3f}{row['category_size']:<8}{threshold}")
 
     # Category summary
     category_summary = bias_patterns.groupby('category').agg({
         'bias_magnitude': ['mean', 'max', 'std'],
-        'n_flips': 'sum',
-        'flip_rate': 'mean',
+        'weighted_bias_magnitude': 'sum',
+        'n_mislabelling': 'sum',
+        'mislabelling_rate': 'mean',
         'category_size': 'first'
     }).round(3)
     category_summary.columns = [
         'avg_bias_magnitude', 'max_bias_magnitude', 'bias_std',
-        'total_flips', 'avg_flip_rate', 'sample_size'
+        'total_mislabelling', 'avg_mislabelling_rate', 'sample_size',
+        'total_weighted_bias'
     ]
 
     print(f"\nCATEGORY-LEVEL BIAS SUMMARY")
     print("-" * 70)
-    print(f"{'Category':<15}{'Avg Bias':<12}{'Max Bias':<12}{'Total Flips':<12}{'Sample Size'}")
+    print(f"{'Category':<15}{'Avg Bias':<12}{'Max Bias':<12}{'Weighted Bias':<15}{'Total Mislab.':<16}{'Sample Size'}")
     print("-" * 70)
     for category in category_summary.sort_values('max_bias_magnitude', ascending=False).index:
         row = category_summary.loc[category]
         print(f"{category:<15}{row['avg_bias_magnitude']:<12.3f}{row['max_bias_magnitude']:<12.3f}"
-              f"{row['total_flips']:<12.0f}{row['sample_size']:<12.0f}")
+              f"{row['total_weighted_bias']:<15.3f}{row['total_mislabelling']:<16.0f}{row['sample_size']:<12.0f}")
 
     print(f"\nFINAL ASSESSMENT")
     print("-" * 40)
@@ -1118,7 +1126,109 @@ def print_persona_similarity_analysis(similarity_results: Dict[str, Any]):
 
 
 
-def run_full_preliminary_analysis(merged_df: pd.DataFrame, df: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+
+def plot_accuracy_deltas_with_ci(merged_df, 
+                                 person_set: PersonSet = PERSON_SYSTEMATIC, 
+                                 group_keys = ("gender", "ethnicity"), 
+                                 color_key: str = "ethnicity",
+                                 colormap: str = "tab10",
+                                ):    
+    profile_cols = [col for col in merged_df.columns if col.startswith("profile")]
+    consensus_accuracy_global = np.mean([(merged_df[p] == merged_df['true_label']).mean() for p in profile_cols])
+
+    demographic_groups = defaultdict(list)
+    group_traits_map = {}
+    for profile in profile_cols:
+        base_id = profile.replace("_passive", "").replace("_active", "")
+        traits = person_set.get_traits(base_id, group_keys=group_keys)
+        if traits:
+            group_name = " ".join(traits[k] for k in group_keys if traits.get(k))
+            demographic_groups[group_name].append(profile)
+            group_traits_map[group_name] = traits
+
+    group_data = {}
+    for group_name, profiles in demographic_groups.items():
+        valid_profiles = [p for p in profiles if p in profile_cols]
+        if not valid_profiles:
+            continue
+
+        accuracies = [(merged_df[p] == merged_df['true_label']).mean() for p in valid_profiles]
+        other_profiles = [p for p in profile_cols if p not in valid_profiles]
+        consensus_accuracy = np.mean([
+            (merged_df[p] == merged_df['true_label']).mean() for p in other_profiles
+        ]) if other_profiles else np.mean(accuracies)
+
+        deltas = [acc - consensus_accuracy for acc in accuracies]
+
+        group_data[group_name] = {
+            'deltas': deltas,
+            'mean_delta': np.mean(deltas),
+            'sem': sem(deltas),
+            'n': len(deltas),
+            'traits': group_traits_map[group_name]
+        }
+
+    trait_values = sorted(set(data['traits'][color_key] for data in group_data.values()))
+    cmap = plt.get_cmap(colormap)
+    trait_to_color = {val: cmap(i) for i, val in enumerate(trait_values)}
+
+    # Plot
+    groups = list(group_data.keys())
+    means = [group_data[g]['mean_delta'] for g in groups]
+    errors = [group_data[g]['sem'] * t.ppf(0.975, group_data[g]['n'] - 1) for g in groups]
+    colors = [trait_to_color[group_data[g]['traits'][color_key]] for g in groups]
+    
+    x_pos = np.arange(len(groups))
+
+    fig, ax = plt.subplots(figsize=(10, 6))   
+    bars = ax.bar(x_pos, means, yerr=errors, capsize=4, color=colors, edgecolor='black', alpha=0.8)
+
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels([g.title() for g in groups], rotation=45, ha='right', fontsize=10)
+
+    ax.axhline(y=0, color='red', linestyle='--', linewidth=1.5, label='Consensus Baseline')
+
+    if "base_pred" in merged_df.columns:
+        base_accuracy = (merged_df["base_pred"] == merged_df["true_label"]).mean()
+        consensus_accuracy_global = np.mean([
+            (merged_df[p] == merged_df["true_label"]).mean()
+            for p in merged_df.columns if p.startswith("profile")
+        ])
+        delta = base_accuracy - consensus_accuracy_global
+        ax.axhline(y=delta, color='purple', linestyle=':', linewidth=2, label='No-Roleplaying Baseline')
+
+    for i, (bar, mean, error) in enumerate(zip(bars, means, errors)):
+        y = mean + error + 0.001 if mean > 0 else mean - error - 0.001
+        va = 'bottom' if mean > 0 else 'top'
+        ax.text(i, y, f'{mean:+.3f}', ha='center', va=va, fontweight='bold', fontsize=10)
+
+    ax.set_ylabel("Accuracy Delta from Consensus", fontsize=12)
+    ax.set_title("Demographic Group Accuracy Deviations from Consensus\n(95% Confidence Intervals)", fontsize=14, fontweight='bold')
+    ax.grid(axis='y', linestyle='--', alpha=0.3)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False)
+    
+    plt.subplots_adjust(bottom=0.3)
+    plt.show()
+    
+    summary = []
+    for group, data in group_data.items():
+        ci = data['sem']*t.ppf(0.975, data['n'] - 1)
+        summary.append({
+            'group': group,
+            'mean_delta': data['mean_delta'],
+            'ci_lower': data['mean_delta'] - ci,
+            'ci_upper': data['mean_delta'] + ci,
+            'n': data['n'],
+            'color_key': data['traits'][color_key]
+        })
+
+    return pd.DataFrame(summary).sort_values(by='mean_delta', ascending=False)
+
+
+
+
+
+def run_full_preliminary_analysis(merged_df: pd.DataFrame, df: Optional[pd.DataFrame] = None, person_set: PersonSet = PERSON_SYSTEMATIC) -> Dict[str, Any]:
     """
     Run the full bias, disagreement, rescue, and persona similarity analysis on a merged predictions dataset.
     
@@ -1128,12 +1238,15 @@ def run_full_preliminary_analysis(merged_df: pd.DataFrame, df: Optional[pd.DataF
         DataFrame containing true_label, baseline predictions, and all profile predictions.
     df : Optional[pd.DataFrame]
         Original dataset used for merging back stereotype_type if missing.
+    person_set : PersonSet
+        Dataclass holding seeds and metadata for profile trait mapping.
     
     Returns:
     --------
     Dict[str, Any]
         Dictionary containing results from all major analysis modules.
     """
+
     results = {}
     
     if "base_pred" not in merged_df.columns:
@@ -1146,7 +1259,7 @@ def run_full_preliminary_analysis(merged_df: pd.DataFrame, df: Optional[pd.DataF
 
 
     print("\n\n=== DEMOGRAPHIC ACCURACY DIFFERENCES ===")
-    demographic_results = test_comprehensive_demographic_accuracy_differences(merged_df)
+    demographic_results = test_comprehensive_demographic_accuracy_differences(merged_df, person_set=person_set)
     print_comprehensive_demographic_results(demographic_results)
     results['demographic'] = demographic_results
     
@@ -1178,13 +1291,11 @@ def run_full_preliminary_analysis(merged_df: pd.DataFrame, df: Optional[pd.DataF
     
 
     print("\n\n=== PERSONA SIMILARITY CLUSTERING ===")
-    persona_similarity = analyze_persona_similarity(merged_df, person_set=PERSON_SYSTEMATIC)
+    persona_similarity = analyze_persona_similarity(merged_df, person_set=person_set)
     print_persona_similarity_analysis(persona_similarity)
     results['persona_similarity'] = persona_similarity
 
     print("\n=== PLOT OF ACCURACY WITH CI ===")
-    
-    from utils_visualisation import plot_accuracy_deltas_with_ci
-    delta_summary = plot_accuracy_deltas_with_ci(merged_df)
+    delta_summary = plot_accuracy_deltas_with_ci(merged_df, person_set=person_set)
     
     return results

@@ -30,11 +30,15 @@ from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 
 
 from analysis_0 import *
-from profiles.profile_message import get_profile_traits, PROFILE_META_SYSTEMATIC, ProfileMeta
+from profiles.profile_message import get_profile_traits
 
 
 
-def factorial_analysis_nway_anova(merged_df, group_keys=("gender", "ethnicity", "cognitive_style")):
+def factorial_analysis_nway_anova(
+        merged_df, 
+        group_keys=("gender", "ethnicity", "cognitive_style"),
+        person_set: PersonSet = PERSON_SYSTEMATIC
+        ):
     """
     Configurable N-way ANOVA: Trait x Trait x Trait -> Performance Metrics
     
@@ -57,7 +61,7 @@ def factorial_analysis_nway_anova(merged_df, group_keys=("gender", "ethnicity", 
     
     # Create mapping from profile to traits
     profile_traits = {
-        profile: get_profile_traits(profile, group_keys=("gender", "ethnicity", "cognitive_style"))
+        profile: get_profile_traits(profile, person_set=person_set, group_keys=group_keys)
         for profile in profile_cols
     }
     
@@ -77,7 +81,7 @@ def factorial_analysis_nway_anova(merged_df, group_keys=("gender", "ethnicity", 
             
             profile_bias = bias_patterns[bias_patterns['profile'] == profile]
             avg_bias_magnitude = profile_bias['bias_magnitude'].mean() if len(profile_bias) > 0 else 0
-            avg_flip_rate = profile_bias['flip_rate'].mean() if len(profile_bias) > 0 else 0
+            avg_mislabelling = profile_bias['mislabelling_rate'].mean() if len(profile_bias) > 0 else 0
             
             traits = profile_traits[profile]
             row = {
@@ -86,7 +90,7 @@ def factorial_analysis_nway_anova(merged_df, group_keys=("gender", "ethnicity", 
                 'rescue_rate': avg_rescue_rate,
                 'extra_error_rate': avg_extra_error_rate,
                 'bias_magnitude': avg_bias_magnitude,
-                'flip_rate': avg_flip_rate
+                'mislabelling_rate': avg_mislabelling
             }
             row.update(traits)
             performance_data.append(row)
@@ -99,7 +103,7 @@ def factorial_analysis_nway_anova(merged_df, group_keys=("gender", "ethnicity", 
     # ========================================================================
     
     results = {}
-    dependent_vars = ['accuracy', 'rescue_rate', 'extra_error_rate', 'bias_magnitude', 'flip_rate']
+    dependent_vars = ['accuracy', 'rescue_rate', 'extra_error_rate', 'bias_magnitude', 'mislabelling_rate']
     
     for dv in dependent_vars:
         print(f"\n{'='*60}")
@@ -206,7 +210,7 @@ def factorial_analysis_nway_anova(merged_df, group_keys=("gender", "ethnicity", 
     }
 
 
-def plot_risk_benefit_frontier(merged_df, group_keys=("gender", "ethnicity", "cognitive_style"), figsize=(12, 8)):
+def plot_risk_benefit_frontier(merged_df, group_keys=("gender", "ethnicity", "cognitive_style"), figsize=(12, 8), person_set: PersonSet = PERSON_SYSTEMATIC):
     """
     Risk-Benefit Frontier Analysis
 
@@ -228,7 +232,7 @@ def plot_risk_benefit_frontier(merged_df, group_keys=("gender", "ethnicity", "co
     }).reset_index()
 
     profile_traits = {
-        profile: get_profile_traits(profile, group_keys=group_keys)
+        profile: get_profile_traits(profile, person_set=person_set, group_keys=group_keys)
         for profile in profile_performance["profile"]
     }
 
@@ -376,8 +380,8 @@ def calculate_effect_sizes(performance_df, anova_results, group_keys=("gender", 
     dependent_vars = ['accuracy', 'rescue_rate', 'extra_error_rate', 'bias_magnitude']
     if 'disagreement_rate' in performance_df.columns:
         dependent_vars.append('disagreement_rate')
-    elif 'flip_rate' in performance_df.columns:
-        dependent_vars.append('flip_rate')
+    elif 'mislabelling_rate' in performance_df.columns:
+        dependent_vars.append('mislabelling_rate')
 
     print("\nMAIN EFFECTS FROM ANOVA")
     print("-" * 40)
@@ -464,7 +468,7 @@ def ols_interaction_pvalue(df, dv, factor1, factor2):
 
 
 
-def run_full_tier1_analysis(merged_df: pd.DataFrame, group_keys=("gender", "ethnicity", "cognitive_style")) -> Dict[str, Any]:
+def run_full_tier1_analysis(merged_df: pd.DataFrame, group_keys=("gender", "ethnicity", "cognitive_style"), person_set: PersonSet = PERSON_SYSTEMATIC) -> Dict[str, Any]:
     """
     Run the full Tier 1 analysis pipeline:
     - N-way ANOVA for demographic profile traits
@@ -479,10 +483,10 @@ def run_full_tier1_analysis(merged_df: pd.DataFrame, group_keys=("gender", "ethn
     A dictionary with all analysis results.
     """
     print("\nRunning factorial ANOVA on profile traits...\n")
-    anova_results = factorial_analysis_nway_anova(merged_df, group_keys=group_keys)
+    anova_results = factorial_analysis_nway_anova(merged_df, group_keys=group_keys, person_set=person_set)
 
     print("\nRunning Risk-Benefit Pareto Frontier analysis...\n")
-    pareto_results = plot_risk_benefit_frontier(merged_df, group_keys=group_keys)
+    pareto_results = plot_risk_benefit_frontier(merged_df, group_keys=group_keys, person_set=person_set)
 
     performance_df = anova_results['performance_data']
     print("\nRunning effect size calculations for key findings...\n")

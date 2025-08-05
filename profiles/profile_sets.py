@@ -1,5 +1,5 @@
-from schema import *
-from profile_dict import (
+from profiles.schema import *
+from profiles.profile_dict import (
     PERSON_SEEDS_SYSTEMATIC, 
     PROFILE_META_SYSTEMATIC,
     PERSON_SEEDS_CORE,

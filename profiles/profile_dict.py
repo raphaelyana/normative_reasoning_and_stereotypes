@@ -1,4 +1,4 @@
-from schema import *
+from profiles.schema import *
 
 __all__ = [
     "PERSON_SEEDS_SYSTEMATIC",
