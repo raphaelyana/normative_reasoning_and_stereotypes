@@ -1,14 +1,15 @@
-from typing import List, Optional
-from collections import defaultdict
-from enum import Enum
 import openai
 from utils import call_llm
 import re
 import pandas as pd
 from cases import CaseConfig
-from profiles.profile_message import make_system_message
-from profiles.profile_message import PERSON_SEEDS
+from enum import Enum
 from typing import Literal
+from typing import List, Optional
+from collections import defaultdict
+from profiles.profile_message import make_system_message
+from profiles.profile_dict import PERSON_SEEDS
+from profiles.schema import PersonSet
 
 DEFAULT_MODEL_DICT = {
     'default': 'gpt-4o-mini',
@@ -26,7 +27,7 @@ class FewShot:
         examples_df: Optional[pd.DataFrame] = None,
         person_key: Optional[str] = None, 
         role_playing: Literal["passive", "active", "none"] = "none",
-        person_seeds: Optional[dict[str, str]] = PERSON_SEEDS,
+        person_set: Optional[PersonSet] = None
     ):
         self.case = case
         self.client = client
@@ -36,7 +37,10 @@ class FewShot:
         self.n_shots = n_shots
         self.person_key = person_key
         self.role_playing = role_playing
-        self.person_seeds = person_seeds
+        if person_set is None:
+            self.person_set = PersonSet(seeds=PERSON_SEEDS, metadata={})
+        else:
+            self.person_set = person_set
 
         self.total_tokens = 0
         self.total_prompt_tokens = 0
@@ -88,13 +92,14 @@ class FewShot:
         if self.person_key is not None and self.role_playing == "passive":
             system_message = make_system_message(
                 case_name=self.case.case_name,
-                person_key=self.person_key
+                person_key=self.person_key,
+                person_set=self.person_set
             )
         
         elif self.person_key is not None and self.role_playing == "active":
             content = (
                 f"You are a few-shot classifier for {self.case.case_name}.\n"
-                f"Please answer as if you were the following person:\n{self.person_seeds[self.person_key]}"
+                f"Please answer as if you were the following person:\n{self.person_set.seeds[self.person_key]}"
             )
             system_message = {
                 "role": "system",

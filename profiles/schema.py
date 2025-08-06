@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Optional, Dict
 
 
-__all__ = ["Gender", "Ethnicity", "CogStyle", "PersonMeta", "PersonSet"]
+__all__ = ["Gender", "Ethnicity", "CogStyle", "Age", "PersonMeta", "PersonSet"]
 
 
 class Gender(str, Enum):
@@ -16,6 +16,8 @@ class Ethnicity(str, Enum):
     black = "black"
     asian = "asian"
     latine = "latine"
+    middle_eastern = "middle_eastern"
+    indian = "indian"
 
 class CogStyle(str, Enum):
     expansive = "expansive"
@@ -24,11 +26,20 @@ class CogStyle(str, Enum):
     low_harm = "low_harm"
     balanced = "balanced"
 
+class Age(int, Enum):
+    age_1=20
+    age_2=25
+    age_3=35
+    age_4=45
+    age_5=55 
+
+
 @dataclass(frozen=True, slots=True)
 class PersonMeta:
     gender: Gender
     ethnicity: Ethnicity
     cognitive_style: Optional[CogStyle] = None
+    age: Optional[Age] = None
 
 @dataclass(frozen=True)
 class PersonSet:

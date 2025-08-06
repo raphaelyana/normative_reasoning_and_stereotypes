@@ -30,5 +30,4 @@ playground.ipynb
 case_studies.py
 utils_visualisation.py
 analysis_dump.py
-analysis_tools.py
-analysis_2.py
+analysis/

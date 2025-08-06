@@ -4,11 +4,12 @@ from enum import Enum
 import openai
 import time
 from utils import call_llm
-from profiles.profile_message import PERSON_SEEDS
+from profiles.profile_dict import PERSON_SEEDS
 from profiles.profile_message import make_system_message
 import re
 from cases import CaseConfig
 from typing import Literal
+from profiles.schema import PersonSet
 
 DEFAULT_MODEL_DICT = {
     'default': 'gpt-4o-mini',
@@ -24,7 +25,7 @@ class ZeroShot:
             task_definition: Optional[str] = None,
             person_key: Optional[str] = None,
             role_playing: Literal["passive", "active", "none"] = "none",
-            person_seeds: Optional[dict[str, str]] = PERSON_SEEDS,
+            person_set: Optional[PersonSet] = None
         ):
         
         self.case = case
@@ -36,7 +37,10 @@ class ZeroShot:
         self.max_tokens = max_tokens
         self.person_key = person_key
         self.role_playing = role_playing
-        self.person_seeds = person_seeds
+        if person_set is None:
+            self.person_set = PersonSet(seeds=PERSON_SEEDS, metadata={})
+        else:
+            self.person_set = person_set
 
         self.total_tokens = 0
         self.total_prompt_tokens = 0
@@ -53,12 +57,13 @@ class ZeroShot:
         if self.person_key is not None and self.role_playing == "passive":
             system_message = make_system_message(
             case_name=self.case_name,
-            person_key=self.person_key
+            person_key=self.person_key,
+            person_set=self.person_set
         )
             
         elif self.person_key and self.role_playing == "active":
 
-            content = f"You are a classifier for {self.case_name}.\n" + f"""Please answer as if you were the following person:\n{self.person_seeds[self.person_key]}\n"""
+            content = f"You are a classifier for {self.case_name}.\n" + f"""Please answer as if you were the following person:\n{self.person_set.seeds[self.person_key]}\n"""
             system_message = {
                 "role": "system",
                 "content": content
