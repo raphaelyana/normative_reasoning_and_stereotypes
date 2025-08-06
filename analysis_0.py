@@ -29,6 +29,23 @@ from profiles.schema import *
 from profiles.profile_sets import PERSON_SYSTEMATIC
 
 
+
+__all__ = [
+    "test_comprehensive_demographic_accuracy_differences",
+    "print_comprehensive_demographic_results",
+    "extract_high_disagreement_cases",
+    "print_disagreement_analysis",
+    "rescue_stats_by_category",
+    "analyze_rescue_performance",
+    "detect_systematic_biases",
+    "analyze_systematic_bias_patterns",
+    "analyze_persona_similarity",
+    "print_persona_similarity_analysis",
+    "plot_accuracy_deltas_with_ci",
+    "run_full_preliminary_analysis"
+]
+
+
 # ============================================================================
 # Preliminary Analysis
 # ============================================================================
@@ -646,11 +663,6 @@ def analyze_rescue_performance(rescue_stats_df: pd.DataFrame) -> Dict[str, Any]:
 
 
 
-
-
-
-### NORMALIZE PER CATEGORY
-
 def detect_systematic_biases(
     merged: pd.DataFrame, 
     category_col: str = "stereotype_type",
@@ -934,7 +946,13 @@ def analyze_persona_similarity(merged: pd.DataFrame, person_set: PersonSet) -> D
     
     linkage_matrix = linkage(squareform(distance_matrix), method='ward')
     
-    max_clusters = min(8, n_profiles - 1)
+    #max_clusters = min(8, n_profiles - 1)
+    n_ethnicities = len({
+        person_set.get_traits(pid)["ethnicity"]
+        for pid in person_set.metadata.keys()
+    })
+    max_clusters = min(n_profiles - 1, n_ethnicities + 2)
+
     cluster_quality = {}
     
     for n_clust in range(2, max_clusters + 1):
