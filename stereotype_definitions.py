@@ -1,4 +1,44 @@
-stereotype_definition_old = """A statement becomes stereotypical when it assumes, implies or contains an 
+# =======================================
+# Stereotypes definitions used for classification
+#
+# ---------------
+# 4 definitions : 
+# ---------------
+#    - stereotype_definition_short_binary
+#               Short definition for two-label cases, 'stereotype' or 'unrelated' for instance.
+#               Provides better results if asking the model to return 'yes' or 'no' and convert
+#               back to true labels afterward.
+#
+#    - stereotype_definition_long_binary
+#               Longer definition, more extensive with many more precisions about what could be
+#               defined as a stereotype. Still working only for two labels.
+#
+#    - stereotype_definition_long_three_labels
+#               Long definition with an additional category for what is an anti-stereotype, and
+#               what can be confusing to anyone. Created on the basis of definition B.
+#
+#    - stereotype_definition_short
+#               Short definition for three-label cases, comprising anti-stereotypes. 
+#               Created on the basis of definition A.
+# =======================================
+
+
+stereotype_definition_short_binary = """
+A **stereotype** is a generalized belief or assumption about a group of people, based on identity markers such as gender, race, nationality, profession, age, or culture.
+
+Such statements:
+- Make broad claims about how group members think, feel, or behave, without acknowledging individual differences
+- Ignore personal variation and reduce people to group-based expectations
+- Use absolute or exaggerated terms (e.g., “always,” “never,” “most”)
+- May sound neutral or positive (e.g., “Women are naturally nurturing”), but still reinforce limiting group roles
+- Reflect ingrained social biases and often lack evidence
+- Can contribute to inequality by normalizing oversimplified views
+
+Statements that do **not** generalize about social groups—such as personal experiences, factual reports, or unrelated content—are **not** stereotypes.
+"""
+
+
+stereotype_definition_long_binary = """A statement becomes stereotypical when it assumes, implies or contains an 
 overarching, generalized claim about a target group by following a core template —- typically framed as "Let T such that A(T;Q)" —- to attribute specific qualities or behaviors to that group. 
 
 Key points include:
@@ -50,7 +90,7 @@ In summary, a statement is deemed stereotypical when its assumption attributes g
 quantifiers, particularly when the target group is sensitive and the quality ascribed is harmful. The use of absolute or exaggerated terms often 
 leads to a false or oversimplified representation of reality, contributing to prejudice and discrimination."""
 
-stereotype_definition = """
+stereotype_definition_long_three_labels = """
 A statement is considered **stereotypical** when it attributes a generalized quality, behavior, or tendency to a group based on their membership in that group. This often follows a logical template where a predicate is applied across a population, suggesting that group identity alone explains or predicts a characteristic.
 
 ---
@@ -172,18 +212,4 @@ Anti-stereotypes
 - Preserve the assumption that group identity determines behavior or traits
 - Often present a mirror image of the original stereotype (e.g., "Men can be emotionally sensitive" as a counter to "Men are emotionally detached")
 - Risk reinforcing essentialist thinking, simply flipping the script
-"""
-
-stereotype_definition_short_binary = """
-A **stereotype** is a generalized belief or assumption about a group of people, based on identity markers such as gender, race, nationality, profession, age, or culture.
-
-Such statements:
-- Make broad claims about how group members think, feel, or behave, without acknowledging individual differences
-- Ignore personal variation and reduce people to group-based expectations
-- Use absolute or exaggerated terms (e.g., “always,” “never,” “most”)
-- May sound neutral or positive (e.g., “Women are naturally nurturing”), but still reinforce limiting group roles
-- Reflect ingrained social biases and often lack evidence
-- Can contribute to inequality by normalizing oversimplified views
-
-Statements that do **not** generalize about social groups—such as personal experiences, factual reports, or unrelated content—are **not** stereotypes.
 """

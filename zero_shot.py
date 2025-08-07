@@ -75,16 +75,20 @@ class ZeroShot:
                 "content": f"You are a classifier for {self.case_name}. Decide if the reasoning is an example or not."
             }
 
-        user_prompt = f"""Definition of a {self.case_name}: {self.task_definition}
-
-                    
-                Input: {text}
+        if self.task_definition:
+            prompt_intro = f"Definition of a {self.case_name}: {self.task_definition}\n\n"
+        else:
+            prompt_intro = ""
+            
+        user_prompt = (
+                f"{prompt_intro}"
+                f"""Input: {text}
 
                 Labeling rules:
                 {rules}
 
                 Return only the label contained in this list: {label_list}.
-                """
+                """)
 
         user_message = {
             "role": "user",   

@@ -31,5 +31,4 @@ utils_visualisation.py
 analysis_dump.py
 analysis/
 mixture_of_personalities.py
-test.py
-summary_utils.py
+data_playground.py

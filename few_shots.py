@@ -33,6 +33,7 @@ class FewShot:
         self.client = client
         self.model = model if model else DEFAULT_MODEL_DICT["default"]
         self.max_tokens = max_tokens
+        self.case_name = case.case_name
         self.task_definition = task_definition
         self.n_shots = n_shots
         self.person_key = person_key
@@ -51,10 +52,18 @@ class FewShot:
         self.examples_df = examples_df
 
     
-    def _select_formatted_examples(self) -> List[str]:
+    def _select_formatted_examples(self, 
+                                   subject: Optional[str] = None) -> List[str]:
+            
+            # subject needs to be defined only if the dataset includes different subjects
+            # requiring separate examples.
+
             label_col = self.case.label_col
             template = self.case.example_template_fewshots
             df = self.examples_df
+
+            if subject and "subject" in df.columns:
+                df = df[df["subject"] == subject]
         
             label_to_examples = defaultdict(list)
             for _, row in df.iterrows():
@@ -66,39 +75,53 @@ class FewShot:
             return selected
 
 
-    def _format_prompt(self, input_text: str) -> str:
-        examples_str = "\n\n".join(self._select_formatted_examples())
+    def _format_prompt(self, input_text: str, subject: Optional[str]=None) -> str:
+        examples_str = "\n\n".join(self._select_formatted_examples(subject))
         rules = "\n".join(f"- {r}" for r in self.case.label_rules)
         label_list = [i for i in self.case.valid_labels]
 
-        return f"""Definition of a {self.case.case_name}: {self.task_definition}
-                    
-                    Labeling rules:
-                    {rules}
+        if self.task_definition:
+            prompt_intro = f"Definition of a {self.case_name}: {self.task_definition}\n\n"
+        else:
+            prompt_intro = ""
 
-                    Examples:
-                    {examples_str}
+        formatted_prompt = (
+                            f"{prompt_intro}"
+                            f"""Labeling rules:
+                            {rules}
+        
+                            Examples:
+                            {examples_str}
+        
+                            Now evaluate the following case:
+                            
+                            Input: {input_text}
+                            
+                            Return only one of: {label_list}."""
+                            ) 
+        
+        return formatted_prompt
+    
 
-                    Now evaluate the following case:
-                    
-                    Input: {input_text}
-                    
-                    Return only one of: {label_list}.
-                    """
 
-    def classify(self, text: str) -> str:
-        prompt = self._format_prompt(text)
+    def classify(self, text: str, row: Optional[dict] = None) -> str:
+
+        subject = None
+        if row is not None and "subject" in row:
+            subject = row["subject"]
+
+        prompt = self._format_prompt(text, subject=subject)
 
         if self.person_key is not None and self.role_playing == "passive":
             system_message = make_system_message(
-                case_name=self.case.case_name,
+                case_name=self.case_name,
                 person_key=self.person_key,
                 person_set=self.person_set
             )
         
         elif self.person_key is not None and self.role_playing == "active":
             content = (
-                f"You are a few-shot classifier for {self.case.case_name}.\n"
+                f"You are a few-shot classifier for {self.case_name}.\n"
                 f"Please answer as if you were the following person:\n{self.person_set.seeds[self.person_key]}"
             )
             system_message = {
@@ -109,7 +132,7 @@ class FewShot:
         else:
             system_message = {
                 "role": "system",
-                "content": f"You are a few-shot classifier for {self.case.case_name}. Use the provided examples and rules to decide the correct label."
+                "content": f"You are a few-shot classifier for {self.case_name}. Use the provided examples and rules to decide the correct label."
             }
         
         user_message = {

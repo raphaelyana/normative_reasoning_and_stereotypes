@@ -2,6 +2,96 @@
 
 import pandas as pd
 from typing import List, Optional
+from datasets import load_dataset
+
+
+NORMATIVE_CATEGORY = [
+    "moral_disputes",
+    "philosophy",
+    "world_religions",
+    "us_foreign_policy",
+    "sociology",
+    "professional_psychology",
+    "professional_law",
+    "moral_scenarios",
+    "human_sexuality",
+    "international_law",
+]
+
+CONTROL_CATEGORY = [
+    "college_mathematics",
+    "college_physics",
+    "formal_logic",
+    "logical_fallacies",
+    "college_computer_science",
+]
+
+SUBJECT_LIST = NORMATIVE_CATEGORY+CONTROL_CATEGORY
+
+
+
+
+def fetch_categories_mmlu(subject_list: List[str] = SUBJECT_LIST,
+                          normative_category: List[str] = NORMATIVE_CATEGORY,
+                          control_category: List[str] = CONTROL_CATEGORY):
+
+    if subject_list is None or len(subject_list)==0:
+        return "ERROR: No valid subjects, please enter correct subjects."
+    
+    dfs = []
+
+    for sub in subject_list:
+        ds = load_dataset("cais/mmlu", sub)
+        if "test" not in ds:
+            print(f"Warning: Subject '{sub}' not found in the dataset.")
+            continue
+        df = ds["test"].to_pandas()
+        df["subject"]=sub
+        if sub in normative_category:
+            df["category"] = "normative"
+        elif sub in control_category:
+            df["category"] = "control"
+        else:
+            raise ValueError(f"Subject '{sub}' is not in normative or control categories.")
+
+        dfs.append(df)
+
+    mmlu_full_df = pd.concat(dfs, ignore_index=True)
+    print(mmlu_full_df.shape)
+    print(mmlu_full_df.head())
+
+    return mmlu_full_df
+
+
+def format_mmlu_prompt(row):
+    """
+    Converts a row with a 'question' and 'choices' into a formatted prompt string.
+
+    Output format:
+    Question: <question>
+    Choices:
+    A. <choice 1>
+    B. <choice 2>
+    ...
+    """
+    choices = row.get('choices', [])
+    question = row.get('question', '[Missing question]')
+    
+    if isinstance(choices, list):
+        choices_str = "\n".join([f"{chr(65 + i)}. {c}" for i, c in enumerate(choices)])
+    else:
+        try:
+            parsed = eval(choices)
+            if isinstance(parsed, list):
+                choices_str = "\n".join([f"{chr(65 + i)}. {c}" for i, c in enumerate(parsed)])
+            else:
+                choices_str = str(choices)
+        except:
+            choices_str = str(choices)
+
+    choices_str = "\n".join([f"{chr(65 + i)}. {c}" for i, c in enumerate(choices)])
+    return f"Question: {question}\nChoices:\n{choices_str}"
+
 
 def load_mgsd_dataset(
         input_dataframe: pd.DataFrame,
@@ -72,6 +162,8 @@ def load_mgsd_dataset(
 
     return sample_mgsd, sample_examples_mgsd
 
+
+
 def load_mentalmanip_dataset(
         input_dataframe: pd.DataFrame,
         sample_size: dict = {1: 250, 0: 250},
@@ -132,7 +224,68 @@ def load_mentalmanip_dataset(
         print("MentalManip Few-shot examples balance:\n", sample_examples_mentalmanip["manipulative"].value_counts())
 
     return sample_mentalmanip, sample_examples_mentalmanip
+
+
+
+
+def load_mmlu_dataset(
+        input_df: pd.DataFrame,
+        sample_per_subject: int = 50,
+        sample_examples_per_subject: int = 5,
+        random_state: int = 42,
+        random_state_examples: int = 0,
+        print_balance: bool = False,
+    ):
+
+    if not isinstance(input_df, pd.DataFrame):
+        raise ValueError("input_df must be a pandas DataFrame")
     
+    if "subject" not in input_df.columns or "category" not in input_df.columns:
+        raise ValueError("Missing required columns: 'subject', 'category'")
+    
+
+    subject_list = input_df["subject"].unique().tolist()
+    test_samples = []
+    examples_samples = []
+    
+    for subject in subject_list:
+        subject_df = input_df[input_df["subject"] == subject]
+        available = len(subject_df)
+
+        if available < sample_per_subject+sample_examples_per_subject:
+            raise ValueError(f"Not enough samples to use for subject: {subject}. Available samples: {available}, requested: {sample_per_subject + sample_examples_per_subject}.")
+        
+        subject_test = subject_df.sample(n=sample_per_subject, random_state=random_state)
+        test_samples.append(subject_test)
+
+        remaining = subject_df.drop(subject_test.index)
+        subject_examples = remaining.sample(n=sample_examples_per_subject, random_state=random_state_examples)
+        examples_samples.append(subject_examples)
+
+        if print_balance:
+            print(f"{subject}: samples={len(subject_test)}, examples={len(subject_examples)}")
+
+    sample_mmlu = pd.concat(test_samples).reset_index(drop=True)
+    sample_examples_mmlu = pd.concat(examples_samples).reset_index(drop=True)
+
+    for df in [sample_mmlu, sample_examples_mmlu]:
+        df["choices"] = df["choices"].apply(lambda x: list(x) if not isinstance(x, list) else x)
+
+    sample_mmlu["formatted_prompt"] = sample_mmlu.apply(format_mmlu_prompt, axis=1)
+    sample_examples_mmlu["formatted_prompt"] = sample_examples_mmlu.apply(format_mmlu_prompt, axis=1)
+
+    sample_mmlu["answer"] = sample_mmlu["answer"].astype(str)
+    sample_examples_mmlu["answer"] = sample_examples_mmlu["answer"].astype(str)
+
+    sample_mmlu = sample_mmlu.sample(frac=1, random_state=random_state).reset_index(drop=True)
+    sample_examples_mmlu = sample_examples_mmlu.sample(frac=1, random_state=random_state_examples).reset_index(drop=True)
+
+    sample_mmlu["sample_id"] = sample_mmlu.index
+    sample_examples_mmlu["sample_id"] = sample_examples_mmlu.index
+
+    return sample_mmlu, sample_examples_mmlu
+
+
 
 
 def build_failure_augmented_sample(
@@ -183,6 +336,13 @@ def get_additional_fields(row: pd.Series, case_name: str) -> dict:
         return {
             "technique": row.get("technique") if "technique" in row else None,
             "vulnerability": row.get("vulnerability") if "vulnerability" in row else None,
+        }
+    elif key == "mmlu":
+        return {
+            "subject": row.get("subject"),
+            "category": row.get("category"),
+            "question": row.get("question"),
+            "choices": row.get("choices")
         }
     else:
         return {}
