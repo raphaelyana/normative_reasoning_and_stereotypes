@@ -5,8 +5,6 @@ import re
 import pandas as pd
 import numpy as np
 
-from analysis_0 import *
-
 
 def load_and_merge_profiles(
     base_file_path: str,
@@ -78,3 +76,22 @@ def load_and_merge_profiles(
 
 def compute_accuracy(y_true, y_pred):
     return np.mean(np.array(y_true) == np.array(y_pred))
+
+
+def get_demographic_info(profile_name: str, person_set) -> str:
+    """Return a demographic signature: gender_ethnicity + extra traits if cognitive_style is missing."""
+    traits = person_set.get_traits(profile_name)
+
+    parts = [str(traits.gender), str(traits.ethnicity)]
+
+    # If cognitive_style exists, use it
+    if getattr(traits, 'cognitive_style', None) is not None:
+        parts.append(str(traits.cognitive_style))
+    else:
+        for attr in traits.__dataclass_fields__.keys():
+            if attr not in ['gender', 'ethnicity', 'cognitive_style']:
+                value = getattr(traits, attr, None)
+                if value is not None:
+                    parts.append(str(value))
+
+    return "_".join(parts)
