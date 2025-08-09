@@ -5,6 +5,8 @@ import re
 import pandas as pd
 import numpy as np
 
+from enum import Enum
+
 
 def load_and_merge_profiles(
     base_file_path: str,
@@ -78,7 +80,7 @@ def compute_accuracy(y_true, y_pred):
     return np.mean(np.array(y_true) == np.array(y_pred))
 
 
-def get_demographic_info(profile_name: str, person_set) -> str:
+def get_demographic_info_2(profile_name: str, person_set) -> str:
     """Return a demographic signature: gender_ethnicity + extra traits if cognitive_style is missing."""
     traits = person_set.get_traits(profile_name)
 
@@ -95,3 +97,40 @@ def get_demographic_info(profile_name: str, person_set) -> str:
                     parts.append(str(value))
 
     return "_".join(parts)
+
+def get_demographic_info(profile_name: str, person_set) -> str:
+    """
+    Return a demographic signature like 'white_man_low_harm' or 'white_man_age_2'.
+    Works whether person_set.get_traits returns a dict or a PersonMeta.
+    """
+    pid = profile_name.replace("_passive", "").replace("_active", "")
+    traits = person_set.get_traits(pid)
+
+    def read(tr, key):
+        v = tr.get(key) if isinstance(tr, dict) else getattr(tr, key, None)
+        if isinstance(v, Enum):
+            v = v.value
+        return None if v is None else str(v).lower()
+
+    parts = []
+    for k in ("gender", "ethnicity"): 
+        v = read(traits, k)
+        if v:
+            parts.append(v)
+
+    cs = read(traits, "cognitive_style")
+    if cs:
+        parts.append(cs)
+    else:
+        extra_fields = []
+        if hasattr(traits, "__dataclass_fields__"):
+            extra_fields = [f for f in traits.__dataclass_fields__ if f not in ("gender", "ethnicity", "cognitive_style")]
+        elif isinstance(traits, dict):
+            extra_fields = [f for f in traits.keys() if f not in ("gender", "ethnicity", "cognitive_style")]
+
+        for f in extra_fields:
+            v = read(traits, f)
+            if v:
+                parts.append(v)
+
+    return "_".join(parts) if parts else "unknown"

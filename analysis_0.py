@@ -73,38 +73,43 @@ def test_comprehensive_demographic_accuracy_differences(merged_df, person_set: P
     
     results = {}
 
+    df_passive_cols = {c for c in merged_df.columns if c.startswith("profile") and c.endswith("_passive")}
+    meta_passive_cols = {f"{pid}_passive" for pid in person_set.metadata.keys()}
+    
+    covered = df_passive_cols & meta_passive_cols
+    missing_in_meta = df_passive_cols - meta_passive_cols
+    unused_meta = meta_passive_cols - df_passive_cols
+    
+    print(f"[INFO] Profiles covered by metadata: {len(covered)}/{len(df_passive_cols)}")
+    if missing_in_meta:
+        some = ", ".join(sorted(list(missing_in_meta))[:10])
+        print(f"[WARN] {len(missing_in_meta)} dataframe columns have no metadata (e.g., {some} …)")
+    if unused_meta:
+        print(f"[INFO] {len(unused_meta)} metadata profiles have no column in dataframe (ignored)")
+
     def get_profiles_by_trait(trait_name, trait_value):
         """Return profile column names in merged_df that match a given trait."""
-        matching_profiles = []
-        print(f"\n[DEBUG] Looking for profiles with {trait_name} == {trait_value}")
-    
+        matching = []
+
+        # normalize target value to lowercase string
         if hasattr(trait_value, "value"):
             trait_value = trait_value.value
         trait_value = str(trait_value).lower()
     
-        for p in merged_df.columns:
-            if not p.startswith("profile"):
-                continue
+        for base_id, meta in person_set.metadata.items():
+            clean_id = base_id.replace("_passive", "")
+            
+            v = getattr(meta, trait_name, None)
+            if hasattr(v, "value"): 
+                v = v.value
+            v = None if v is None else str(v).lower()
+        
+            if v == trait_value:
+                col = f"{clean_id}_passive"
+                if col in merged_df.columns:
+                    matching.append(col)
     
-            base_id = p.replace("_active", "").replace("_passive", "")
-    
-            if base_id not in person_set.metadata:
-                print(f"[DEBUG] Skipping {p} → no metadata entry found.")
-                continue
-    
-            traits = person_set.get_traits(base_id)
-            value = getattr(traits, trait_name, None)
-    
-            if hasattr(value, "value"):
-                value = value.value
-            if value is not None:
-                value = str(value).lower()
-    
-            if value == trait_value:
-                matching_profiles.append(p)
-    
-        print(f"[DEBUG] Found {len(matching_profiles)} profiles: {matching_profiles}")
-        return matching_profiles
+        return matching
 
     
 
@@ -144,13 +149,15 @@ def test_comprehensive_demographic_accuracy_differences(merged_df, person_set: P
         if res: results["men_vs_women"] = res
 
     # Ethnicity comparisons
-    if "ethnicity" in available_traits:
-        ethnicities = set(getattr(meta, "ethnicity") for meta in person_set.metadata.values())
-        for e1, e2 in combinations(sorted(ethnicities), 2):
-            p1 = get_profiles_by_trait("ethnicity", e1)
-            p2 = get_profiles_by_trait("ethnicity", e2)
-            res = compare_groups(p1, p2, e1.value.lower(), e2.value.lower(), merged_df)
-            if res: results[f"{e1.value.lower()}_vs_{e2.value.lower()}"] = res
+    ethnicities = {getattr(meta, "ethnicity") for meta in person_set.metadata.values()}
+    for e1, e2 in combinations(sorted(ethnicities, key=lambda x: str(x)), 2):
+        p1 = get_profiles_by_trait("ethnicity", e1)
+        p2 = get_profiles_by_trait("ethnicity", e2)
+        if p1 and p2:
+            res = compare_groups(p1, p2, str(getattr(e1, "value", e1)).lower(), str(getattr(e2, "value", e2)).lower(), merged_df)
+            if res:
+                results[f"{str(getattr(e1, 'value', e1)).lower()}_vs_{str(getattr(e2, 'value', e2)).lower()}"] = res
+
 
 
     # Cognitive style comparisons
@@ -170,14 +177,23 @@ def test_comprehensive_demographic_accuracy_differences(merged_df, person_set: P
         ethnicities = set(getattr(meta, "ethnicity") for meta in person_set.metadata.values())
         for g1, g2 in combinations(genders, 2):
             for eth in ethnicities:
-                g1_profiles = [pid for pid, meta in person_set.metadata.items()
-                               if getattr(meta, "gender") == g1 and getattr(meta, "ethnicity") == eth]
-                g2_profiles = [pid for pid, meta in person_set.metadata.items()
-                               if getattr(meta, "gender") == g2 and getattr(meta, "ethnicity") == eth]
+                g1_profiles = [f"{pid.replace('_passive', '')}_passive"
+                               for pid, meta in person_set.metadata.items()
+                               if getattr(meta, "gender") == g1 and getattr(meta, "ethnicity") == eth
+                               and f"{pid.replace('_passive', '')}_passive" in merged_df.columns]
+
+                g2_profiles = [f"{pid.replace('_passive', '')}_passive"
+                               for pid, meta in person_set.metadata.items()
+                               if getattr(meta, "gender") == g2 and getattr(meta, "ethnicity") == eth
+                               and f"{pid.replace('_passive', '')}_passive" in merged_df.columns]
+                
                 if g1_profiles and g2_profiles:
-                    res = compare_groups(g1_profiles, g2_profiles,
-                                         f"{eth.value}_{g1.value}", f"{eth.value}_{g2.value}",
-                                         merged_df)
+                    res = compare_groups(
+                        g1_profiles, g2_profiles,
+                        f"{getattr(eth, 'value', eth).lower()}_{getattr(g1, 'value', g1).lower()}",
+                        f"{getattr(eth, 'value', eth).lower()}_{getattr(g2, 'value', g2).lower()}",
+                        merged_df
+                    )
                     if res:
                         results[f"intersectional_{eth.value}_{g1.value}_vs_{g2.value}"] = res
 
@@ -302,7 +318,6 @@ def extract_high_disagreement_cases(
     sample_id_col: str = "sample_id",
     label_col: str = "true_label",
     baseline_col: str = "base_pred",
-    profile_prefix: str = "profile",
     person_set: Optional[PersonSet] = None
 ) -> pd.DataFrame:
     """
@@ -326,8 +341,6 @@ def extract_high_disagreement_cases(
         Column name containing ground truth labels
     baseline_col : str, default="base_pred"
         Column name containing baseline model predictions
-    profile_prefix : str, default="profile"
-        Prefix for identifying profile prediction columns
     
     Returns:
     --------
@@ -361,7 +374,8 @@ def extract_high_disagreement_cases(
 
     if person_set is not None:
         def trait_key(p):
-            return get_demographic_info(p, person_set)
+            base_id = p.replace("_passive", "").replace("_active", "")
+            return get_demographic_info(base_id, person_set)
         trait_by_profile = {p: trait_key(p) for p in profile_cols}
     else:
         trait_by_profile = None
@@ -382,8 +396,8 @@ def extract_high_disagreement_cases(
         modal_trait_dist = None
         minority_trait_dist = None
         if trait_by_profile is not None:
-            modal_traits = [trait_by_profile[p] for p, y in preds.items() if y == modal]
-            minority_traits = [trait_by_profile[p] for p, y in preds.items() if y != modal]
+            modal_traits = [trait_by_profile[col] for col, y in zip(profile_cols, preds) if y == modal]
+            minority_traits = [trait_by_profile[col] for col, y in zip(profile_cols, preds) if y != modal]
             modal_trait_dist = dict(Counter(modal_traits))
             minority_trait_dist = dict(Counter(minority_traits))
 
@@ -1165,104 +1179,191 @@ def print_persona_similarity_analysis(similarity_results: Dict[str, Any]):
 
 
 
+
 def plot_accuracy_deltas_with_ci(
-    merged_df, 
-    person_set: PersonSet = PERSON_SYSTEMATIC, 
-    group_keys = ("gender", "ethnicity"), 
-    color_key: str = None,
+    merged_df,
+    person_set: PersonSet,
+    group_keys=("gender", "ethnicity"),
+    color_key: str = "ethnicity",
     colormap: str = "tab10",
-):    
-    profile_cols = [col for col in merged_df.columns if col.startswith("profile")]
-    consensus_accuracy_global = np.mean([
-        (merged_df[p] == merged_df['true_label']).mean() for p in profile_cols
-    ])
+):
+    # ---- helpers -----------------------------------------------------------
+    def norm_val(v):
+        if hasattr(v, "value"):  # Enum
+            return str(v.value).lower()
+        return "unknown" if v is None else str(v).lower()
 
-    demographic_groups = defaultdict(list)
-    group_traits_map = {}
+    def traits_of(pid):
+        # Try the PersonSet's get_traits method first
+        t = person_set.get_traits(pid, group_keys)
+        if isinstance(t, dict) and any(v != "Unknown" for v in t.values()):
+            return {k: norm_val(t.get(k)) for k in group_keys}
+        
+        # Fallback: try to get metadata directly
+        meta = person_set.metadata.get(pid)
+        if meta:
+            return {k: norm_val(getattr(meta, k, None)) for k in group_keys}
+        
+        return {k: "unknown" for k in group_keys}
 
-    for profile in profile_cols:
-        base_id = profile.replace("_passive", "").replace("_active", "")
-        traits = person_set.get_traits(base_id)
-        if traits:
-            # Build group name from requested keys
-            group_name = " ".join(str(traits.get(k, "unknown")) for k in group_keys)
-            demographic_groups[group_name].append(profile)
-            group_traits_map[group_name] = traits
+    # ---- collect per-profile traits ----------------------------------------
+    profile_cols = [c for c in merged_df.columns if c.startswith("profile")]
+    consensus_accuracy_global = float(
+        np.mean([(merged_df[p] == merged_df["true_label"]).mean() for p in profile_cols])
+    )
 
+    demo_groups = defaultdict(list)
+    for p in profile_cols:
+        # Clean the profile name to get the base persona ID
+        # Handle both "profile1_passive" format
+        pid = p
+        if pid.startswith("profile"):
+            # Remove "profile" prefix and any trailing "_passive" or "_active"
+            pid = pid.replace("_passive", "").replace("_active", "")
+            # For profiles like "profile1", "profile2", keep the number as that's the key
+        
+        print(f"DEBUG: Processing profile {p} -> persona ID {pid}")
+        
+        # Get traits for this persona - exclude age from grouping
+        tr = traits_of(pid)
+        # Only use gender and ethnicity for grouping (ignore age)
+        gname = " ".join([tr[k] for k in group_keys if k in ["gender", "ethnicity"]])
+        demo_groups[gname].append(p)
+        
+        print(f"DEBUG: Profile {p} -> traits {tr} -> group '{gname}'")
+        
+    print(f"DEBUG: Found demographic groups: {dict(demo_groups)}")  # Debug line
+
+    # ---- build ordered grid: ethnicity blocks x gender ----------------------
+    # derive full domains from metadata (so missing combos still appear)
+    # Only use gender and ethnicity for grouping
+    genders = sorted({norm_val(getattr(m, "gender", None)) for m in person_set.metadata.values()})
+    ethnicities = sorted({norm_val(getattr(m, "ethnicity", None)) for m in person_set.metadata.values()})
+
+    # Remove 'unknown' if we have actual values, but keep it if it's the only value
+    genders = [g for g in genders if g != "unknown"] if len(genders) > 1 else genders
+    ethnicities = [e for e in ethnicities if e != "unknown"] if len(ethnicities) > 1 else ethnicities
+
+    # force block order: ethnicity-major, gender-minor (so same ethnicity bars are together)
+    groups = [f"{g} {e}" for e in ethnicities for g in genders]  # Changed order: ethnicity first, then gender
+    
+    print(f"DEBUG: Expected groups: {groups}")
+
+    # Ensure all groups exist in demo_groups (even if empty)
+    for g in groups:
+        if g not in demo_groups:
+            demo_groups[g] = []
+
+    # ---- compute deltas per group ------------------------------------------
     group_data = {}
-    for group_name, profiles in demographic_groups.items():
-        accuracies = [(merged_df[p] == merged_df['true_label']).mean() for p in profiles]
-        other_profiles = [p for p in profile_cols if p not in profiles]
-        consensus_accuracy = np.mean([
-            (merged_df[p] == merged_df['true_label']).mean() for p in other_profiles
-        ]) if other_profiles else np.mean(accuracies)
-
-        deltas = [acc - consensus_accuracy for acc in accuracies]
-        group_data[group_name] = {
-            'deltas': deltas,
-            'mean_delta': np.mean(deltas),
-            'sem': sem(deltas),
-            'n': len(deltas),
-            'traits': group_traits_map[group_name]
+    for g in groups:  # Only iterate over valid groups
+        profs = demo_groups[g] if g in demo_groups else []
+        accs = [(merged_df[p] == merged_df["true_label"]).mean() for p in profs if p in merged_df.columns]
+        
+        # Calculate consensus from ALL OTHER profiles (not in this demographic group)
+        others = [p for other_g, other_profs in demo_groups.items() 
+                 if other_g != g for p in other_profs if p in merged_df.columns]
+        
+        if others:
+            consensus = np.mean([(merged_df[p] == merged_df["true_label"]).mean() for p in others])
+        else:
+            consensus = consensus_accuracy_global
+        
+        deltas = [a - consensus for a in accs]
+        n = len(deltas)
+        se = sem(deltas) if n > 1 else 0.0
+        
+        # Split group name back into traits - maintain order from group_keys
+        traits_dict = {}
+        parts = g.split(" ")
+        for i, key in enumerate(group_keys):
+            traits_dict[key] = parts[i] if i < len(parts) else "unknown"
+        
+        group_data[g] = {
+            "mean_delta": float(np.mean(deltas)) if n else 0.0,
+            "sem": float(se),
+            "n": n,
+            "traits": traits_dict,
         }
+        
+    print(f"DEBUG: Group data keys: {list(group_data.keys())}")  # Debug line
 
-    # Pick color key — default to first grouping key if not set
-    if color_key is None:
-        color_key = group_keys[0]
-
-    trait_values = sorted(set(data['traits'].get(color_key, "unknown") for data in group_data.values()))
+    # ---- colors by ethnicity (but groups ordered by ethnicity) ------------
+    color_key = "ethnicity"  # Back to ethnicity for colors
     cmap = plt.get_cmap(colormap)
-    trait_to_color = {val: cmap(i) for i, val in enumerate(trait_values)}
+    trait_values = ethnicities or ["unknown"]
+    trait_to_color = {val: cmap(i / max(1, len(trait_values)-1)) for i, val in enumerate(trait_values)}
 
-    groups = list(group_data.keys())
-    means = [group_data[g]['mean_delta'] for g in groups]
-    errors = [group_data[g]['sem'] * t.ppf(0.975, group_data[g]['n'] - 1) for g in groups]
-    colors = [trait_to_color[group_data[g]['traits'].get(color_key, "unknown")] for g in groups]
+    means = [group_data[g]["mean_delta"] for g in groups]
+    errors = [
+        group_data[g]["sem"] * t.ppf(0.975, max(1, group_data[g]["n"] - 1)) if group_data[g]["n"] > 1 else 0.0
+        for g in groups
+    ]
+    colors = [trait_to_color.get(group_data[g]["traits"].get(color_key, "unknown"), 'gray') for g in groups]
+
+    means = [group_data[g]["mean_delta"] for g in groups]
+    errors = [
+        group_data[g]["sem"] * t.ppf(0.975, max(1, group_data[g]["n"] - 1)) if group_data[g]["n"] > 1 else 0.0
+        for g in groups
+    ]
+    colors = [trait_to_color.get(group_data[g]["traits"].get(color_key, "unknown"), 'gray') for g in groups]
+
+    # ---- plot ---------------------------------------------------------------
+    x = np.arange(len(groups))
+    fig, ax = plt.subplots(figsize=(12, 6))
+    bars = ax.bar(x, means, yerr=errors, capsize=4, color=colors, edgecolor="black", alpha=0.9)
+
+    # compact tick labels like "M·white" / "W·white" (gender first now)
+    abbrev_gender = {"man": "M", "woman": "W"}
+    xticklabels = []
+    for g in groups:
+        parts = g.split(" ")
+        if len(parts) >= 2:
+            gdr, eth = parts[0], parts[1]  # gender, ethnicity
+            gdr_short = abbrev_gender.get(gdr, gdr[:1].upper())
+            xticklabels.append(f"{gdr_short}·{eth}")
+        else:
+            xticklabels.append(g)
     
-    x_pos = np.arange(len(groups))
+    ax.set_xticks(x)
+    ax.set_xticklabels(xticklabels, rotation=45, ha="right", fontsize=9)
 
-    fig, ax = plt.subplots(figsize=(10, 6))   
-    bars = ax.bar(x_pos, means, yerr=errors, capsize=4, color=colors, edgecolor='black', alpha=0.8)
+    for i in range(1, len(ethnicities)):
+        cut = i * len(genders) - 0.5
+        ax.axvline(cut, color="gray", linestyle=":", linewidth=1, alpha=0.7)
 
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels([g.title() for g in groups], rotation=45, ha='right', fontsize=10)
-    ax.axhline(y=0, color='red', linestyle='--', linewidth=1.5, label='Consensus Baseline')
-
+    ax.axhline(0, color="red", linestyle="--", linewidth=1.5, label="Consensus baseline")
     if "base_pred" in merged_df.columns:
-        base_accuracy = (merged_df["base_pred"] == merged_df["true_label"]).mean()
-        delta = base_accuracy - consensus_accuracy_global
-        ax.axhline(y=delta, color='purple', linestyle=':', linewidth=2, label='No-Roleplaying Baseline')
+        base_acc = (merged_df["base_pred"] == merged_df["true_label"]).mean()
+        ax.axhline(base_acc - consensus_accuracy_global, color="purple", linestyle=":", linewidth=2, label="No-roleplaying baseline")
 
-    for i, (bar, mean, error) in enumerate(zip(bars, means, errors)):
-        y = mean + error + 0.001 if mean > 0 else mean - error - 0.001
-        va = 'bottom' if mean > 0 else 'top'
-        ax.text(i, y, f'{mean:+.3f}', ha='center', va=va, fontweight='bold', fontsize=10)
+    for i, g in enumerate(groups):
+        if group_data[g]["n"] > 0:
+            m, e = means[i], errors[i]
+            y = m + (e if m >= 0 else -e)
+            va = "bottom" if m >= 0 else "top"
+            ax.text(i, y + (0.0005 if m >= 0 else -0.0005), f"{m:+.3f}", ha="center", va=va, fontsize=8, fontweight="bold")
 
-    ax.set_ylabel("Accuracy Delta from Consensus", fontsize=12)
-    ax.set_title("Group Accuracy Deviations from Consensus\n(95% Confidence Intervals)", fontsize=14, fontweight='bold')
-    ax.grid(axis='y', linestyle='--', alpha=0.3)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False)
-    
-    plt.subplots_adjust(bottom=0.3)
+    ax.set_ylabel("Accuracy Delta from Consensus")
+    ax.set_title("Group Accuracy Deviations from Consensus (95% CI)")
+    ax.grid(axis="y", linestyle="--", alpha=0.3)
+    plt.subplots_adjust(bottom=0.28)
     plt.show()
 
-    # Summary DataFrame
     summary = []
-    for group, data in group_data.items():
-        ci = data['sem'] * t.ppf(0.975, data['n'] - 1)
+    for g in groups:
+        data = group_data[g]
+        ci = data["sem"] * t.ppf(0.975, max(1, data["n"] - 1)) if data["n"] > 1 else 0.0
         summary.append({
-            'group': group,
-            'mean_delta': data['mean_delta'],
-            'ci_lower': data['mean_delta'] - ci,
-            'ci_upper': data['mean_delta'] + ci,
-            'n': data['n'],
-            'color_key': data['traits'].get(color_key, "unknown")
+            "group": g,
+            "mean_delta": data["mean_delta"],
+            "ci_lower": data["mean_delta"] - ci,
+            "ci_upper": data["mean_delta"] + ci,
+            "n": data["n"],
+            "gender": data["traits"].get("gender", "unknown"),
+            "ethnicity": data["traits"].get("ethnicity", "unknown"),
         })
-
-    return pd.DataFrame(summary).sort_values(by='mean_delta', ascending=False)
-
-
-
+    return pd.DataFrame(summary).sort_values("group")
 
 
 

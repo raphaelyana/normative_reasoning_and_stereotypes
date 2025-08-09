@@ -50,9 +50,13 @@ class PersonSet:
         pid = profile_id.replace("_passive", "")
         meta = self.metadata.get(pid, None)
         if not meta:
-            return {key: "Unknown" for key in group_keys}
+            return {key: "Unknown" for key in group_keys} 
         return {
             key: getattr(meta, key).value if isinstance(getattr(meta, key, None), Enum) else getattr(meta, key, "Unknown")
             for key in group_keys
         }
+
+    #def get_traits(self, profile_id: str, group_keys=("gender", "ethnicity", "cognitive_style")) -> PersonMeta:
+    #    base_id = profile_id.replace("_passive", "").replace("_active", "")
+    #    return self.metadata.get(base_id)
 
