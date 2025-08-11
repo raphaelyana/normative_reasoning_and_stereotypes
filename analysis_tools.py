@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 
 from enum import Enum
+from profiles.schema import PersonSet
 
 
 def load_and_merge_profiles(
@@ -80,24 +81,6 @@ def compute_accuracy(y_true, y_pred):
     return np.mean(np.array(y_true) == np.array(y_pred))
 
 
-def get_demographic_info_2(profile_name: str, person_set) -> str:
-    """Return a demographic signature: gender_ethnicity + extra traits if cognitive_style is missing."""
-    traits = person_set.get_traits(profile_name)
-
-    parts = [str(traits.gender), str(traits.ethnicity)]
-
-    # If cognitive_style exists, use it
-    if getattr(traits, 'cognitive_style', None) is not None:
-        parts.append(str(traits.cognitive_style))
-    else:
-        for attr in traits.__dataclass_fields__.keys():
-            if attr not in ['gender', 'ethnicity', 'cognitive_style']:
-                value = getattr(traits, attr, None)
-                if value is not None:
-                    parts.append(str(value))
-
-    return "_".join(parts)
-
 def get_demographic_info(profile_name: str, person_set) -> str:
     """
     Return a demographic signature like 'white_man_low_harm' or 'white_man_age_2'.
@@ -134,3 +117,30 @@ def get_demographic_info(profile_name: str, person_set) -> str:
                 parts.append(v)
 
     return "_".join(parts) if parts else "unknown"
+
+
+
+def has_cognitive_style_data(person_set: PersonSet, sample_size: int = 10) -> bool:
+    """
+    Check if PersonSet contains cognitive style data by sampling profiles.
+    
+    Parameters:
+    - person_set: PersonSet to check
+    - sample_size: Number of profiles to sample for checking
+    
+    Returns:
+    - True if cognitive style data found, False otherwise
+    """
+    if not person_set.metadata:
+        return False
+    
+    # Sample some profile IDs to check
+    profile_ids = list(person_set.metadata.keys())
+    sample_ids = profile_ids[:min(sample_size, len(profile_ids))]
+    
+    for pid in sample_ids:
+        traits = person_set.get_traits(pid, ["cognitive_style"])
+        if traits.get("cognitive_style", "Unknown") != "Unknown":
+            return True
+    
+    return False
