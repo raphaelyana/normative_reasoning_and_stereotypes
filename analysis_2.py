@@ -547,50 +547,6 @@ def cluster_level_bias_patterns(
     }
 
 
-def debug_personset_extraction(merged_df: pd.DataFrame, person_set: PersonSet, group_keys=("gender", "ethnicity")):
-    """
-    Debug function to understand why we're getting unknown traits.
-    """
-    print("="*60)
-    print("DEBUGGING PERSONSET TRAIT EXTRACTION")
-    print("="*60)
-    
-    profile_cols = [col for col in merged_df.columns if col.startswith("profile")]
-    print(f"Found {len(profile_cols)} profile columns")
-    print(f"First 10 profile columns: {profile_cols[:10]}")
-    
-    print(f"\nPersonSet metadata keys (first 10): {list(person_set.metadata.keys())[:10]}")
-    print(f"Total metadata entries: {len(person_set.metadata)}")
-    
-    print(f"\nTesting trait extraction for first 10 profiles:")
-    for i, profile in enumerate(profile_cols[:10]):
-        pid = profile.replace("_passive", "").replace("_active", "")
-        print(f"  {profile} -> {pid}")
-        
-        # Check if profile exists in metadata
-        if pid in person_set.metadata:
-            meta = person_set.metadata[pid]
-            print(f"    Found in metadata: {meta}")
-            
-            # Test get_traits method
-            traits = person_set.get_traits(pid, group_keys)
-            print(f"    get_traits result: {traits}")
-        else:
-            print(f"    NOT FOUND in metadata!")
-            print(f"    Available keys near this: {[k for k in person_set.metadata.keys() if k.startswith('profile')][:5]}")
-    
-    # Test specific expected profiles
-    test_profiles = ["profile31", "profile41", "profile51"]  # latine, middle_eastern, indian
-    print(f"\nTesting specific expected profiles:")
-    for pid in test_profiles:
-        if pid in person_set.metadata:
-            meta = person_set.metadata[pid]
-            traits = person_set.get_traits(pid, group_keys)
-            print(f"  {pid}: {meta} -> {traits}")
-        else:
-            print(f"  {pid}: NOT FOUND")
-
-
 
 def trait_comparison_controlled(
     merged_df: pd.DataFrame, 
@@ -1605,7 +1561,6 @@ def run_full_tier2_analysis(
     person_set: PersonSet,
     group_keys=("gender", "ethnicity"),
     create_visualizations: bool = True,
-    debug_mode: bool = False
 ):
     """
     Run complete Tier 2 analysis pipeline with conditional cognitive style execution.
@@ -1618,9 +1573,6 @@ def run_full_tier2_analysis(
 
     if person_set is None:
         raise ValueError("PersonSet is required for Tier 2 analysis")
-
-    if debug_mode:
-        debug_personset_extraction(merged_df, person_set, group_keys)
 
     # STEP 1: ENSEMBLE BY TRAIT ANALYSIS
     try:
@@ -1705,7 +1657,7 @@ def run_full_tier2_analysis(
         summary['best_cluster'] = best_cluster
         print(f"   • Best Cluster: {best_cluster}")
     
-    # Cognitive style findings (always safe; cognitive_results is guaranteed above)
+    # Cognitive style findings if they exist
     if has_cognitive_data and isinstance(cognitive_results, dict) \
        and ('error' not in cognitive_results) and ('skipped' not in cognitive_results):
         if 'recommendations' in cognitive_results and cognitive_results['recommendations']:
@@ -1714,7 +1666,6 @@ def run_full_tier2_analysis(
             summary['best_cognitive_style'] = best_cog_name
             print(f"   • Best Cognitive Style: {best_cog_name}")
     else:
-        # Informative message depending on status
         if isinstance(cognitive_results, dict) and 'skipped' in cognitive_results:
             print(f"   • Cognitive style analysis skipped: {cognitive_results.get('reason', 'No reason provided')}")
         else:
