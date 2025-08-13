@@ -27,8 +27,8 @@ from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 
 from analysis_tools import get_demographic_info
 from profiles.schema import *
-from profiles.profile_sets import PERSON_SYSTEMATIC
-
+from profiles.profile_sets import PERSON_ETHNICS
+from cases import CaseConfig
 
 
 __all__ = [
@@ -52,35 +52,25 @@ __all__ = [
 # ============================================================================
 
 
-def test_comprehensive_demographic_accuracy_differences(merged_df, person_set: PersonSet = PERSON_SYSTEMATIC, base_traits=("gender", "ethnicity")) -> Dict[str, Any]:
+def test_comprehensive_demographic_accuracy_differences(
+    merged_df,
+    person_set: PersonSet = PERSON_ETHNICS,
+) -> Dict[str, Any]:
     """
     Comprehensive analysis of demographic group accuracy differences.
-    
-    Provides foundational evidence of classification patterns across demographic
-    groups before running advanced statistical models. Tests for systematic
-    differences in accuracy across gender, ethnicity, cognitive styles, and
-    intersectional categories.
-    
-    Parameters:
-    -----------
-    merged_df : pandas.DataFrame
-        DataFrame containing profile columns and true_label column
-    
-    Returns:
-    --------
-    dict : Dictionary containing statistical test results for all group comparisons
+    Adapted to work with datasets where profile columns are simply 'profileX'.
     """
     
     results = {}
 
-    df_passive_cols = {c for c in merged_df.columns if c.startswith("profile") and c.endswith("_passive")}
-    meta_passive_cols = {f"{pid}_passive" for pid in person_set.metadata.keys()}
+    df_cols = {c for c in merged_df.columns if c.startswith("profile")}
+    meta_cols = set(person_set.metadata.keys())
     
-    covered = df_passive_cols & meta_passive_cols
-    missing_in_meta = df_passive_cols - meta_passive_cols
-    unused_meta = meta_passive_cols - df_passive_cols
+    covered = df_cols & meta_cols
+    missing_in_meta = df_cols - meta_cols
+    unused_meta = meta_cols - df_cols
     
-    print(f"[INFO] Profiles covered by metadata: {len(covered)}/{len(df_passive_cols)}")
+    print(f"[INFO] Profiles covered by metadata: {len(covered)}/{len(df_cols)}")
     if missing_in_meta:
         some = ", ".join(sorted(list(missing_in_meta))[:10])
         print(f"[WARN] {len(missing_in_meta)} dataframe columns have no metadata (e.g., {some} …)")
@@ -90,32 +80,22 @@ def test_comprehensive_demographic_accuracy_differences(merged_df, person_set: P
     def get_profiles_by_trait(trait_name, trait_value):
         """Return profile column names in merged_df that match a given trait."""
         matching = []
-
-        # normalize target value to lowercase string
         if hasattr(trait_value, "value"):
             trait_value = trait_value.value
         trait_value = str(trait_value).lower()
     
-        for base_id, meta in person_set.metadata.items():
-            clean_id = base_id.replace("_passive", "")
-            
+        for pid, meta in person_set.metadata.items():
             v = getattr(meta, trait_name, None)
             if hasattr(v, "value"): 
                 v = v.value
             v = None if v is None else str(v).lower()
         
-            if v == trait_value:
-                col = f"{clean_id}_passive"
-                if col in merged_df.columns:
-                    matching.append(col)
-    
+            if v == trait_value and pid in merged_df.columns:
+                matching.append(pid)
         return matching
-
-    
 
     def calculate_group_accuracy(profiles, df):
         return [(df[p] == df['true_label']).mean() for p in profiles if p in df.columns]
-
 
     def compare_groups(group1_profiles, group2_profiles, group1_name, group2_name, df):
         acc1 = calculate_group_accuracy(group1_profiles, df)
@@ -154,13 +134,16 @@ def test_comprehensive_demographic_accuracy_differences(merged_df, person_set: P
         p1 = get_profiles_by_trait("ethnicity", e1)
         p2 = get_profiles_by_trait("ethnicity", e2)
         if p1 and p2:
-            res = compare_groups(p1, p2, str(getattr(e1, "value", e1)).lower(), str(getattr(e2, "value", e2)).lower(), merged_df)
+            res = compare_groups(
+                p1, p2,
+                str(getattr(e1, "value", e1)).lower(),
+                str(getattr(e2, "value", e2)).lower(),
+                merged_df
+            )
             if res:
                 results[f"{str(getattr(e1, 'value', e1)).lower()}_vs_{str(getattr(e2, 'value', e2)).lower()}"] = res
 
-
-
-    # Cognitive style comparisons
+    # Other traits comparisons
     extra_traits = [t for t in available_traits if t not in ("gender", "ethnicity")]
     for trait in extra_traits:
         values = set(getattr(meta, trait) for meta in person_set.metadata.values() if getattr(meta, trait) is not None)
@@ -177,16 +160,16 @@ def test_comprehensive_demographic_accuracy_differences(merged_df, person_set: P
         ethnicities = set(getattr(meta, "ethnicity") for meta in person_set.metadata.values())
         for g1, g2 in combinations(genders, 2):
             for eth in ethnicities:
-                g1_profiles = [f"{pid.replace('_passive', '')}_passive"
-                               for pid, meta in person_set.metadata.items()
-                               if getattr(meta, "gender") == g1 and getattr(meta, "ethnicity") == eth
-                               and f"{pid.replace('_passive', '')}_passive" in merged_df.columns]
-
-                g2_profiles = [f"{pid.replace('_passive', '')}_passive"
-                               for pid, meta in person_set.metadata.items()
-                               if getattr(meta, "gender") == g2 and getattr(meta, "ethnicity") == eth
-                               and f"{pid.replace('_passive', '')}_passive" in merged_df.columns]
-                
+                g1_profiles = [
+                    pid for pid, meta in person_set.metadata.items()
+                    if getattr(meta, "gender") == g1 and getattr(meta, "ethnicity") == eth
+                    and pid in merged_df.columns
+                ]
+                g2_profiles = [
+                    pid for pid, meta in person_set.metadata.items()
+                    if getattr(meta, "gender") == g2 and getattr(meta, "ethnicity") == eth
+                    and pid in merged_df.columns
+                ]
                 if g1_profiles and g2_profiles:
                     res = compare_groups(
                         g1_profiles, g2_profiles,
@@ -197,23 +180,20 @@ def test_comprehensive_demographic_accuracy_differences(merged_df, person_set: P
                     if res:
                         results[f"intersectional_{eth.value}_{g1.value}_vs_{g2.value}"] = res
 
-
-    # Summary statistics
     significant_comparisons = sum(1 for r in results.values() if isinstance(r, dict) and r.get('significant', False))
     total_comparisons = sum(1 for r in results.values() if isinstance(r, dict))
-
-    # Effect sizes
     effect_sizes = [(k, v["effect_size"]) for k, v in results.items() if "effect_size" in v]
     effect_sizes.sort(key=lambda x: abs(x[1]), reverse=True)
 
     results['summary'] = {
         'total_comparisons': total_comparisons,
         'significant_comparisons': significant_comparisons,
-        'significance_rate': significant_comparisons/total_comparisons if total_comparisons>0 else 0,
+        'significance_rate': significant_comparisons/total_comparisons if total_comparisons > 0 else 0,
         'largest_effects': effect_sizes[:5],
     }
 
     return results
+
 
 
 
@@ -372,13 +352,10 @@ def extract_high_disagreement_cases(
     if not profile_cols:
         raise ValueError("No valid profile prediction columns found in DataFrame.")
 
-    if person_set is not None:
-        def trait_key(p):
-            base_id = p.replace("_passive", "").replace("_active", "")
-            return get_demographic_info(base_id, person_set)
-        trait_by_profile = {p: trait_key(p) for p in profile_cols}
-    else:
-        trait_by_profile = None
+    trait_by_profile =(
+        {p: get_demographic_info(p, person_set) for p in profile_cols} 
+        if person_set is not None else None
+    )
 
     print(f"Analyzing disagreement across {len(profile_cols)} profiles...")
     print(f"Using disagreement threshold: {threshold}")
@@ -631,18 +608,7 @@ def rescue_stats_by_category(
 def analyze_rescue_performance(rescue_stats_df: pd.DataFrame) -> Dict[str, Any]:
     """
     Generate comprehensive analysis of rescue statistics performance.
-    
-    Parameters:
-    -----------
-    rescue_stats_df : pd.DataFrame
-        Output from rescue_stats_by_category function
-    
-    Returns:
-    --------
-    Dict[str, Any]
-        Comprehensive analysis including top performers, category insights, and summary metrics
     """
-    
     if rescue_stats_df.empty:
         return {"error": "Empty rescue statistics DataFrame provided"}
 
@@ -699,56 +665,15 @@ def analyze_rescue_performance(rescue_stats_df: pd.DataFrame) -> Dict[str, Any]:
 
 
 def detect_systematic_biases(
-    merged: pd.DataFrame, 
+    merged: pd.DataFrame,
+    person_set: PersonSet,
     category_col: str = "stereotype_type",
     baseline_col: str = "base_pred",
     profile_prefix: str = "profile",
     positive_label: str = "stereotype",
     negative_label: str = "unrelated"
 ) -> pd.DataFrame:
-    """
-    Identify systematic biases where profiles consistently deviate from baseline predictions.
-    
-    Analyzes directional prediction shifts across categories to detect patterns where
-    specific profiles systematically favor certain prediction outcomes relative to
-    the baseline model. Essential for understanding systematic bias patterns in
-    demographic profile predictions.
-    
-    Parameters:
-    -----------
-    merged : pd.DataFrame
-        DataFrame containing baseline predictions, profile predictions, and categories
-    category_col : str, default="stereotype_type"
-        Column name containing category labels for bias analysis
-    baseline_col : str, default="base_pred"
-        Column name containing baseline model predictions
-    profile_prefix : str, default="profile"
-        Prefix for identifying profile prediction columns
-    positive_label : str, default="stereotype"
-        Label representing positive class predictions
-    negative_label : str, default="unrelated"
-        Label representing negative class predictions
-    
-    Returns:
-    --------
-    pd.DataFrame
-        Bias patterns DataFrame with columns:
-        - category: Category identifier
-        - profile: Profile identifier  
-        - bias_direction: Direction of bias ("more_positive" or "more_negative")
-        - bias_magnitude: Magnitude of directional bias (proportion of category)
-        - n_mislabelling: Total number of prediction mislabelling from baseline
-        - mislabelling_rate: Proportion of predictions that differ from baseline
-        - category_size: Number of samples in category
-        - positive_mislabelling: Baseline negative -> Profile positive mislabelling (e.g., labelling too many as stereotypes)
-        - negative_mislabelling: Baseline positive -> Profile negative mislabelling (e.g., labelling too many as unrelated)
-    
-    Raises:
-    -------
-    ValueError
-        If required columns are missing or no profile columns found
-    """
-    
+
     required_cols = [category_col, baseline_col]
     missing_cols = [c for c in required_cols if c not in merged.columns]
     if missing_cols:
@@ -758,25 +683,22 @@ def detect_systematic_biases(
     if not profile_cols:
         raise ValueError(f"No columns found with prefix '{profile_prefix}'")
 
+    # Map profiles to demographics once
+    trait_by_profile = {p: get_demographic_info(p, person_set) for p in profile_cols}
+
     bias_patterns = []
+    global_size = len(merged)
 
-    for category_value in merged[category_col].unique():
-        if pd.isna(category_value):
-            continue
-
+    for category_value in merged[category_col].dropna().unique():
         category_data = merged[merged[category_col] == category_value]
         baseline = category_data[baseline_col]
         size = len(category_data)
-        global_size = len(merged)
-
-        if size == 0:
-            continue
 
         for profile in profile_cols:
             profile_preds = category_data[profile]
-
             pos_mislabelling = ((baseline == negative_label) & (profile_preds == positive_label)).sum()
             neg_mislabelling = ((baseline == positive_label) & (profile_preds == negative_label)).sum()
+
             total_mislabelling = pos_mislabelling + neg_mislabelling
             mislabelling = total_mislabelling / size
 
@@ -790,11 +712,12 @@ def detect_systematic_biases(
                 bias_direction = "neutral"
                 bias_magnitude = 0.0
 
-            weighted_bias_magnitude = bias_magnitude*(size/global_size)
+            weighted_bias_magnitude = bias_magnitude * (size / global_size)
 
             bias_patterns.append({
                 "category": category_value,
                 "profile": profile,
+                "demographic": trait_by_profile[profile],
                 "bias_direction": bias_direction,
                 "bias_magnitude": bias_magnitude,
                 "weighted_bias_magnitude": weighted_bias_magnitude,
@@ -807,12 +730,12 @@ def detect_systematic_biases(
 
     bias_df = pd.DataFrame(bias_patterns)
     bias_df = bias_df.sort_values("weighted_bias_magnitude", ascending=False, key=abs)
-
     return bias_df
 
 
 def analyze_systematic_bias_patterns(
     merged_df: pd.DataFrame,
+    person_set: PersonSet,
     category_col: str = "stereotype_type",
     baseline_col: str = "base_pred",
     profile_prefix: str = "profile"
@@ -849,7 +772,8 @@ def analyze_systematic_bias_patterns(
 
     # Run bias detection
     bias_patterns = detect_systematic_biases(
-        merged_df, 
+        merged_df,
+        person_set,
         category_col=category_col,
         baseline_col=baseline_col,
         profile_prefix=profile_prefix
@@ -965,27 +889,23 @@ def analyze_persona_similarity(merged: pd.DataFrame, person_set: PersonSet) -> D
     """
     
     profile_cols = [col for col in merged.columns if col.startswith("profile")]
-    
-    if len(profile_cols) == 0:
+    if not profile_cols:
         return {"error": "No profile columns found"}
-    
+
     print(f"Analyzing similarity patterns across {len(profile_cols)} personas...")
-    
+
+    # Map once
+    trait_by_profile = {p: get_demographic_info(p, person_set) for p in profile_cols}
+
     n_profiles = len(profile_cols)
     distance_matrix = np.zeros((n_profiles, n_profiles))
-    
-    for i, prof1 in enumerate(profile_cols):
-        for j, prof2 in enumerate(profile_cols):
+    for i, p1 in enumerate(profile_cols):
+        for j, p2 in enumerate(profile_cols):
             if i != j:
-                distance_matrix[i, j] = np.mean(merged[prof1] != merged[prof2])
-    
+                distance_matrix[i, j] = np.mean(merged[p1] != merged[p2])
+
     linkage_matrix = linkage(squareform(distance_matrix), method='ward')
-    
-    #max_clusters = min(8, n_profiles - 1)
-    n_ethnicities = len({
-        person_set.get_traits(pid)["ethnicity"]
-        for pid in person_set.metadata.keys()
-    })
+    n_ethnicities = len({traits.split("_")[0] for traits in trait_by_profile.values()})
     max_clusters = min(n_profiles - 1, n_ethnicities + 2)
 
     cluster_quality = {}
@@ -1006,11 +926,6 @@ def analyze_persona_similarity(merged: pd.DataFrame, person_set: PersonSet) -> D
     
     clusters = fcluster(linkage_matrix, t=optimal_n_clusters, criterion='maxclust')
     
-    def get_demographic_info(profile_name: str) -> str:
-        """Extract demographic info from PROFILE_META_SYSTEMATIC using ProfileMeta."""
-        traits = person_set.get_traits(profile_name)
-        return f"{traits['ethnicity']}_{traits['gender']}"
-    
     cluster_analysis = {}
     demographic_distribution = {}
     
@@ -1019,7 +934,7 @@ def analyze_persona_similarity(merged: pd.DataFrame, person_set: PersonSet) -> D
         
         demo_composition = {}
         for prof in cluster_profiles:
-            demo = get_demographic_info(prof)
+            demo = get_demographic_info(prof, person_set)
             demo_composition[demo] = demo_composition.get(demo, 0) + 1
         
         if 'true_label' in merged.columns:
@@ -1108,29 +1023,30 @@ def analyze_persona_similarity(merged: pd.DataFrame, person_set: PersonSet) -> D
         }
     }
 
+
+
 def print_persona_similarity_analysis(similarity_results: Dict[str, Any]):
     """Print comprehensive persona similarity analysis"""
-    
+
     if "error" in similarity_results:
         print(f"Error: {similarity_results['error']}")
         return
-    
+
     print("\n" + "="*80)
     print("PERSONA SIMILARITY & CLUSTERING ANALYSIS")
     print("="*80)
-    
+
     summary = similarity_results["summary"]
     clusters = similarity_results["clusters"]
     demo_clustering = similarity_results["demographic_clustering"]
-    
+
     print(f"\nSUMMARY:")
     print(f"  • Total personas analyzed: {summary['total_profiles']}")
     print(f"  • Optimal number of clusters: {similarity_results['optimal_n_clusters']}")
     print(f"  • Clustering quality (silhouette): {similarity_results['optimal_silhouette_score']:.3f}")
     print(f"  • Average cluster size: {summary['avg_cluster_size']:.1f}")
-    
+
     print(f"\nCLUSTER COMPOSITION:")
-    print("-" * 60)
     for cluster_name, cluster_info in clusters.items():
         print(f"\n{cluster_name.upper()} ({cluster_info['size']} personas):")
         print(f"  • Dominant demographic: {cluster_info['dominant_demographic']}")
@@ -1138,44 +1054,39 @@ def print_persona_similarity_analysis(similarity_results: Dict[str, Any]):
         print(f"  • Average accuracy: {cluster_info['avg_accuracy']:.3f}")
         print(f"  • Centroid profile: {cluster_info['centroid_profile']}")
         print(f"  • Demographic breakdown: {cluster_info['demographic_composition']}")
-    
-    # Demographic clustering patterns
+
     print(f"\nDEMOGRAPHIC CLUSTERING PATTERNS:")
-    print("-" * 50)
     for demo, demo_info in demo_clustering.items():
         consistency = demo_info['clustering_consistency']
         primary_cluster = demo_info['primary_cluster']
-        consistency_label = "High" if consistency > 0.8 else "Medium" if consistency > 0.6 else "Low"
-        
-        print(f"{demo}: {consistency:.1%} in cluster_{primary_cluster} ({consistency_label} consistency)")
-    
+        label = "High" if consistency > 0.8 else "Medium" if consistency > 0.6 else "Low"
+        print(f"{demo}: {consistency:.1%} in cluster_{primary_cluster} ({label} consistency)")
 
     print(f"\nINTER-CLUSTER DISTANCES:")
-    print("-" * 40)
     for comparison, distance in similarity_results["inter_cluster_distances"].items():
         print(f"{comparison}: {distance:.3f}")
-    
+
     print(f"\nANALYSIS FINDINGS:")
-    print("-" * 30)
-    
-    high_consistency_demos = [demo for demo, info in demo_clustering.items() 
-                            if info['clustering_consistency'] > 0.8]
-    
+    high_consistency_demos = [
+        demo for demo, info in demo_clustering.items()
+        if info['clustering_consistency'] > 0.8
+    ]
     if high_consistency_demos:
         print(f"Strong demographic clustering observed: {', '.join(high_consistency_demos)}")
     else:
-        print(f"Weak demographic clustering - personas group by factors other than demographics")
-    
-    if similarity_results['optimal_silhouette_score'] > 0.5:
-        print(f"High clustering quality - distinct persona groups identified")
-    elif similarity_results['optimal_silhouette_score'] > 0.3:
-        print(f"Moderate clustering quality - some persona groupings exist")
+        print("Weak demographic clustering - personas group by factors other than demographics")
+
+    score = similarity_results['optimal_silhouette_score']
+    if score > 0.5:
+        print("High clustering quality - distinct persona groups identified")
+    elif score > 0.3:
+        print("Moderate clustering quality - some persona groupings exist")
     else:
-        print(f"Low clustering quality - personas show similar behavior patterns")
-    
-    # Most/least cohesive clusters
+        print("Low clustering quality - personas show similar behavior patterns")
+
     most_cohesive = summary['most_cohesive_cluster']
     print(f"Most cohesive cluster: {most_cohesive} (agreement: {clusters[most_cohesive]['internal_agreement']:.3f})")
+
 
 
 
@@ -1187,74 +1098,46 @@ def plot_accuracy_deltas_with_ci(
     color_key: str = "ethnicity",
     colormap: str = "tab10",
 ):
-    # ---- helpers -----------------------------------------------------------
     def norm_val(v):
         if hasattr(v, "value"):  # Enum
             return str(v.value).lower()
         return "unknown" if v is None else str(v).lower()
 
-    def traits_of(pid):
-        # Try the PersonSet's get_traits method first
-        t = person_set.get_traits(pid, group_keys)
-        if isinstance(t, dict) and any(v != "Unknown" for v in t.values()):
-            return {k: norm_val(t.get(k)) for k in group_keys}
-        
-        # Fallback: try to get metadata directly
-        meta = person_set.metadata.get(pid)
-        if meta:
-            return {k: norm_val(getattr(meta, k, None)) for k in group_keys}
-        
-        return {k: "unknown" for k in group_keys}
-
-    # ---- collect per-profile traits ----------------------------------------
     profile_cols = [c for c in merged_df.columns if c.startswith("profile")]
-    consensus_accuracy_global = float(
-        np.mean([(merged_df[p] == merged_df["true_label"]).mean() for p in profile_cols])
-    )
+    if not profile_cols:
+        raise ValueError("No profile columns found for plotting")
+    
+    trait_by_profile = {p: get_demographic_info(p, person_set) for p in profile_cols}
+    
+    consensus_accuracy_global = np.mean([
+        (merged_df[p] == merged_df["true_label"]).mean()
+        for p in profile_cols
+    ])
 
-    demo_groups = defaultdict(list)
+    demo_groups = {}
     for p in profile_cols:
-        # Clean the profile name to get the base persona ID
-        # Handle both "profile1_passive" format
-        pid = p
-        if pid.startswith("profile"):
-            # Remove "profile" prefix and any trailing "_passive" or "_active"
-            pid = pid.replace("_passive", "").replace("_active", "")
-            # For profiles like "profile1", "profile2", keep the number as that's the key
-        
-        print(f"DEBUG: Processing profile {p} -> persona ID {pid}")
-        
-        # Get traits for this persona - exclude age from grouping
-        tr = traits_of(pid)
-        # Only use gender and ethnicity for grouping (ignore age)
-        gname = " ".join([tr[k] for k in group_keys if k in ["gender", "ethnicity"]])
-        demo_groups[gname].append(p)
-        
-        print(f"DEBUG: Profile {p} -> traits {tr} -> group '{gname}'")
-        
-    print(f"DEBUG: Found demographic groups: {dict(demo_groups)}")  # Debug line
+        traits = trait_by_profile[p]
+        gname = " ".join([str(traits.get(k, "unknown")).lower() for k in group_keys])
+        demo_groups.setdefault(gname, []).append(p)
+    
+    print(f"DEBUG: Found demographic groups: {dict(demo_groups)}")
 
-    # ---- build ordered grid: ethnicity blocks x gender ----------------------
-    # derive full domains from metadata (so missing combos still appear)
-    # Only use gender and ethnicity for grouping
     genders = sorted({norm_val(getattr(m, "gender", None)) for m in person_set.metadata.values()})
     ethnicities = sorted({norm_val(getattr(m, "ethnicity", None)) for m in person_set.metadata.values()})
 
-    # Remove 'unknown' if we have actual values, but keep it if it's the only value
     genders = [g for g in genders if g != "unknown"] if len(genders) > 1 else genders
     ethnicities = [e for e in ethnicities if e != "unknown"] if len(ethnicities) > 1 else ethnicities
 
-    # force block order: ethnicity-major, gender-minor (so same ethnicity bars are together)
-    groups = [f"{g} {e}" for e in ethnicities for g in genders]  # Changed order: ethnicity first, then gender
+
+    groups = [f"{g} {e}" for e in ethnicities for g in genders]  
     
     print(f"DEBUG: Expected groups: {groups}")
 
-    # Ensure all groups exist in demo_groups (even if empty)
+
     for g in groups:
         if g not in demo_groups:
             demo_groups[g] = []
 
-    # ---- compute deltas per group ------------------------------------------
     group_data = {}
     for g in groups:  # Only iterate over valid groups
         profs = demo_groups[g] if g in demo_groups else []
@@ -1288,7 +1171,6 @@ def plot_accuracy_deltas_with_ci(
         
     print(f"DEBUG: Group data keys: {list(group_data.keys())}")  # Debug line
 
-    # ---- colors by ethnicity (but groups ordered by ethnicity) ------------
     color_key = "ethnicity"  # Back to ethnicity for colors
     cmap = plt.get_cmap(colormap)
     trait_values = ethnicities or ["unknown"]
@@ -1308,12 +1190,10 @@ def plot_accuracy_deltas_with_ci(
     ]
     colors = [trait_to_color.get(group_data[g]["traits"].get(color_key, "unknown"), 'gray') for g in groups]
 
-    # ---- plot ---------------------------------------------------------------
     x = np.arange(len(groups))
     fig, ax = plt.subplots(figsize=(12, 6))
     bars = ax.bar(x, means, yerr=errors, capsize=4, color=colors, edgecolor="black", alpha=0.9)
 
-    # compact tick labels like "M·white" / "W·white" (gender first now)
     abbrev_gender = {"man": "M", "woman": "W"}
     xticklabels = []
     for g in groups:
@@ -1369,8 +1249,10 @@ def plot_accuracy_deltas_with_ci(
 
 def run_full_preliminary_analysis(
     merged_df: pd.DataFrame,
+    case: CaseConfig,
     df: Optional[pd.DataFrame] = None,
-    person_set: PersonSet = PERSON_SYSTEMATIC
+    person_set: PersonSet = PERSON_ETHNICS,
+    threshold_disagreement=0.3
 ) -> Dict[str, Any]:
     results = {}
 
@@ -1379,6 +1261,15 @@ def run_full_preliminary_analysis(
             merged_df["base_pred"] = merged_df["zero_shot"]
         else:
             raise ValueError("Need either base_pred or zero_shot in merged_df.")
+
+    if df is not None and "sample_id" in merged_df.columns and "sample_id" in df.columns:
+        missing_cols = [col for col in case.category_cols if col not in merged_df.columns]
+        if missing_cols:
+            merged_df = merged_df.merge(
+                df[["sample_id"] + missing_cols],
+                on="sample_id",
+                how="left"
+            )
 
     if "stereotype_type" not in merged_df.columns and df is not None:
         if "sample_id" in merged_df.columns and "sample_id" in df.columns:
@@ -1390,15 +1281,13 @@ def run_full_preliminary_analysis(
 
     base_keys = ["gender", "ethnicity"]
     optional_keys = []
-    # Collect which traits actually appear at least once
+
     trait_seen = {"cognitive_style": False, "age": False}
     for meta in person_set.metadata.values():
-        # meta fields may be Enum or None
         if getattr(meta, "cognitive_style", None) is not None:
             trait_seen["cognitive_style"] = True
         if getattr(meta, "age", None) is not None:
             trait_seen["age"] = True
-        # early exit if both found
         if all(trait_seen.values()):
             break
     if trait_seen["cognitive_style"]:
@@ -1408,38 +1297,49 @@ def run_full_preliminary_analysis(
 
     group_keys = tuple(base_keys + optional_keys)
 
+
     print("\n\n=== DEMOGRAPHIC ACCURACY DIFFERENCES ===")
     demographic_results = test_comprehensive_demographic_accuracy_differences(
         merged_df,
-        person_set=person_set,
-        base_traits=group_keys
+        person_set=person_set
     )
     print_comprehensive_demographic_results(demographic_results)
     results["demographic"] = demographic_results
 
     print("\n\n=== SYSTEMATIC BIAS PATTERNS ===")
-    bias_patterns, meaningful_patterns, category_summary = analyze_systematic_bias_patterns(merged_df)
+    bias_patterns, meaningful_patterns, category_summary = analyze_systematic_bias_patterns(
+        merged_df,
+        person_set=person_set
+    )
     print(bias_patterns.head(20))
     results["bias_patterns"] = bias_patterns
     results["meaningful_bias_patterns"] = meaningful_patterns
     results["category_summary"] = category_summary
 
     print("\n\n=== HIGH DISAGREEMENT CASES ===")
-    # If you want per-sample trait distribution, pass person_set; otherwise omit it.
     disagreement_df = extract_high_disagreement_cases(
         merged_df,
-        threshold=0.3,
-        person_set=person_set           # <-- optional, only if you added trait_distribution
+        threshold=threshold_disagreement,
+        person_set=person_set     
     )
     print(disagreement_df.head(10))
     results["disagreement"] = disagreement_df
 
     print("\n\n=== RESCUE STATISTICS BY CATEGORY ===")
-    rescue_df = rescue_stats_by_category(merged_df, category_col="stereotype_type")
-    print(rescue_df[rescue_df["category"] == "race"].head(10) if "race" in rescue_df["category"].unique() else rescue_df.head(10))
-    rescue_analysis = analyze_rescue_performance(rescue_df)
-    results["rescue_stats"] = rescue_df
-    results["rescue_analysis"] = rescue_analysis
+    rescue_stats_all = {}
+    rescue_analysis_all = {}
+    for cat_col in case.category_cols:
+        if cat_col in merged_df.columns:
+            rescue_df = rescue_stats_by_category(merged_df, category_col=cat_col)
+            rescue_analysis = analyze_rescue_performance(rescue_df)
+            rescue_stats_all[cat_col] = rescue_df
+            rescue_analysis_all[cat_col] = rescue_analysis
+            print(f"\n-- {cat_col} --")
+            example_cat = rescue_df["category"].unique()[0]
+            print(rescue_df[rescue_df["category"] == example_cat].head(10))
+
+    results["rescue_stats"] = rescue_stats_all
+    results["rescue_analysis"] = rescue_analysis_all
 
     print("\n\n=== PERSONA SIMILARITY CLUSTERING ===")
     persona_similarity = analyze_persona_similarity(merged_df, person_set=person_set)

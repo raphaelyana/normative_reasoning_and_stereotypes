@@ -30,6 +30,7 @@ from profiles.profile_message import get_profile_traits
 from profiles.profile_sets import PERSON_SYSTEMATIC
 from profiles.schema import PersonSet
 from analysis_tools import has_cognitive_style_data
+from cases import CaseConfig
 
 
 def build_trait_groups(merged_df: pd.DataFrame, person_set: PersonSet, group_keys=("gender", "ethnicity", "age")) -> Dict[str, list]:
@@ -55,18 +56,13 @@ def build_trait_groups(merged_df: pd.DataFrame, person_set: PersonSet, group_key
     # Debug: Track what traits we're finding
     debug_traits = defaultdict(set)
 
-    for profile in profile_cols:
-        # Clean the profile name to get the base persona ID
-        pid = profile
-        if pid.startswith("profile"):
-            pid = pid.replace("_passive", "").replace("_active", "")
-        
+    for profile in profile_cols:     
         # Get traits using PersonSet.get_traits method
-        traits = person_set.get_traits(pid, group_keys)
+        traits = person_set.get_traits(profile, group_keys)
         
         # DEBUG: Print first few trait extractions
-        if len(debug_traits) < 5:
-            print(f"  DEBUG: {pid} -> {traits}")
+        #if len(debug_traits) < 5:
+            #print(f"  DEBUG: {profile} -> {traits}")
         
         # Normalize trait values
         normalized_traits = {k: norm_val(traits.get(k, "Unknown")) for k in group_keys}
@@ -83,7 +79,7 @@ def build_trait_groups(merged_df: pd.DataFrame, person_set: PersonSet, group_key
             if val != "unknown":
                 group_parts.append(val)
             else:
-                print(f"  WARNING: {pid} has unknown {k}: {traits}")
+                print(f"  WARNING: {profile} has unknown {k}: {traits}")
                 group_parts.append("unknown")
         
         group_name = "_".join(group_parts)
@@ -131,6 +127,7 @@ def majority_vote_ensemble(df: pd.DataFrame, profile_list: list) -> pd.Series:
 def ensemble_by_trait_analysis(
     merged_df: pd.DataFrame, 
     person_set: PersonSet, 
+    case: CaseConfig,
     group_keys=("gender", "ethnicity", "age")
 ) -> Dict[str, Any]:
     """
@@ -215,40 +212,48 @@ def ensemble_by_trait_analysis(
     print("CATEGORY-SPECIFIC ENSEMBLE PERFORMANCE")
     print(f"{'='*60}")
     
-    categories = merged_df['stereotype_type'].unique()
     category_results = {}
+    category_cols = getattr(case, "category_cols", None) or ["stereotype_type"]
     
-    for category in categories:
-        cat_subset = merged_df[merged_df['stereotype_type'] == category]
-        cat_true = cat_subset['true_label']
-        cat_baseline = cat_subset['base_pred']
-        cat_baseline_acc = accuracy_score(cat_true, cat_baseline)
+    for cat_col in category_cols:
+        if cat_col not in merged_df.columns:
+            print(f"WARNING: category_col '{cat_col}' not found in merged_df")
+            continue
     
-        print(f"\n{category.upper()} STEREOTYPES (n={len(cat_subset)}):")
-        print(f"Baseline accuracy: {cat_baseline_acc:.4f}")
-        print("-" * 40)
+        categories = merged_df[cat_col].dropna().unique()
     
-        category_results[category] = {
-            'baseline_accuracy': cat_baseline_acc, 
-            'ensembles': {}
-        }
+        for category in categories:
+            cat_subset = merged_df[merged_df[cat_col] == category]
+            cat_true = cat_subset['true_label']
+            cat_baseline = cat_subset['base_pred']
+            cat_baseline_acc = accuracy_score(cat_true, cat_baseline)
     
-        # Test all ensemble groups
-        for ensemble_name, ensemble_info in ensemble_results.items():
-            if 'ensemble_preds' in ensemble_info:
-                cat_ensemble_preds = ensemble_info['ensemble_preds'].loc[cat_subset.index]
+            print(f"\n{cat_col.upper()} = {str(category).upper()} (n={len(cat_subset)}):")
+            print(f"Baseline accuracy: {cat_baseline_acc:.4f}")
+            print("-" * 40)
     
-                if not cat_ensemble_preds.eq('').all():
-                    cat_ensemble_acc = accuracy_score(cat_true, cat_ensemble_preds)
-                    cat_improvement = cat_ensemble_acc - cat_baseline_acc
+            category_key = f"{cat_col}:{category}"
+            category_results[category_key] = {
+                'baseline_accuracy': cat_baseline_acc,
+                'ensembles': {}
+            }
     
-                    category_results[category]['ensembles'][ensemble_name] = {
-                        'accuracy': cat_ensemble_acc,
-                        'improvement': cat_improvement
-                    }
+            # Test all ensemble groups for this category subset
+            for ensemble_name, ensemble_info in ensemble_results.items():
+                if 'ensemble_preds' in ensemble_info:
+                    cat_ensemble_preds = ensemble_info['ensemble_preds'].loc[cat_subset.index]
     
-                    print(f"  {ensemble_name:25s}: {cat_ensemble_acc:.4f} ({cat_improvement:+.4f})")
-        
+                    if not cat_ensemble_preds.eq('').all():
+                        cat_ensemble_acc = accuracy_score(cat_true, cat_ensemble_preds)
+                        cat_improvement = cat_ensemble_acc - cat_baseline_acc
+    
+                        category_results[category_key]['ensembles'][ensemble_name] = {
+                            'accuracy': cat_ensemble_acc,
+                            'improvement': cat_improvement
+                        }
+                        print(f"  {ensemble_name:25s}: {cat_ensemble_acc:.4f} ({cat_improvement:+.4f})")
+            
+
     # Ranking and recommendations
     if ensemble_results:
         sorted_ensembles = sorted(ensemble_results.items(), key=lambda x: x[1]['accuracy'], reverse=True)
@@ -313,6 +318,7 @@ def ensemble_by_trait_analysis(
 def cluster_level_bias_patterns(
     merged_df, 
     person_set: PersonSet,
+    case: CaseConfig,
     similarity_results=None, 
     group_keys=("gender", "ethnicity", "age")
 ):
@@ -360,8 +366,28 @@ def cluster_level_bias_patterns(
     
     # Get rescue and bias stats
     try:
-        rescue_stats = rescue_stats_by_category(merged_df, category_col="stereotype_type")
-        bias_patterns = detect_systematic_biases(merged_df, category_col="stereotype_type")
+        category_cols = getattr(case, "category_cols", None)
+        if not category_cols:
+            print("Error in retrieving category columns - defaulting back to ['stereotype_type']")
+            category_cols = ["stereotype_type"]
+
+        rescue_stats_list = []
+        bias_patterns_list = []
+        for cat_col in category_cols:
+            if cat_col in merged_df.columns:
+                rs = rescue_stats_by_category(merged_df, category_col=cat_col)
+                rs["category_col"] = cat_col
+                rescue_stats_list.append(rs)
+        
+                bp = detect_systematic_biases(merged_df, category_col=cat_col)
+                bp["category_col"] = cat_col
+                bias_patterns_list.append(bp)
+        if not rescue_stats_list:
+            raise ValueError("No valid category columns found in merged_df.")
+        
+        rescue_stats = pd.concat(rescue_stats_list, ignore_index=True)
+        bias_patterns = pd.concat(bias_patterns_list, ignore_index=True)
+
     except NameError:
         print("WARNING: rescue_stats_by_category or detect_systematic_biases functions not found")
         print("Creating mock statistics for demonstration...")
@@ -406,8 +432,7 @@ def cluster_level_bias_patterns(
         # Get trait composition of cluster
         trait_composition = defaultdict(list)
         for profile in available_profiles:
-            pid = profile.replace("_passive", "").replace("_active", "")
-            traits = person_set.get_traits(pid, group_keys)
+            traits = person_set.get_traits(profile, group_keys)
             for trait_name, trait_value in traits.items():
                 if trait_value != "Unknown":
                     trait_composition[trait_name].append(str(trait_value).lower())
@@ -418,7 +443,7 @@ def cluster_level_bias_patterns(
             value_counts = Counter(values)
             print(f"  {trait_name}: {dict(value_counts)}")
         
-        print(f"Sample profiles: {', '.join(p.replace('_passive', '') for p in available_profiles[:5])}")
+        print(f"Sample profiles: {', '.join(p for p in available_profiles[:5])}")
         if len(available_profiles) > 5:
             print(f"                 ... and {len(available_profiles) - 5} more")
 
@@ -551,9 +576,9 @@ def cluster_level_bias_patterns(
 def trait_comparison_controlled(
     merged_df: pd.DataFrame, 
     person_set: PersonSet,
+    case: CaseConfig,
     comparison_trait: str = "cognitive_style",
     control_traits: List[str] = None,
-    profile_suffix: str = "_passive"
 ) -> Dict[str, Any]:
     """
     Generalized Trait Comparison with Demographic Controls
@@ -566,7 +591,6 @@ def trait_comparison_controlled(
     - person_set: PersonSet with metadata
     - comparison_trait: The trait to compare (e.g., "cognitive_style", "age") 
     - control_traits: List of traits to control for (e.g., ["gender", "ethnicity"])
-    - profile_suffix: Which profiles to use ("_passive" or "_active")
     
     Returns:
     - Dict with statistical comparisons and recommendations
@@ -583,23 +607,19 @@ def trait_comparison_controlled(
     
     # Get profile columns
     profile_cols = [col for col in merged_df.columns 
-                   if col.startswith("profile") and col.endswith(profile_suffix)]
+                   if col.startswith("profile")]
     
-    # Build groups by comparison trait
     trait_groups = defaultdict(list)
-    trait_metadata = {}  # Store full metadata for each profile
+    trait_metadata = {} 
     
     for profile in profile_cols:
-        pid = profile.replace(profile_suffix, "")
-        traits = person_set.get_traits(pid, [comparison_trait] + control_traits)
+        traits = person_set.get_traits(profile, [comparison_trait] + control_traits)
         
-        # Get the main trait value (convert to string for consistency)
         trait_value = str(traits.get(comparison_trait, "Unknown"))
         if trait_value != "Unknown":
             trait_groups[trait_value].append(profile)
             trait_metadata[profile] = traits
     
-    # Remove empty groups
     trait_groups = {k: v for k, v in trait_groups.items() if v}
     
     if len(trait_groups) < 2:
@@ -610,13 +630,34 @@ def trait_comparison_controlled(
     for trait_val, profiles in trait_groups.items():
         print(f"  {trait_val}: {len(profiles)} profiles")
     
-    # Get performance data (reuse your existing logic)
     try:
-        rescue_stats = rescue_stats_by_category(merged_df, category_col="stereotype_type")
-        bias_patterns = detect_systematic_biases(merged_df, category_col="stereotype_type")
+        category_cols = getattr(case, "category_cols", None) or ["stereotype_type"]
+
+        rescue_stats_list = []
+        bias_patterns_list = []
+    
+        for cat_col in category_cols:
+            if cat_col in merged_df.columns:
+                rs = rescue_stats_by_category(merged_df, category_col=cat_col)
+                rs["category_col"] = cat_col
+                rescue_stats_list.append(rs)
+    
+                bp = detect_systematic_biases(merged_df, category_col=cat_col)
+                bp["category_col"] = cat_col
+                bias_patterns_list.append(bp)
+        if rescue_stats_list:
+            rescue_stats = pd.concat(rescue_stats_list, ignore_index=True)
+        else:
+            raise ValueError("No valid category columns found for rescue_stats.")
+    
+        if bias_patterns_list:
+            bias_patterns = pd.concat(bias_patterns_list, ignore_index=True)
+        else:
+            raise ValueError("No valid category columns found for bias_patterns.")
+        
     except NameError:
         print("WARNING: rescue_stats_by_category or detect_systematic_biases not found")
-        rescue_stats = pd.DataFrame()  # Mock empty dataframe
+        rescue_stats = pd.DataFrame()
         bias_patterns = pd.DataFrame()
     
     # Calculate performance metrics for each trait group
@@ -1559,6 +1600,7 @@ def create_all_tier2_visualizations(
 def run_full_tier2_analysis(
     merged_df: pd.DataFrame,
     person_set: PersonSet,
+    case: CaseConfig,
     group_keys=("gender", "ethnicity"),
     create_visualizations: bool = True,
 ):
@@ -1570,34 +1612,44 @@ def run_full_tier2_analysis(
     print("=" * 80)
     print(f"Group keys: {group_keys}")
     print(f"Dataset shape: {merged_df.shape}")
+    print(f"Category columns from CaseConfig: {getattr(case, 'category_cols', None)}")
 
     if person_set is None:
         raise ValueError("PersonSet is required for Tier 2 analysis")
+
+    category_cols = getattr(case, "category_cols", None) or ["stereotype_type"]
 
     # STEP 1: ENSEMBLE BY TRAIT ANALYSIS
     try:
         print("\n=== Running Step 1: Ensemble by Trait Analysis...")
         ensemble_results = ensemble_by_trait_analysis(
-            merged_df, person_set, group_keys=group_keys
+            merged_df,
+            person_set,
+            case=case,
+            group_keys=group_keys
         )
         print("SUCCESS: Ensemble analysis completed successfully")
     except Exception as e:
-        print(f"✗ ERROR: Ensemble analysis failed: {e}")
+        print(f"ERROR: Ensemble analysis failed: {e}")
         ensemble_results = {'error': str(e)}
 
     # STEP 2: CLUSTER-LEVEL BIAS PATTERNS
     try:
         print("\n=== Running Step 2: Cluster-level Bias Analysis...")
-        similarity_results = analyze_persona_similarity(merged_df, person_set=person_set)
+        similarity_results = analyze_persona_similarity(
+            merged_df,
+            person_set=person_set
+        )
         cluster_results = cluster_level_bias_patterns(
             merged_df,
             person_set=person_set,
+            case=case,
             similarity_results=similarity_results,
             group_keys=group_keys
         )
         print("SUCCESS: Cluster analysis completed successfully")
     except Exception as e:
-        print(f"✗ ERROR: Cluster analysis failed: {e}")
+        print(f"ERROR: Cluster analysis failed: {e}")
         cluster_results = {'error': str(e)}
 
     # STEP 3: COGNITIVE STYLE COMPARISON (conditional)
@@ -1606,21 +1658,19 @@ def run_full_tier2_analysis(
     cognitive_results = {'skipped': True, 'reason': 'No cognitive style data found'}
 
     print("\n=== Running Step 3: Multiple Trait Comparisons...")
-    trait_comparison_results = {}
     if has_cognitive_data:
         try:
             trait_analyses = [("cognitive_style", ["gender", "ethnicity"])]
             trait_comparison_results = run_multiple_trait_comparisons(
                 merged_df, person_set, trait_analyses=trait_analyses
             )
-            # Normalize to a single cognitive_results object for the summary below
-            cognitive_results = trait_comparison_results.get("cognitive_style", {'error': 'Missing cognitive results'})
+            cognitive_results = trait_comparison_results.get(
+                "cognitive_style", {'error': 'Missing cognitive results'}
+            )
             print("SUCCESS: Trait comparisons (cognitive_style) completed successfully")
         except Exception as e:
             print(f"ERROR: Trait comparisons failed: {e}")
             cognitive_results = {'error': str(e)}
-    else:
-        print("No cognitive style data found - skipping cognitive analysis")
     
 
     # STEP 4: VISUALIZATIONS
@@ -1650,12 +1700,14 @@ def run_full_tier2_analysis(
         best_ensemble = ensemble_results['recommendations'].get('best_balanced', ['Unknown'])[0]
         summary['best_ensemble'] = best_ensemble
         print(f"   • Best Overall Ensemble: {best_ensemble}")
-    
+
+
     # Cluster findings
     if isinstance(cluster_results, dict) and 'recommendations' in cluster_results:
         best_cluster = cluster_results['recommendations'].get('best_accuracy', ['Unknown'])[0]
         summary['best_cluster'] = best_cluster
         print(f"   • Best Cluster: {best_cluster}")
+
     
     # Cognitive style findings if they exist
     if has_cognitive_data and isinstance(cognitive_results, dict) \
@@ -1680,6 +1732,7 @@ def run_full_tier2_analysis(
         'executive_summary': summary,
         'analysis_metadata': {
             'group_keys': group_keys,
+            'category_cols': category_cols,
             'has_cognitive_data': has_cognitive_data,
             'cognitive_analysis_status': (
                 'skipped' if ('skipped' in (cognitive_results or {})) else

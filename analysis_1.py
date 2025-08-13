@@ -36,6 +36,7 @@ from analysis_0 import *
 from profiles.profile_message import get_profile_traits
 from profiles.profile_sets import PERSON_SYSTEMATIC
 from profiles.schema import PersonSet
+from cases import CaseConfig
 
 def factorial_analysis_nway_anova(
     merged_df, 
@@ -84,20 +85,8 @@ def factorial_analysis_nway_anova(
     # Extract traits for each profile - same logic as plotting function
     profile_traits = {}
     for p in profile_cols:
-        # Clean the profile name to get the base persona ID
-        pid = p
-        if pid.startswith("profile"):
-            # Remove "profile" prefix and any trailing "_passive" or "_active"
-            pid = pid.replace("_passive", "").replace("_active", "")
-            # For profiles like "profile1", "profile2", keep the number as that's the key
-        
-        #print(f"DEBUG: Processing profile {p} -> persona ID {pid}")
-        
-        # Get traits using your existing PersonSet.get_traits method
-        traits = extract_traits(pid)
+        traits = extract_traits(p)
         profile_traits[p] = traits
-        
-        #print(f"DEBUG: Profile {p} -> traits {traits}")
     
     # Calculate primary performance metric: accuracy
     performance_data = []
@@ -507,6 +496,7 @@ def factorial_analysis_nway_anova(
 def plot_risk_benefit_frontier(
     merged_df, 
     group_keys=("gender", "ethnicity", "age"), 
+    category_cols=None,
     figsize=(10, 6), 
     person_set: PersonSet = None
 ):
@@ -542,10 +532,7 @@ def plot_risk_benefit_frontier(
         Return a demographic signature like 'man_white_20' or 'woman_black_25'.
         Works whether person_set.get_traits returns a dict or a PersonMeta.
         """
-        pid = profile_name.replace("_passive", "").replace("_active", "")
-        
-        # Use the same group_keys as the main analysis to ensure consistency
-        traits = person_set.get_traits(pid, group_keys)
+        traits = person_set.get_traits(profile_name, group_keys)
         
         def read(tr, key):
             v = tr.get(key) if isinstance(tr, dict) else getattr(tr, key, None)
@@ -574,38 +561,23 @@ def plot_risk_benefit_frontier(
     
     print("=== RISK-BENEFIT FRONTIER ANALYSIS ===")
     print(f"Group keys: {group_keys}")
-    
-    # Get rescue statistics (assumes this function exists)
-    try:
-        rescue_stats = rescue_stats_by_category(merged_df, category_col="stereotype_type")
-    except NameError:
-        print("ERROR: rescue_stats_by_category function not found")
-        print("Creating mock rescue statistics for demonstration...")
-        
-        # Create mock rescue statistics
-        profile_cols = [col for col in merged_df.columns if col.startswith("profile")]
-        mock_rescue_data = []
-        
-        for profile in profile_cols:
-            if profile in merged_df.columns:
-                # Mock calculation: assume some profiles perform better
-                accuracy = (merged_df[profile] == merged_df['true_label']).mean()
-                base_acc = (merged_df.get('base_pred', merged_df[profile]) == merged_df['true_label']).mean()
-                
-                # Mock rescue rate (higher accuracy = higher rescue rate)
-                rescue_rate = max(0, accuracy - base_acc + 0.1)
-                # Mock extra error rate (varies by profile)
-                extra_err_rate = max(0.01, 0.05 - (accuracy - 0.71) * 2)
-                
-                mock_rescue_data.append({
-                    'profile': profile,
-                    'rescue_rate': rescue_rate,
-                    'extra_err_rate': extra_err_rate,
-                    'rescued': int(rescue_rate * 100),
-                    'extra_errors': int(extra_err_rate * 100)
-                })
-        
-        rescue_stats = pd.DataFrame(mock_rescue_data)
+
+    if category_cols is None:
+        print("WARNING: category_cols not provided — defaulting to ['stereotype_type']")
+        category_cols = ["stereotype_type"]
+
+    print("\n\n=== RESCUE STATISTICS BY CATEGORY ===")
+    rescue_stats_list = []
+    for cat_col in category_cols:
+        if cat_col in merged_df.columns:
+            rescue_stats = rescue_stats_by_category(merged_df, category_col=cat_col)
+            rescue_stats["category_col"] = cat_col
+            rescue_stats_list.append(rescue_stats)
+
+    if not rescue_stats_list:
+        raise ValueError("No valid category columns found in merged_df.")
+
+    rescue_stats = pd.concat(rescue_stats_list, ignore_index=True)
     
     # Aggregate performance by profile
     profile_performance = rescue_stats.groupby('profile').agg({
@@ -621,11 +593,8 @@ def plot_risk_benefit_frontier(
     profile_traits = {}
     for profile in profile_performance["profile"]:
         # Clean the profile name to get the base persona ID
-        pid = profile
-        if pid.startswith("profile"):
-            pid = pid.replace("_passive", "").replace("_active", "")
         
-        traits = extract_traits(pid)
+        traits = extract_traits(profile)
         profile_traits[profile] = traits
         
         # Add traits to performance dataframe
@@ -727,7 +696,7 @@ def plot_risk_benefit_frontier(
         if person_set:
             demo_label = get_demographic_info(row['profile'], person_set)
         else:
-            demo_label = row['profile'].replace('_passive', '').replace('profile', 'P')
+            demo_label = row['profile'].replace('profile', 'P')
         
         ax.annotate(demo_label, 
                     (row['extra_err_rate'], row['rescue_rate']),
@@ -977,6 +946,7 @@ def ols_interaction_pvalue(df, dv, factor1, factor2):
 
 def run_full_tier1_analysis(
     merged_df: pd.DataFrame, 
+    case: CaseConfig,
     group_keys=("gender", "ethnicity", "age"), 
     person_set: PersonSet = None
 ) -> Dict[str, Any]:
@@ -1029,6 +999,7 @@ def run_full_tier1_analysis(
         pareto_results = plot_risk_benefit_frontier(
             merged_df, 
             group_keys=group_keys, 
+            category_cols=case.category_cols,
             person_set=person_set
         )
         print("=== Pareto frontier analysis completed successfully")

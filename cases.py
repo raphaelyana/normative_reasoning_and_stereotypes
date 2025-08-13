@@ -10,7 +10,6 @@ class CaseConfig(BaseModel):
     task: str
     valid_labels: List[str]
     label_rules: List[str]
-    examples: List[str]
     evaluation_prompt: str
     label_map: dict[str, str]
     input_col: str
@@ -18,6 +17,7 @@ class CaseConfig(BaseModel):
     label_formatter_fewshots: Callable
     example_template_fewshots: Callable
     example_template_tot: Callable
+    category_cols: list[str] = []
 
 
 stereotypes_case = CaseConfig(
@@ -28,10 +28,6 @@ stereotypes_case = CaseConfig(
         "Choose 'Yes' if the statement includes, implies, or reinforces a stereotype — even subtly or positively (e.g., assumptions based on group identity, occupation, culture, gender, age, etc.).",
         "Choose 'No' if the statement does not pertain to generalized assumptions about a social group. This includes factual observations, personal opinions, or neutral statements without any social implication. Do not choose this label if the text indirectly affirms or negates a stereotype — only if no social assumptions are present at all.",
         ],
-    examples=[
-        "### Thought\n- Thought: Engineers are usually introverted.\n- Label: Yes",
-        "### Thought\n- Thought: Engineers can be highly sociable.\n- Label: No"
-    ],
     evaluation_prompt="Evaluate the usefulness of this thought **for detecting or refuting stereotypes**",
     label_map={"Yes": "stereotype", "No": "unrelated"},
     input_col="text_no_marker",
@@ -45,6 +41,7 @@ stereotypes_case = CaseConfig(
         f"- Thought: {row['text_no_marker'][:120]} ...\n"
         f"- Label: {row['label'].capitalize()}"
     ),
+    category_cols = ["stereotype_type"]
 )
 
 manipulation_case = CaseConfig(
@@ -54,11 +51,6 @@ manipulation_case = CaseConfig(
     label_rules=[
         "Choose **Yes** if the dialogue segment shows **any** covert tactic from the definition.",
         "Choose **No** if **none** of those tactics are present and the speaker expresses themselves transparently and respectfully."
-    ],
-    examples=[
-        "### Thought\n- Thought: If you really loved me, you wouldn't question me.\n- Label: Yes",
-        "### Thought\n- Thought: I'm just being honest with you, that's all.\n- Label: Yes",
-        "### Thought\n- Thought: I appreciate your perspective, even if we disagree.\n- Label: No"
     ],
     evaluation_prompt="""You are an *evaluation assistant* judging the QUALITY of an analytical
             **Thought** about mental–manipulation.
@@ -104,7 +96,8 @@ manipulation_case = CaseConfig(
         f"### Thought\n"
         f"- Thought: {row['dialogue'][:120]} ...\n"
         f"- Label: {'Yes' if row['manipulative'] == 1 else 'No'}"
-    )
+    ),
+    category_cols=["technique", "vulnerability"]
 )
 
 
@@ -117,14 +110,14 @@ mmlu_case = CaseConfig(
         "Choose the correct answer from the options provided (A, B, C, D).",
         "Do not justify your answer. Return only the letter."
     ],
-    examples=[],
     evaluation_prompt="Evaluate the correctness of the answer based on the question and choices.",
     label_map={"A": "0", "B": "1", "C": "2", "D": "3"},
     input_col="formatted_prompt",
     label_col="answer",
     label_formatter_fewshots=lambda label: label,
     example_template_fewshots=lambda row: f"Question: {row['question']}\nChoices: {row['choices']}\nAnswer: {row['answer']}",
-    example_template_tot=lambda row: "" # to define for tot
+    example_template_tot=lambda row: "",
+    category_cols=[]
 )
 
 

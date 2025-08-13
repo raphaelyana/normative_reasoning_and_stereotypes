@@ -7,16 +7,17 @@ import numpy as np
 
 from enum import Enum
 from profiles.schema import PersonSet
+from cases import CaseConfig
 
 
 def load_and_merge_profiles(
     base_file_path: str,
     role_playing_glob_pattern: str,
     sample_df: pd.DataFrame,
+    case: CaseConfig,
     sample_id_col: str = "sample_id",
     label_col: str = "true_label",
     pred_col: str = "pred_label",
-    extra_cols: list = ["stereotype_type", "original_dataset"]
 ) -> pd.DataFrame:
 
     df_base = pd.read_csv(base_file_path)
@@ -33,7 +34,8 @@ def load_and_merge_profiles(
             print(f"=== Skipping {profile_folder} (missing required columns)")
             continue
 
-        df_profile = df_profile[[sample_id_col, pred_col]].rename(columns={pred_col: profile_folder})
+        clean_profile_name = re.sub(r'_(passive|active)$', '', profile_folder)
+        df_profile = df_profile[[sample_id_col, pred_col]].rename(columns={pred_col: clean_profile_name})
 
         if profile_folder in merged.columns:
             merged = merged.drop(columns=[profile_folder])
@@ -43,6 +45,7 @@ def load_and_merge_profiles(
     sample_df = sample_df.reset_index(drop=True)
     sample_df[sample_id_col] = sample_df.index
 
+    extra_cols = [col for col in case.category_cols if col in sample_df.columns]
     merged = merged.merge(
         sample_df[[sample_id_col] + extra_cols],
         on=sample_id_col,
@@ -55,21 +58,19 @@ def load_and_merge_profiles(
         merged[col] = merged[col].astype(str).str.strip().str.lower()
 
     fixed_columns = [sample_id_col, label_col, "base_pred"]
-    meta_columns = [col for col in extra_cols if col in merged.columns]
+    meta_columns = extra_cols
 
     profile_columns = [
         col for col in merged.columns
         if col.startswith("profile") and col not in fixed_columns + meta_columns
     ]
 
-    # Sort numerically by profile number
     def extract_profile_number(col_name):
         match = re.search(r"profile(\d+)", col_name)
         return int(match.group(1)) if match else float('inf')
 
     profile_columns = sorted(profile_columns, key=extract_profile_number)
 
-    # Final column ordering
     final_columns = fixed_columns + meta_columns + profile_columns
     merged = merged[final_columns]
 
@@ -86,8 +87,7 @@ def get_demographic_info(profile_name: str, person_set) -> str:
     Return a demographic signature like 'white_man_low_harm' or 'white_man_age_2'.
     Works whether person_set.get_traits returns a dict or a PersonMeta.
     """
-    pid = profile_name.replace("_passive", "").replace("_active", "")
-    traits = person_set.get_traits(pid)
+    traits = person_set.get_traits(profile_name)
 
     def read(tr, key):
         v = tr.get(key) if isinstance(tr, dict) else getattr(tr, key, None)

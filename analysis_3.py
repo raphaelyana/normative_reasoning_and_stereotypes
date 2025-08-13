@@ -30,13 +30,15 @@ from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 
 from analysis_0 import *
 from profiles.profile_message import get_profile_traits
-from profiles.profile_sets import PERSON_SYSTEMATIC
+from profiles.profile_sets import PERSON_ETHNICS
 from profiles.schema import PersonSet, PersonMeta
+from cases import CaseConfig
 
 
 def consistency_vs_boldness_analysis(merged_df, 
+                                     case: CaseConfig,
                                      n_folds=5,
-                                     person_set: PersonSet = PERSON_SYSTEMATIC,
+                                     person_set: PersonSet = PERSON_ETHNICS,
                                      group_keys=("gender", "ethnicity", "age"),
                                      ):
     """
@@ -67,15 +69,9 @@ def consistency_vs_boldness_analysis(merged_df,
         all_profile_cols = [col for col in merged_df.columns if col.startswith("profile")]
         valid_profiles = []
         
-        for col in all_profile_cols:
-            # Clean profile name to get base persona ID
-            pid = col
-            if pid.startswith("profile"):
-                # Remove "profile" prefix and any trailing "_passive" or "_active"
-                pid = pid.replace("_passive", "").replace("_active", "")
-            
+        for col in all_profile_cols:            
             # Check if this profile exists in PersonSet metadata
-            if pid in person_set.metadata:
+            if col in person_set.metadata:
                 valid_profiles.append(col)
                 
         print(f"Found {len(valid_profiles)} valid profiles out of {len(all_profile_cols)} total profile columns")
@@ -151,8 +147,28 @@ def consistency_vs_boldness_analysis(merged_df,
     
     # Get rescue stats and bias patterns for boldness calculation
     try:
-        rescue_stats = rescue_stats_by_category(merged_df, category_col="stereotype_type")
-        bias_patterns = detect_systematic_biases(merged_df, category_col="stereotype_type")
+        category_cols = getattr(case, "category_cols", None)
+        if not category_cols:
+            print("Error in retrieving category columns - defaulting back to ['stereotype_type']")
+            category_cols = ["stereotype_type"]
+
+        rescue_stats_list = []
+        bias_patterns_list = []
+        for cat_col in category_cols:
+            if cat_col in merged_df.columns:
+                rs = rescue_stats_by_category(merged_df, category_col=cat_col)
+                rs["category_col"] = cat_col
+                rescue_stats_list.append(rs)
+        
+                bp = detect_systematic_biases(merged_df, category_col=cat_col)
+                bp["category_col"] = cat_col
+                bias_patterns_list.append(bp)
+        if not rescue_stats_list:
+            raise ValueError("No valid category columns found in merged_df.")
+        
+        rescue_stats = pd.concat(rescue_stats_list, ignore_index=True)
+        bias_patterns = pd.concat(bias_patterns_list, ignore_index=True)
+
     except Exception as e:
         print(f"WARNING: Could not calculate rescue/bias stats: {e}")
         print("Creating simplified boldness metrics...")
@@ -237,12 +253,10 @@ def consistency_vs_boldness_analysis(merged_df,
     for profile in profile_cols:
         if profile in consistency_data and profile in boldness_data:
             # Extract traits using PersonSet
-            pid = profile.replace("_passive", "").replace("_active", "")
-            traits = person_set.get_traits(pid, group_keys)
+            traits = person_set.get_traits(profile, group_keys)
             
             row = {
                 'profile': profile,
-                'pid': pid,
                 'volatility': consistency_data[profile]['accuracy_std'],  # Higher = less consistent
                 'consistency': 1 / (1 + consistency_data[profile]['accuracy_std']),  # Higher = more consistent
                 'boldness_score': boldness_data[profile]['boldness_score'],
@@ -411,7 +425,7 @@ def consistency_vs_boldness_analysis(merged_df,
         # Get trait display string
         traits = {k: row[k] for k in group_keys if k in row and row[k] != "Unknown"}
         trait_str = ", ".join(f"{k}={v}" for k, v in traits.items())
-        print(f"  {profile.replace('_passive', '').replace('_active', '')} ({trait_str}): {archetype} – {description}")
+        print(f"  {profile} ({trait_str}): {archetype} – {description}")
 
     # ========================================================================
     # STEP 7: DEMOGRAPHIC BIAS DETECTION IN ARCHETYPES
@@ -617,12 +631,11 @@ def plot_consistency_boldness_analysis(consistency_results,
         if volatilities[i] > np.percentile(volatilities, 80) or boldness_scores[i] > np.percentile(boldness_scores, 80):
             # Get demographic info for label
             if person_set:
-                pid = profile.replace("_passive", "").replace("_active", "")
-                traits = person_set.get_traits(pid, group_keys)
+                traits = person_set.get_traits(profile, group_keys)
                 demo_label = "_".join(str(traits.get(k, '?'))[:3] for k in group_keys[:2] if traits.get(k) != "Unknown")
-                label = demo_label if demo_label else profile.replace('profile', 'P').replace('_passive', '')
+                label = demo_label if demo_label else profile.replace('profile', 'P')
             else:
-                label = profile.replace('profile', 'P').replace('_passive', '')
+                label = profile.replace('profile', 'P')
                 
             ax.annotate(label, (volatilities[i], boldness_scores[i]),
                        xytext=(5, 5), textcoords='offset points', fontsize=8)
@@ -763,12 +776,11 @@ def plot_consistency_boldness_analysis(consistency_results,
                     
                     # Get demographic info for legend
                     if person_set:
-                        pid = profile.replace("_passive", "").replace("_active", "")
-                        traits = person_set.get_traits(pid, group_keys)
+                        traits = person_set.get_traits(profile, group_keys)
                         demo_info = "_".join(str(traits.get(k, '?'))[:3] for k in group_keys[:2] if traits.get(k) != "Unknown")
                         legend_label = f"{demo_info} ({archetype})"
                     else:
-                        legend_label = f"{profile.replace('profile', 'P').replace('_passive', '')} ({archetype})"
+                        legend_label = f"{profile.replace('profile', 'P')} ({archetype})"
                 
                     ax.plot(fold_numbers, fold_accs, 'o-', color=color, alpha=0.7, 
                            label=legend_label)
@@ -787,6 +799,7 @@ def plot_consistency_boldness_analysis(consistency_results,
 
 def simplified_causal_modeling(merged_df, 
                              person_set: PersonSet, 
+                             case: CaseConfig,
                              group_keys=("gender", "ethnicity", "age"),
                              consistency_results=None):
     """
@@ -816,13 +829,7 @@ def simplified_causal_modeling(merged_df,
         valid_profiles = []
         
         for col in all_profile_cols:
-            # Clean profile name to get base persona ID
-            pid = col
-            if pid.startswith("profile"):
-                pid = pid.replace("_passive", "").replace("_active", "")
-            
-            # Check if this profile exists in PersonSet metadata
-            if pid in person_set.metadata:
+            if col in person_set.metadata:
                 valid_profiles.append(col)
                 
         return valid_profiles
@@ -843,8 +850,7 @@ def simplified_causal_modeling(merged_df,
     trait_reference_categories = {}  # Track reference categories to drop
     
     for profile in profile_cols:
-        pid = profile.replace("_passive", "").replace("_active", "")
-        traits = person_set.get_traits(pid, group_keys)
+        traits = person_set.get_traits(profile, group_keys)
         
         for trait_name, value in traits.items():
             if value != "Unknown":
@@ -871,8 +877,27 @@ def simplified_causal_modeling(merged_df,
     
     # Get performance metrics
     try:
-        rescue_stats = rescue_stats_by_category(merged_df, category_col="stereotype_type")
-        bias_patterns = detect_systematic_biases(merged_df, category_col="stereotype_type")
+        category_cols = getattr(case, "category_cols", None)
+        if not category_cols:
+            print("Error in retrieving category columns - defaulting back to ['stereotype_type']")
+            category_cols = ["stereotype_type"]
+
+        rescue_stats_list = []
+        bias_patterns_list = []
+        for cat_col in category_cols:
+            if cat_col in merged_df.columns:
+                rs = rescue_stats_by_category(merged_df, category_col=cat_col)
+                rs["category_col"] = cat_col
+                rescue_stats_list.append(rs)
+        
+                bp = detect_systematic_biases(merged_df, category_col=cat_col)
+                bp["category_col"] = cat_col
+                bias_patterns_list.append(bp)
+        if not rescue_stats_list:
+            raise ValueError("No valid category columns found in merged_df.")
+        
+        rescue_stats = pd.concat(rescue_stats_list, ignore_index=True)
+        bias_patterns = pd.concat(bias_patterns_list, ignore_index=True)
     except Exception as e:
         print(f"WARNING: Could not get rescue/bias stats: {e}")
         print("Creating simplified metrics...")
@@ -921,10 +946,9 @@ def simplified_causal_modeling(merged_df,
         if profile_name not in merged_df.columns:
             continue
 
-        pid = profile_name.replace("_passive", "").replace("_active", "")
-        traits = person_set.get_traits(pid, group_keys)
+        traits = person_set.get_traits(profile_name, group_keys)
         
-        causal_row = {"profile": profile_name, "pid": pid}
+        causal_row = {"profile": profile_name}
 
         # Add raw trait values (handle age enum properly)
         for trait_name in group_keys:
@@ -1623,38 +1647,39 @@ def visualize_causal_model(causal_results, figsize=(16, 12)):
     plt.show()
     return fig
 
-
-def run_full_tier3_analysis(merged_df,
-                            person_set: PersonSet,
-                            group_keys=("gender", "ethnicity", "age"),
-                            n_folds=5):
+def run_full_tier3_analysis(
+    merged_df,
+    person_set: PersonSet,
+    group_keys=("gender", "ethnicity", "age"),
+    n_folds=5
+):
     """
     Run complete Tier 3 analysis pipeline.
-    
+
     Executes:
-    1. Consistency vs Boldness Analysis  
+    1. Consistency vs Boldness Analysis
     2. Simplified Causal Modeling with Bias Detection
-    3. Comprehensive Visualizations
+    3. Visualizations
     4. Theoretical Integration for Research Conclusions
-    
-    Updated to work with PersonSet structure and professional output.
-    Returns integrated results for thesis conclusions.
+    5. Methodological Assessment
+
+    Returns:
+    Integrated results for thesis conclusions.
     """
-    
+
     print("EXECUTING TIER 3 ANALYSIS PIPELINE")
-    print("="*80)
+    print("=" * 80)
     print(f"Group keys: {group_keys}")
     print(f"Cross-validation folds: {n_folds}")
-    
-    # ========================================================================
+
+    # ================================================================
     # STEP 1: CONSISTENCY vs BOLDNESS ANALYSIS
-    # ========================================================================
-    
+    # ================================================================
     print("\n=== Running Consistency vs Boldness Analysis ===")
     try:
         consistency_results = consistency_vs_boldness_analysis(
-            merged_df, 
-            n_folds=n_folds, 
+            merged_df,
+            n_folds=n_folds,
             person_set=person_set,
             group_keys=group_keys
         )
@@ -1662,28 +1687,28 @@ def run_full_tier3_analysis(merged_df,
     except Exception as e:
         print(f"ERROR in consistency analysis: {e}")
         consistency_results = {'error': str(e)}
-    
-    # ========================================================================
+
+    # ================================================================
     # STEP 2: CAUSAL MODELING WITH BIAS DETECTION
-    # ========================================================================
-    
+    # ================================================================
     print("\n=== Running Simplified Causal Modeling ===")
     try:
         causal_results = simplified_causal_modeling(
-            merged_df, 
-            person_set=person_set, 
+            merged_df,
+            person_set=person_set,
             group_keys=group_keys,
-            consistency_results=consistency_results if 'error' not in consistency_results else None
+            consistency_results=(
+                consistency_results if 'error' not in consistency_results else None
+            )
         )
         print("Causal modeling completed successfully")
     except Exception as e:
         print(f"ERROR in causal modeling: {e}")
         causal_results = {'error': str(e)}
-    
-    # ========================================================================
-    # STEP 3: GENERATE VISUALIZATIONS
-    # ========================================================================
-    
+
+    # ================================================================
+    # STEP 3: VISUALIZATIONS
+    # ================================================================
     print("\n=== Creating Consistency Analysis Visualizations ===")
     consistency_viz = None
     if 'error' not in consistency_results:
@@ -1696,7 +1721,7 @@ def run_full_tier3_analysis(merged_df,
             print("Consistency visualizations created successfully")
         except Exception as e:
             print(f"WARNING: Could not create consistency visualizations: {e}")
-    
+
     print("\n=== Creating Causal Model Visualizations ===")
     causal_viz = None
     if 'error' not in causal_results:
@@ -1706,196 +1731,151 @@ def run_full_tier3_analysis(merged_df,
         except Exception as e:
             print(f"WARNING: Could not create causal visualizations: {e}")
 
-    # ========================================================================
+    # ================================================================
     # STEP 4: THEORETICAL INTEGRATION
-    # ========================================================================
-    
-    print("\n" + "="*80)
+    # ================================================================
+    print("\n" + "=" * 80)
     print("TIER 3 THEORETICAL INTEGRATION")
-    print("="*80)
-    
-    # Extract key insights from analyses
-    consistency_insight = consistency_results.get('normative_assessment', {}) if 'error' not in consistency_results else {}
+    print("=" * 80)
+
+    consistency_insight = (
+        consistency_results.get('normative_assessment', {})
+        if 'error' not in consistency_results else {}
+    )
     high_vol_rescue = consistency_insight.get('overall', {}).get('high_volatility_rescue', 0)
     low_vol_rescue = consistency_insight.get('overall', {}).get('low_volatility_rescue', 0)
-    
-    causal_insight = causal_results.get('theoretical_framework', {}) if 'error' not in causal_results else {}
-    strongest_predictors = causal_results.get('strongest_predictors', {}) if 'error' not in causal_results else {}
-    bias_detection = causal_results.get('bias_detection', {}) if 'error' not in causal_results else {}
-    
-    print(f"\n=== THEORETICAL INSIGHTS:")
-    
+
+    causal_insight = (
+        causal_results.get('theoretical_framework', {})
+        if 'error' not in causal_results else {}
+    )
+    strongest_predictors = (
+        causal_results.get('strongest_predictors', {})
+        if 'error' not in causal_results else {}
+    )
+    bias_detection = (
+        causal_results.get('bias_detection', {})
+        if 'error' not in causal_results else {}
+    )
+
+    print("\n=== THEORETICAL INSIGHTS:")
+
     # Insight 1: Consistency-Boldness Tradeoff
     if high_vol_rescue and low_vol_rescue:
-        if high_vol_rescue > low_vol_rescue + 0.01:  # Meaningful difference
-            volatility_conclusion = "Inconsistent profiles provide higher moral value through increased rescue rates"
-            volatility_implication = "Controlled inconsistency in AI systems may be normatively justified"
+        if high_vol_rescue > low_vol_rescue + 0.01:
+            volatility_conclusion = (
+                "Inconsistent profiles provide higher moral value through increased rescue rates"
+            )
+            volatility_implication = (
+                "Controlled inconsistency in AI systems may be normatively justified"
+            )
         else:
-            volatility_conclusion = "Consistent profiles match or outperform inconsistent ones in moral value"
-            volatility_implication = "Consistency should be prioritized over boldness in AI systems"
-        
+            volatility_conclusion = (
+                "Consistent profiles match or outperform inconsistent ones in moral value"
+            )
+            volatility_implication = (
+                "Consistency should be prioritized over boldness in AI systems"
+            )
+
         print(f"   - {volatility_conclusion}")
         print(f"   - Implication: {volatility_implication}")
         print(f"   - Evidence: Inconsistent rescue rate: {high_vol_rescue:.3f} vs Consistent: {low_vol_rescue:.3f}")
     else:
         volatility_conclusion = "Insufficient data for consistency-boldness analysis"
-        volatility_implication = "Further research needed on consistency tradeoffs"
         print(f"   - {volatility_conclusion}")
-    
+
     # Insight 2: Causal Mechanisms and Bias Detection
     if strongest_predictors:
         rescue_predictor = strongest_predictors.get('rescue_rate', {}).get('predictor')
         accuracy_predictor = strongest_predictors.get('accuracy', {}).get('predictor')
-        
-        print(f"   - Strongest predictor of moral value (rescue): {rescue_predictor or 'No significant predictor'}")
-        print(f"   - Strongest predictor of performance (accuracy): {accuracy_predictor or 'No significant predictor'}")
-        
-        # Check for demographic bias in strongest predictors
+
+        print(f"   - Strongest predictor of moral value (rescue): {rescue_predictor or 'None'}")
+        print(f"   - Strongest predictor of performance (accuracy): {accuracy_predictor or 'None'}")
+
         demographic_traits = ['gender', 'ethnicity']
-        rescue_is_demographic = any(rescue_predictor and rescue_predictor.startswith(f'{trait}_') for trait in demographic_traits) if rescue_predictor else False
-        accuracy_is_demographic = any(accuracy_predictor and accuracy_predictor.startswith(f'{trait}_') for trait in demographic_traits) if accuracy_predictor else False
-        
-        if rescue_is_demographic or accuracy_is_demographic:
-            print(f"   - WARNING: Demographic traits strongly influence key outcomes")
-        else:
-            print(f"   - Non-demographic traits dominate key outcome predictions")
-    
-    # Insight 3: Bias Severity Assessment
+        if any(
+            rescue_predictor and rescue_predictor.startswith(f"{t}_")
+            for t in demographic_traits
+        ) or any(
+            accuracy_predictor and accuracy_predictor.startswith(f"{t}_")
+            for t in demographic_traits
+        ):
+            print("   - WARNING: Demographic traits strongly influence key outcomes")
+
+    # Insight 3: Bias Severity
     if bias_detection:
-        high_bias_count = sum(1 for detection in bias_detection.values() if 'HIGH BIAS' in detection.get('bias_level', ''))
-        moderate_bias_count = sum(1 for detection in bias_detection.values() if 'MODERATE BIAS' in detection.get('bias_level', ''))
-        
-        print(f"   - Bias assessment: {high_bias_count} high bias, {moderate_bias_count} moderate bias outcomes detected")
-        
-        if high_bias_count > 0:
-            bias_conclusion = "Critical demographic bias requiring immediate intervention"
-        elif moderate_bias_count > 0:
-            bias_conclusion = "Moderate demographic bias requiring monitoring and mitigation"
-        else:
-            bias_conclusion = "Acceptable bias levels with continued monitoring recommended"
-        
-        print(f"   - Overall bias conclusion: {bias_conclusion}")
-    
-    # Insight 4: Mediation Effects
-    mediation_evidence = causal_results.get('mediation_evidence', {}) if 'error' not in causal_results else {}
-    if mediation_evidence:
-        strong_mediation = [outcome for outcome, evidence in mediation_evidence.items() 
-                           if evidence.get('mediation_strength', 0) > 1.5]
-        
-        if strong_mediation:
-            print(f"   - Strong mediation effects found in: {', '.join(strong_mediation)}")
-            print(f"   - Implication: Other traits can mitigate demographic bias effects")
-        else:
-            print(f"   - Limited mediation effects: demographic bias persists despite other traits")
-    
-    # ========================================================================
+        high_bias_count = sum(
+            1 for d in bias_detection.values()
+            if 'HIGH BIAS' in d.get('bias_level', '')
+        )
+        moderate_bias_count = sum(
+            1 for d in bias_detection.values()
+            if 'MODERATE BIAS' in d.get('bias_level', '')
+        )
+
+        print(f"   - Bias assessment: {high_bias_count} high, {moderate_bias_count} moderate bias cases detected")
+
+    # ================================================================
     # STEP 5: THESIS-LEVEL CONCLUSIONS
-    # ========================================================================
-    
-    print(f"\n{'='*60}")
+    # ================================================================
+    print(f"\n{'=' * 60}")
     print("THESIS-LEVEL CONCLUSIONS")
-    print(f"{'='*60}")
-    
+    print(f"{'=' * 60}")
+
     conclusions = []
-    
-    # Conclusion 1: Consistency-Boldness Tradeoff
-    if 'volatility_conclusion' in locals() and high_vol_rescue and low_vol_rescue:
+
+    if high_vol_rescue and low_vol_rescue:
         if high_vol_rescue > low_vol_rescue + 0.02:
             conclusions.append({
                 'finding': 'Inconsistent profiles provide superior moral value',
-                'evidence': f'High-inconsistency rescue rate: {high_vol_rescue:.3f} vs Low-inconsistency: {low_vol_rescue:.3f}',
-                'implication': 'AI systems should incorporate controlled inconsistency for better moral outcomes',
+                'evidence': f'{high_vol_rescue:.3f} vs {low_vol_rescue:.3f} rescue rates',
+                'implication': 'Controlled inconsistency can improve moral outcomes',
                 'strength': 'Strong' if high_vol_rescue > low_vol_rescue + 0.05 else 'Moderate'
             })
         else:
             conclusions.append({
-                'finding': 'Consistency and inconsistency profiles show similar moral value',
-                'evidence': f'Minimal difference in rescue rates: {abs(high_vol_rescue - low_vol_rescue):.3f}',
-                'implication': 'Consistency should be preferred for predictability without moral sacrifice',
+                'finding': 'Consistency and inconsistency yield similar moral value',
+                'evidence': f'Diff: {abs(high_vol_rescue - low_vol_rescue):.3f}',
+                'implication': 'Prefer consistency for predictability',
                 'strength': 'Moderate'
             })
-    
-    # Conclusion 2: Demographic Bias Assessment
+
     if bias_detection:
-        demo_outcomes = len([d for d in bias_detection.values() if 'HIGH BIAS' in d.get('bias_level', '') or 'MODERATE BIAS' in d.get('bias_level', '')])
+        demo_outcomes = len([
+            d for d in bias_detection.values()
+            if 'HIGH BIAS' in d.get('bias_level', '') or 'MODERATE BIAS' in d.get('bias_level', '')
+        ])
         total_outcomes = len(bias_detection)
-        
         if demo_outcomes > total_outcomes / 2:
             conclusions.append({
-                'finding': 'Demographics significantly influence AI system bias patterns',
-                'evidence': f'Demographic bias detected in {demo_outcomes}/{total_outcomes} outcomes',
-                'implication': 'Diverse demographic representation and bias mitigation strategies are essential',
+                'finding': 'Demographics significantly influence AI bias patterns',
+                'evidence': f'{demo_outcomes}/{total_outcomes} biased outcomes',
+                'implication': 'Diversity and bias mitigation required',
                 'strength': 'Strong'
             })
-        else:
-            conclusions.append({
-                'finding': 'Other traits dominate over demographics in determining system behavior',
-                'evidence': f'Non-demographic factors more influential in {total_outcomes - demo_outcomes}/{total_outcomes} outcomes',
-                'implication': 'Focus on other trait engineering rather than demographic balancing',
-                'strength': 'Moderate'
-            })
-    
-    # Conclusion 3: Optimal System Design Strategy
-    recommendations = causal_results.get('recommendations', {}) if 'error' not in causal_results else {}
-    if recommendations:
-        # Analyze recommendation patterns
-        all_recommended_traits = set()
-        for objective, traits in recommendations.items():
-            if traits:  # Check if traits list is not empty
-                for trait, coef in traits:
-                    if trait and abs(coef) > 0.01:
-                        all_recommended_traits.add(trait)
-        
-        if all_recommended_traits:
-            # Find most frequently recommended trait
-            trait_frequency = {}
-            for objective, traits in recommendations.items():
-                if traits:
-                    for trait, coef in traits[:1]:  # Top recommendation per objective
-                        if trait and abs(coef) > 0.01:
-                            trait_frequency[trait] = trait_frequency.get(trait, 0) + 1
-            
-            most_important_trait = max(trait_frequency, key=trait_frequency.get) if trait_frequency else 'No clear pattern'
-            
-            conclusions.append({
-                'finding': f'Specific trait patterns optimize multiple objectives simultaneously',
-                'evidence': f'Most recommended trait: {most_important_trait} (appears in {trait_frequency.get(most_important_trait, 0)} objectives)',
-                'implication': f'System design should prioritize profiles with {most_important_trait} characteristics',
-                'strength': 'Moderate'
-            })
-    
-    # Print conclusions
-    for i, conclusion in enumerate(conclusions, 1):
-        print(f"\n=== CONCLUSION {i}: {conclusion['finding']}")
-        print(f"   Evidence: {conclusion['evidence']}")
-        print(f"   Implication: {conclusion['implication']}")
-        print(f"   Strength: {conclusion['strength']}")
-    
-    # ========================================================================
+
+    # ================================================================
     # STEP 6: METHODOLOGICAL ASSESSMENT
-    # ========================================================================
-    
-    print(f"\n{'='*60}")
+    # ================================================================
+    print(f"\n{'=' * 60}")
     print("METHODOLOGICAL ASSESSMENT")
-    print(f"{'='*60}")
-    
+    print(f"{'=' * 60}")
+
     method_assessment = {
         'data_quality': 'Good' if len(merged_df) > 100 else 'Limited',
         'statistical_power': 'Adequate' if 'error' not in consistency_results and 'error' not in causal_results else 'Insufficient',
         'bias_detection_capability': 'Strong' if bias_detection else 'Limited',
         'generalizability': 'Domain-specific' if person_set else 'Unknown'
     }
-    
+
     for aspect, assessment in method_assessment.items():
         print(f"   - {aspect.replace('_', ' ').title()}: {assessment}")
-    
-    # Data completeness assessment
+
     valid_profiles = consistency_results.get('valid_profiles', []) if 'error' not in consistency_results else []
-    print(f"   - Profile coverage: {len(valid_profiles)} valid profiles analyzed")
-    
+    print(f"   - Profile coverage: {len(valid_profiles)} profiles")
     if group_keys:
-        print(f"   - Trait coverage: {len(group_keys)} trait dimensions ({', '.join(group_keys)})")
-    
+        print(f"   - Trait coverage: {len(group_keys)} ({', '.join(group_keys)})")
+
     return {
         'consistency_analysis': consistency_results,
         'causal_analysis': causal_results,
@@ -1906,8 +1886,7 @@ def run_full_tier3_analysis(merged_df,
         'theoretical_integration': {
             'volatility_conclusion': volatility_conclusion if 'volatility_conclusion' in locals() else None,
             'causal_mechanisms': strongest_predictors,
-            'bias_assessment': bias_detection,
-            'mediation_evidence': mediation_evidence
+            'bias_assessment': bias_detection
         },
         'thesis_conclusions': conclusions,
         'methodological_assessment': method_assessment,
