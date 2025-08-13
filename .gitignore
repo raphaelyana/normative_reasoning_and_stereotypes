@@ -30,5 +30,7 @@ case_studies.py
 utils_visualisation.py
 analysis_dump.py
 analysis/
-mixture_of_personalities.py
+MoP.py
+MoP_enhanced.py
+MoP_categories.py
 data_playground.py
