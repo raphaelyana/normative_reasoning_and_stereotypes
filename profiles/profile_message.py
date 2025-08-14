@@ -56,7 +56,7 @@ def get_profile_traits(profile_id: str, person_set: PersonSet,  group_keys=("gen
     Parameters:
     -----------
     profile_id : str
-        The ID of the profile (e.g., 'profile3_passive').
+        The ID of the profile (e.g., 'profile3').
     group_keys : tuple
         Traits to extract from the profile metadata.
 
@@ -66,8 +66,7 @@ def get_profile_traits(profile_id: str, person_set: PersonSet,  group_keys=("gen
     Unknown is returned if the profile is not in the metadata.
     """
 
-    pid = profile_id.replace("_passive", "")
-    meta = person_set.metadata.get(pid, None)
+    meta = person_set.metadata.get(profile_id, None)
     if not meta:
         return {key: "Unknown" for key in group_keys}
     return {

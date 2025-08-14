@@ -82,7 +82,47 @@ def compute_accuracy(y_true, y_pred):
     return np.mean(np.array(y_true) == np.array(y_pred))
 
 
-def get_demographic_info(profile_name: str, person_set) -> str:
+def get_demographic_info(profile_name: str, person_set: PersonSet) -> str:
+    """
+    Fixed version that works with your PersonSet.get_traits method
+    """
+    try:
+        # Use your existing get_traits method
+        traits = person_set.get_traits(profile_name, group_keys=("gender", "ethnicity", "cognitive_style", "age"))
+        
+        def normalize_trait(value):
+            if value is None or value == "Unknown":
+                return None
+            return str(value).lower()
+        
+        parts = []
+        
+        # Always include ethnicity and gender first
+        ethnicity = normalize_trait(traits.get("ethnicity"))
+        gender = normalize_trait(traits.get("gender"))
+        
+        if ethnicity:
+            parts.append(ethnicity)
+        if gender:
+            parts.append(gender)
+        
+        # Add cognitive style or age if available
+        cognitive_style = normalize_trait(traits.get("cognitive_style"))
+        age = normalize_trait(traits.get("age"))
+        
+        if cognitive_style:
+            parts.append(cognitive_style)
+        elif age:
+            parts.append(f"age_{age}")
+        
+        return "_".join(parts) if parts else "unknown"
+        
+    except Exception as e:
+        print(f"Warning: Could not get traits for {profile_name}: {e}")
+        return "unknown"
+
+
+def get_demographic_info_2(profile_name: str, person_set) -> str:
     """
     Return a demographic signature like 'white_man_low_harm' or 'white_man_age_2'.
     Works whether person_set.get_traits returns a dict or a PersonMeta.
