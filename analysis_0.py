@@ -25,7 +25,7 @@ from scipy.stats import (
 from scipy.spatial.distance import squareform
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 
-from analysis_tools import get_demographic_info
+from analysis_tools import get_demographic_info, get_analysis_group_keys
 from profiles.schema import *
 from profiles.profile_sets import PERSON_ETHNICS
 from cases import CaseConfig
@@ -1545,13 +1545,11 @@ def plot_accuracy_deltas_with_ci(
     ax.set_xticks(x)
     ax.set_xticklabels(xticklabels, fontsize=9, ha="center")
     
-    # Add vertical separators between ethnic groups
     if len(ethnicities) > 1:
         for i in range(1, len(ethnicities)):
             separator_pos = i * len(genders) - 0.5
             ax.axvline(separator_pos, color="gray", linestyle=":", linewidth=1, alpha=0.7)
     
-    # Add reference lines
     ax.axhline(0, color="red", linestyle="--", linewidth=1.5, label="Consensus baseline")
     
     if "base_pred" in merged_df.columns:
@@ -1560,7 +1558,6 @@ def plot_accuracy_deltas_with_ci(
         ax.axhline(baseline_delta, color="purple", linestyle=":", linewidth=2, 
                   label="No-roleplaying baseline")
     
-    # Add value labels on bars
     for i, combo in enumerate(ordered_combinations):
         data = group_data[combo]
         if data["n"] > 0:
@@ -1572,12 +1569,10 @@ def plot_accuracy_deltas_with_ci(
             ax.text(i, y_pos, label_text, ha="center", va=va, 
                    fontsize=8, fontweight="bold")
     
-    # Formatting
     ax.set_ylabel("Accuracy Delta from Consensus")
     ax.set_title("Group Accuracy Deviations from Consensus (95% CI)\nGrouped by Ethnicity × Gender")
     ax.grid(axis="y", linestyle="--", alpha=0.3)
     
-    # Create legend for ethnicities
     legend_handles = [
         plt.Rectangle((0,0),1,1, color=ethnicity_colors[eth], alpha=0.8, edgecolor="black")
         for eth in ethnicities
@@ -1589,7 +1584,6 @@ def plot_accuracy_deltas_with_ci(
     plt.tight_layout()
     plt.show()
     
-    # Create summary DataFrame
     summary_data = []
     for combo in ordered_combinations:
         data = group_data[combo]
@@ -1617,43 +1611,6 @@ def plot_accuracy_deltas_with_ci(
     return summary_df
 
 
-def debug_demographics(merged_df, person_set: PersonSet):
-    """
-    Debug function to understand your data structure
-    """
-    print("=== DEBUGGING DEMOGRAPHICS ===")
-    
-    profile_cols = [c for c in merged_df.columns if c.startswith("profile")]
-    print(f"Found {len(profile_cols)} profile columns")
-    print(f"First 5 profile columns: {profile_cols[:5]}")
-    
-    print(f"\nPersonSet metadata keys ({len(person_set.metadata)}):")
-    metadata_keys = list(person_set.metadata.keys())
-    print(f"First 5 metadata keys: {metadata_keys[:5]}")
-    
-    # Check overlap
-    overlap = set(profile_cols) & set(metadata_keys)
-    print(f"\nOverlap between profile columns and metadata keys: {len(overlap)}")
-    
-    if overlap:
-        sample_key = list(overlap)[0]
-        try:
-            traits = person_set.get_traits(sample_key)
-            print(f"\nSample traits for '{sample_key}': {traits}")
-        except Exception as e:
-            print(f"Error getting traits for '{sample_key}': {e}")
-    
-    print(f"\nDemographic info for first 5 profiles:")
-    for profile in profile_cols[:5]:
-        try:
-            traits = person_set.get_traits(profile)
-            demo_info = get_demographic_info(profile, person_set)
-            print(f"  {profile}: {traits} -> {demo_info}")
-        except Exception as e:
-            print(f"  {profile}: Error - {e}")
-    
-    return profile_cols, metadata_keys, overlap
-
 
 def run_full_preliminary_analysis(
     merged_df: pd.DataFrame,
@@ -1668,14 +1625,12 @@ def run_full_preliminary_analysis(
     
     results = {}
 
-    # Handle base prediction column
     if "base_pred" not in merged_df.columns:
         if "zero_shot" in merged_df.columns:
             merged_df["base_pred"] = merged_df["zero_shot"]
         else:
             raise ValueError("Need either base_pred or zero_shot in merged_df.")
 
-    # Merge additional category columns if needed - DATASET AGNOSTIC
     if df is not None and "sample_id" in merged_df.columns and "sample_id" in df.columns:
         missing_cols = [col for col in case.category_cols if col not in merged_df.columns]
         if missing_cols:
@@ -1688,22 +1643,7 @@ def run_full_preliminary_analysis(
         else:
             print("All category columns already present in merged_df")
 
-    # Determine available traits from your PersonSet
-    base_keys = ["gender", "ethnicity"]
-    optional_keys = []
-
-    # Check what traits are available in your PersonSet
-    if person_set.metadata:
-        sample_profile = list(person_set.metadata.keys())[0]
-        sample_traits = person_set.get_traits(sample_profile, group_keys=["gender", "ethnicity", "cognitive_style", "age"])
-        
-        if sample_traits.get("cognitive_style", "Unknown") != "Unknown":
-            optional_keys.append("cognitive_style")
-        if sample_traits.get("age", "Unknown") != "Unknown":
-            optional_keys.append("age")
-
-    group_keys = tuple(base_keys + optional_keys)
-    print(f"Using group keys: {group_keys}")
+    group_keys = get_analysis_group_keys(person_set)
 
     print("\n\n=== DEMOGRAPHIC ACCURACY DIFFERENCES ===")
     demographic_results = test_comprehensive_demographic_accuracy_differences(

@@ -42,34 +42,3 @@ def make_system_message(
         raise KeyError(f"Unknown persona_key '{person_key}'. Valid keys: {list(person_set.seeds)}") from e
 
     return {"role": "system", "content": seed}
-
-
-
-
-def get_profile_traits(profile_id: str, person_set: PersonSet,  group_keys=("gender", "ethnicity", "cognitive_style")) -> dict:
-    """
-    Return the trait values associated with a single profile ID.
-
-    This is used in **sample-level or profile-level annotations**, such as
-    logging trait information during case analysis or disagreement detection.
-
-    Parameters:
-    -----------
-    profile_id : str
-        The ID of the profile (e.g., 'profile3').
-    group_keys : tuple
-        Traits to extract from the profile metadata.
-
-    Returns:
-    --------
-    dict : Mapping of trait_name → trait_value for the profile.
-    Unknown is returned if the profile is not in the metadata.
-    """
-
-    meta = person_set.metadata.get(profile_id, None)
-    if not meta:
-        return {key: "Unknown" for key in group_keys}
-    return {
-        key: getattr(meta, key).value if isinstance(getattr(meta, key, None), Enum) else getattr(meta, key, "Unknown")
-        for key in group_keys
-    }

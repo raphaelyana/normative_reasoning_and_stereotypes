@@ -8,6 +8,7 @@ import numpy as np
 from enum import Enum
 from profiles.schema import PersonSet
 from cases import CaseConfig
+from typing import Tuple, List
 
 
 def load_and_merge_profiles(
@@ -122,65 +123,70 @@ def get_demographic_info(profile_name: str, person_set: PersonSet) -> str:
         return "unknown"
 
 
-def get_demographic_info_2(profile_name: str, person_set) -> str:
+
+def get_analysis_group_keys(person_set: PersonSet) -> Tuple[str, ...]:
     """
-    Return a demographic signature like 'white_man_low_harm' or 'white_man_age_2'.
-    Works whether person_set.get_traits returns a dict or a PersonMeta.
+    Dynamically determine group keys for analysis based on available metadata
     """
-    traits = person_set.get_traits(profile_name)
-
-    def read(tr, key):
-        v = tr.get(key) if isinstance(tr, dict) else getattr(tr, key, None)
-        if isinstance(v, Enum):
-            v = v.value
-        return None if v is None else str(v).lower()
-
-    parts = []
-    for k in ("gender", "ethnicity"): 
-        v = read(traits, k)
-        if v:
-            parts.append(v)
-
-    cs = read(traits, "cognitive_style")
-    if cs:
-        parts.append(cs)
-    else:
-        extra_fields = []
-        if hasattr(traits, "__dataclass_fields__"):
-            extra_fields = [f for f in traits.__dataclass_fields__ if f not in ("gender", "ethnicity", "cognitive_style")]
-        elif isinstance(traits, dict):
-            extra_fields = [f for f in traits.keys() if f not in ("gender", "ethnicity", "cognitive_style")]
-
-        for f in extra_fields:
-            v = read(traits, f)
-            if v:
-                parts.append(v)
-
-    return "_".join(parts) if parts else "unknown"
-
-
-
-def has_cognitive_style_data(person_set: PersonSet, sample_size: int = 10) -> bool:
-    """
-    Check if PersonSet contains cognitive style data by sampling profiles.
+    required_keys, optional_keys = get_available_traits(person_set)
+    group_keys = tuple(required_keys + optional_keys)
     
-    Parameters:
-    - person_set: PersonSet to check
-    - sample_size: Number of profiles to sample for checking
+    print(f"Available traits detected:")
+    print(f"  Required: {required_keys}")
+    print(f"  Optional: {optional_keys}")
+    print(f"Using group keys: {group_keys}")
+    
+    return group_keys
+
+
+
+def get_available_traits(person_set: PersonSet) -> Tuple[List[str], List[str]]:
+    """
+    Dynamically detect available traits from PersonMeta dataclass
     
     Returns:
-    - True if cognitive style data found, False otherwise
+    --------
+    Tuple[List[str], List[str]]
+        - required_keys: Always present traits (gender, ethnicity)
+        - optional_keys: Optional traits that exist in the metadata
     """
+    # Core traits that should always be present for bias analysis
+    required_keys = ["gender", "ethnicity"]
+    
     if not person_set.metadata:
-        return False
+        return required_keys, []
     
-    # Sample some profile IDs to check
-    profile_ids = list(person_set.metadata.keys())
-    sample_ids = profile_ids[:min(sample_size, len(profile_ids))]
+    sample_size = min(5, len(person_set.metadata))
+    sample_profiles = list(person_set.metadata.keys())[:sample_size]
     
-    for pid in sample_ids:
-        traits = person_set.get_traits(pid, ["cognitive_style"])
-        if traits.get("cognitive_style", "Unknown") != "Unknown":
-            return True
+    first_meta = list(person_set.metadata.values())[0]
+    all_possible_fields = list(first_meta.__dataclass_fields__.keys())
     
-    return False
+    available_traits = []
+    for field in all_possible_fields:
+        field_has_data = False
+        
+        for profile in sample_profiles:
+            try:
+                traits = person_set.get_traits(profile, group_keys=[field])
+                if traits.get(field, "Unknown") != "Unknown":
+                    field_has_data = True
+                    break
+            except:
+                continue
+        
+        if field_has_data:
+            available_traits.append(field)
+
+    required_keys = []
+    optional_keys = []
+    
+    priority_fields = ["gender", "ethnicity"]
+    for field in priority_fields:
+        if field in available_traits:
+            required_keys.append(field)
+            available_traits.remove(field)
+    
+    optional_keys = available_traits
+    
+    return required_keys, optional_keys

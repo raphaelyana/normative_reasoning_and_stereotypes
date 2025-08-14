@@ -4,7 +4,7 @@ import json
 import re
 from collections import Counter
 from itertools import combinations
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import fields
 
 
@@ -29,7 +29,7 @@ from scipy.spatial.distance import squareform
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 
 from analysis_0 import *
-from profiles.profile_message import get_profile_traits
+from analysis_tools import get_analysis_group_keys, get_available_traits
 from profiles.profile_sets import PERSON_ETHNICS
 from profiles.schema import PersonSet, PersonMeta
 from cases import CaseConfig
@@ -1651,7 +1651,7 @@ def run_full_tier3_analysis(
     merged_df,
     person_set: PersonSet,
     case: CaseConfig,
-    group_keys=("gender", "ethnicity", "age"),
+    group_keys: Optional[Tuple[str, ...]] = None, 
     n_folds=5
 ):
     """
@@ -1670,7 +1670,24 @@ def run_full_tier3_analysis(
 
     print("EXECUTING TIER 3 ANALYSIS PIPELINE")
     print("=" * 80)
-    print(f"Group keys: {group_keys}")
+
+    if person_set is None:
+        print("WARNING: No PersonSet provided - some analyses may not work correctly")
+
+    if group_keys is None:
+        print("Auto-detecting available traits from PersonSet...")
+        group_keys = get_analysis_group_keys(person_set)
+    else:
+        print(f"Using provided group keys: {group_keys}")
+        required_keys, optional_keys = get_available_traits(person_set)
+        available_keys = set(required_keys + optional_keys)
+        invalid_keys = [key for key in group_keys if key not in available_keys]
+        if invalid_keys:
+            print(f"WARNING: These group keys are not available in PersonSet: {invalid_keys}")
+            print(f"Available keys: {sorted(available_keys)}")
+            group_keys = tuple(key for key in group_keys if key in available_keys)
+            print(f"Using filtered group keys: {group_keys}")
+
     print(f"Cross-validation folds: {n_folds}")
 
     # ================================================================

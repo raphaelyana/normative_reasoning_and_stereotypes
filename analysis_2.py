@@ -26,7 +26,7 @@ from scipy.spatial.distance import squareform
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 
 from analysis_0 import *
-from profiles.profile_message import get_profile_traits
+from analysis_tools import get_available_traits, get_analysis_group_keys
 from profiles.profile_sets import PERSON_SYSTEMATIC
 from profiles.schema import PersonSet
 from analysis_tools import has_cognitive_style_data
@@ -1601,7 +1601,7 @@ def run_full_tier2_analysis(
     merged_df: pd.DataFrame,
     person_set: PersonSet,
     case: CaseConfig,
-    group_keys=("gender", "ethnicity"),
+    group_keys: Optional[Tuple[str, ...]] = None, 
     create_visualizations: bool = True,
 ):
     """
@@ -1615,7 +1615,23 @@ def run_full_tier2_analysis(
     print(f"Category columns from CaseConfig: {getattr(case, 'category_cols', None)}")
 
     if person_set is None:
-        raise ValueError("PersonSet is required for Tier 2 analysis")
+        print("WARNING: No PersonSet provided - some analyses may not work correctly")
+
+    if group_keys is None:
+        print("Auto-detecting available traits from PersonSet...")
+        group_keys = get_analysis_group_keys(person_set)
+    else:
+        print(f"Using provided group keys: {group_keys}")
+        required_keys, optional_keys = get_available_traits(person_set)
+        available_keys = set(required_keys + optional_keys)
+        invalid_keys = [key for key in group_keys if key not in available_keys]
+        if invalid_keys:
+            print(f"WARNING: These group keys are not available in PersonSet: {invalid_keys}")
+            print(f"Available keys: {sorted(available_keys)}")
+            group_keys = tuple(key for key in group_keys if key in available_keys)
+            print(f"Using filtered group keys: {group_keys}")
+    
+    print(f"Dataset shape: {merged_df.shape}")
 
     category_cols = getattr(case, "category_cols", None) or ["stereotype_type"]
 

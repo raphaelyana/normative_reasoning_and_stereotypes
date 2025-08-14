@@ -32,6 +32,7 @@ from scipy.spatial.distance import squareform
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 
 
+from analysis_tools import get_available_traits, get_analysis_group_keys
 from analysis_0 import *
 from profiles.profile_message import get_profile_traits
 from profiles.profile_sets import PERSON_SYSTEMATIC
@@ -63,7 +64,7 @@ def factorial_analysis_nway_anova(
         if v == "Unknown":
             return "unknown"
         elif isinstance(v, (int, float)):
-            return str(v)  # Keep age as string representation of number
+            return str(v)
         else:
             return str(v).lower()
 
@@ -947,7 +948,7 @@ def ols_interaction_pvalue(df, dv, factor1, factor2):
 def run_full_tier1_analysis(
     merged_df: pd.DataFrame, 
     case: CaseConfig,
-    group_keys=("gender", "ethnicity", "age"), 
+    group_keys: Optional[Tuple[str, ...]] = None, 
     person_set: PersonSet = None
 ) -> Dict[str, Any]:
     """
@@ -960,7 +961,7 @@ def run_full_tier1_analysis(
     
     Parameters:
     - merged_df: Merged classification results with 'profile', 'true_label', and predicted labels.
-    - group_keys: Traits to include in the group-level analysis (must exist in PersonMeta)
+    - group_keys: Optional tuple of traits to include in analysis. If None, will auto-detect from PersonSet.
     - person_set: PersonSet object containing trait metadata
     
     Returns:
@@ -973,10 +974,26 @@ def run_full_tier1_analysis(
     print(f"Group keys: {group_keys}")
     print(f"Dataset shape: {merged_df.shape}")
     
-    # Validate inputs
+
     if person_set is None:
         print("WARNING: No PersonSet provided - some analyses may not work correctly")
+
+    if group_keys is None:
+        print("Auto-detecting available traits from PersonSet...")
+        group_keys = get_analysis_group_keys(person_set)
+    else:
+        print(f"Using provided group keys: {group_keys}")
+        required_keys, optional_keys = get_available_traits(person_set)
+        available_keys = set(required_keys + optional_keys)
+        invalid_keys = [key for key in group_keys if key not in available_keys]
+        if invalid_keys:
+            print(f"WARNING: These group keys are not available in PersonSet: {invalid_keys}")
+            print(f"Available keys: {sorted(available_keys)}")
+            group_keys = tuple(key for key in group_keys if key in available_keys)
+            print(f"Using filtered group keys: {group_keys}")
     
+    print(f"Dataset shape: {merged_df.shape}")
+
     try:
         print("\n" + "="*60)
         print("STEP 1: FACTORIAL N-WAY ANOVA ANALYSIS")
@@ -1028,12 +1045,10 @@ def run_full_tier1_analysis(
         print(f"ERROR: Effect size calculations failed: {e}")
         effect_sizes = {'error': str(e)}
 
-    # Summary report
     print("\n" + "="*80)
     print("TIER 1 ANALYSIS SUMMARY")
     print("="*80)
     
-    # ANOVA summary
     if 'significant_effects' in anova_results:
         sig_effects = len(anova_results['significant_effects'])
         print(f"=== ANOVA: {sig_effects} significant effects detected")
@@ -1043,14 +1058,12 @@ def run_full_tier1_analysis(
     else:
         print("=== ANOVA: No results available")
     
-    # Pareto summary
     if 'pareto_optimal' in pareto_results:
         pareto_count = len(pareto_results['pareto_optimal'])
         print(f"=== Pareto Frontier: {pareto_count} optimal profiles identified")
     else:
         print("=== Pareto Frontier: No results available")
     
-    # Effect size summary
     if isinstance(effect_sizes, dict) and 'error' not in effect_sizes:
         large_effects = sum(1 for es in effect_sizes.values() 
                            if isinstance(es, dict) and es.get('magnitude') == 'large')
