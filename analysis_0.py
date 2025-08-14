@@ -1107,7 +1107,7 @@ def plot_accuracy_deltas_with_ci(
     if not profile_cols:
         raise ValueError("No profile columns found for plotting")
     
-    trait_by_profile = {p: get_demographic_info(p, person_set) for p in profile_cols}
+    trait_by_profile = {p: person_set.get_traits(p, group_keys) for p in profile_cols}
     
     consensus_accuracy_global = np.mean([
         (merged_df[p] == merged_df["true_label"]).mean()

@@ -1650,6 +1650,7 @@ def visualize_causal_model(causal_results, figsize=(16, 12)):
 def run_full_tier3_analysis(
     merged_df,
     person_set: PersonSet,
+    case: CaseConfig,
     group_keys=("gender", "ethnicity", "age"),
     n_folds=5
 ):
@@ -1679,6 +1680,7 @@ def run_full_tier3_analysis(
     try:
         consistency_results = consistency_vs_boldness_analysis(
             merged_df,
+            case=case,
             n_folds=n_folds,
             person_set=person_set,
             group_keys=group_keys
@@ -1696,6 +1698,7 @@ def run_full_tier3_analysis(
         causal_results = simplified_causal_modeling(
             merged_df,
             person_set=person_set,
+            case=case,
             group_keys=group_keys,
             consistency_results=(
                 consistency_results if 'error' not in consistency_results else None
