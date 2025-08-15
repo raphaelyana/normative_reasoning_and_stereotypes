@@ -7,7 +7,7 @@ import numpy as np
 
 from enum import Enum
 from profiles.schema import PersonSet
-from cases import CaseConfig
+from cases.cases import CaseConfig
 from typing import Tuple, List
 
 

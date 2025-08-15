@@ -7,7 +7,7 @@ from utils import call_llm
 from profiles.profile_dict import PERSON_SEEDS
 from profiles.profile_message import make_system_message
 import re
-from cases import CaseConfig
+from cases.cases import CaseConfig
 from typing import Literal
 from profiles.schema import PersonSet
 

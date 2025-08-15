@@ -32,7 +32,7 @@ from analysis_0 import *
 from analysis_tools import get_analysis_group_keys, get_available_traits
 from profiles.profile_sets import PERSON_ETHNICS
 from profiles.schema import PersonSet, PersonMeta
-from cases import CaseConfig
+from cases.cases import CaseConfig
 
 
 def consistency_vs_boldness_analysis(merged_df, 

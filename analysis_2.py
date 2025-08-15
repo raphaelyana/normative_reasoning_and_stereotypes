@@ -30,7 +30,7 @@ from analysis_tools import get_available_traits, get_analysis_group_keys
 from profiles.profile_sets import PERSON_SYSTEMATIC
 from profiles.schema import PersonSet
 from analysis_tools import has_cognitive_style_data
-from cases import CaseConfig
+from cases.cases import CaseConfig
 
 
 def build_trait_groups(merged_df: pd.DataFrame, person_set: PersonSet, group_keys=("gender", "ethnicity", "age")) -> Dict[str, list]:

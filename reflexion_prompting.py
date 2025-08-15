@@ -3,7 +3,7 @@ import time
 import openai
 from utils import call_llm
 from profiles.profile_message import make_system_message, PERSON_SEEDS
-from cases import CaseConfig
+from cases.cases import CaseConfig
 from llm_judge import NormativeJudge
 
 DEFAULT_MODEL_DICT = {

@@ -37,7 +37,7 @@ from analysis_0 import *
 from profiles.profile_message import get_profile_traits
 from profiles.profile_sets import PERSON_SYSTEMATIC
 from profiles.schema import PersonSet
-from cases import CaseConfig
+from cases.cases import CaseConfig
 
 def factorial_analysis_nway_anova(
     merged_df, 

@@ -6,7 +6,7 @@ from profiles.profile_message import make_system_message, PERSON_SEEDS
 from pydantic import BaseModel
 from dataclasses import dataclass
 import random
-from cases import CaseConfig
+from cases.cases import CaseConfig
 import pandas as pd
 from collections import defaultdict
 

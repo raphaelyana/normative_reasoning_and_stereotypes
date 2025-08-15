@@ -2,7 +2,7 @@ from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 from enum import Enum
 from utils import call_llm
-from cases import CaseConfig
+from cases.cases import CaseConfig
 import numpy as np
 import pandas as pd
 import openai 
