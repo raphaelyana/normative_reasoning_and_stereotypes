@@ -2,7 +2,7 @@ import openai
 from utils import call_llm
 import re
 import pandas as pd
-from cases.cases import CaseConfig
+from cases.cases_config import CaseConfig
 from enum import Enum
 from typing import Literal
 from typing import List, Optional

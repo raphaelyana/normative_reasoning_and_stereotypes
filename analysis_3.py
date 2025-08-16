@@ -32,7 +32,7 @@ from analysis_0 import *
 from analysis_tools import get_analysis_group_keys, get_available_traits
 from profiles.profile_sets import PERSON_ETHNICS
 from profiles.schema import PersonSet, PersonMeta
-from cases.cases import CaseConfig
+from cases.cases_config import CaseConfig
 
 
 def consistency_vs_boldness_analysis(merged_df, 
@@ -1646,6 +1646,9 @@ def visualize_causal_model(causal_results, figsize=(16, 12)):
     plt.tight_layout()
     plt.show()
     return fig
+
+
+
 
 def run_full_tier3_analysis(
     merged_df,

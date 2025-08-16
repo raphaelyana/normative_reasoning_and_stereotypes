@@ -4,7 +4,7 @@ import openai
 from utils import call_llm
 import re
 import pandas as pd
-from cases.cases import CaseConfig
+from cases.cases_config import CaseConfig
 from profiles.profile_message import make_system_message, PERSON_SEEDS
 import time
 

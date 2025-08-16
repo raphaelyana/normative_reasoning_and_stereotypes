@@ -30,7 +30,7 @@ from analysis_tools import get_available_traits, get_analysis_group_keys
 from profiles.profile_sets import PERSON_SYSTEMATIC
 from profiles.schema import PersonSet
 from analysis_tools import has_cognitive_style_data
-from cases.cases import CaseConfig
+from cases.cases_config import CaseConfig
 
 
 def build_trait_groups(merged_df: pd.DataFrame, person_set: PersonSet, group_keys=("gender", "ethnicity", "age")) -> Dict[str, list]:
@@ -1667,8 +1667,6 @@ def run_full_tier2_analysis(
     except Exception as e:
         print(f"ERROR: Cluster analysis failed: {e}")
         cluster_results = {'error': str(e)}
-
-    # STEP 3: COGNITIVE STYLE COMPARISON (conditional)
 
     has_cognitive_data = has_cognitive_style_data(person_set)
     cognitive_results = {'skipped': True, 'reason': 'No cognitive style data found'}

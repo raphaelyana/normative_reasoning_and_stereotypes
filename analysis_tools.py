@@ -7,7 +7,7 @@ import numpy as np
 
 from enum import Enum
 from profiles.schema import PersonSet
-from cases.cases import CaseConfig
+from cases.cases_config import CaseConfig
 from typing import Tuple, List
 
 
@@ -190,3 +190,30 @@ def get_available_traits(person_set: PersonSet) -> Tuple[List[str], List[str]]:
     optional_keys = available_traits
     
     return required_keys, optional_keys
+
+
+
+def has_cognitive_style_data(person_set: PersonSet, sample_size: int = 10) -> bool:
+    """
+    Check if PersonSet contains cognitive style data by sampling profiles.
+    
+    Parameters:
+    - person_set: PersonSet to check
+    - sample_size: Number of profiles to sample for checking
+    
+    Returns:
+    - True if cognitive style data found, False otherwise
+    """
+    if not person_set.metadata:
+        return False
+    
+    # Sample some profile IDs to check
+    profile_ids = list(person_set.metadata.keys())
+    sample_ids = profile_ids[:min(sample_size, len(profile_ids))]
+    
+    for pid in sample_ids:
+        traits = person_set.get_traits(pid, ["cognitive_style"])
+        if traits.get("cognitive_style", "Unknown") != "Unknown":
+            return True
+    
+    return False

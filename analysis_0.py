@@ -28,7 +28,7 @@ from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 from analysis_tools import get_demographic_info, get_analysis_group_keys
 from profiles.schema import *
 from profiles.profile_sets import PERSON_ETHNICS
-from cases.cases import CaseConfig
+from cases.cases_config import CaseConfig
 
 
 __all__ = [
