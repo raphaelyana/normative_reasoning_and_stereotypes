@@ -6,7 +6,9 @@ from utils import call_llm
 import re
 import json
 from pydantic import BaseModel
-from profiles.profile_message import PERSON_SEEDS, make_system_message
+from profiles.profile_message import make_system_message
+from profiles.profile_sets import PERSON_ETHNICS, PERSON_SYSTEMATIC
+from profiles.profile_dict import PERSON_SEEDS, PERSON_SEEDS_ETHNICS, PERSON_SEEDS_SYSTEMATIC
 from typing import Literal
 
 DEFAULT_MODEL_DICT = {

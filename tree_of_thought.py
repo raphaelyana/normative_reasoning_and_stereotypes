@@ -8,7 +8,10 @@ import re
 import pandas as pd
 from collections import defaultdict
 from pydantic import BaseModel, Field
-from cases.cases_config import stereotypes_case, CaseConfig, ThoughtOutput
+from cases.get_case_config import get_case_config
+from cases.cases_config import CaseConfig, ThoughtOutput
+from cases.stereotypes_case import stereotypes_case
+from cases.manipulation_case import manipulation_case
 import json
 
 DEFAULT_MODEL_DICT = {

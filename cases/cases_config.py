@@ -128,5 +128,7 @@ def get_case_config(task: str):
         return stereotypes_case
     elif task == "manipulation":
         return manipulation_case
+    elif task == "mmlu":
+        return mmlu_case
     else:
         raise ValueError(f"Unknown task: {task}")
