@@ -1,0 +1,345 @@
+from dataclasses import dataclass
+from typing import Optional, Dict, Any, Tuple
+import pandas as pd
+import numpy as np
+from sentence_transformers import SentenceTransformer
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score, accuracy_score
+from cases.cases_config import CaseConfig
+from collections import Counter, defaultdict
+from profiles.schema import PersonSet
+from profiles.profile_sets import PERSON_ETHNICS
+from analysis_2 import (
+    ensemble_by_trait_analysis,
+    build_trait_groups,
+    majority_vote_ensemble
+)
+
+
+def add_text_clusters(merged_df: pd.DataFrame,
+                     case: CaseConfig,
+                     sample_df: pd.DataFrame,
+                     person_set: PersonSet,
+                     min_k=3,
+                     max_k=10):
+    """
+    Add text clusters and evaluate using ensemble-based methods.
+    
+    Parameters:
+    - merged_df: DataFrame with predictions
+    - case: CaseConfig object
+    - sample_df: DataFrame with sample data
+    - person_set: PersonSet object
+    - min_k: minimum number of clusters
+    - max_k: maximum number of clusters
+    """
+    
+    print(f"\n{'='*80}")
+    print(f"CLUSTERING ANALYSIS: k={min_k} to k={max_k}")
+    print(f"{'='*80}")
+    
+    if "sample_id" not in sample_df.columns:
+        sample_df = sample_df.reset_index().rename(columns={"index": "sample_id"})
+    
+    if case.input_col not in merged_df.columns:
+        merged_df = merged_df.merge(
+            sample_df[["sample_id", case.input_col]],
+            on="sample_id", how="left"
+        )
+    
+    # Generate embeddings
+    print(f"\nGenerating embeddings for {len(merged_df)} samples...")
+    model = SentenceTransformer("all-MiniLM-L6-v2")
+    texts = merged_df[case.input_col].astype(str).tolist()
+    embeddings = model.encode(texts, show_progress_bar=True)
+    print(f"Embedding shape: {embeddings.shape}")
+    
+    # Evaluate different k values
+    best_k_results = []
+    detailed_results = {}
+    
+    print(f"\n{'='*80}")
+    print("EVALUATING DIFFERENT K VALUES")
+    print(f"{'='*80}")
+    
+    for k in range(min_k, max_k+1):
+        print(f"\n{'='*60}")
+        print(f"K = {k}")
+        print(f"{'='*60}")
+        
+        kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+        cluster_labels = kmeans.fit_predict(embeddings)
+        merged_df[f"synthetic_cluster_{k}"] = cluster_labels
+        
+        # Calculate silhouette score
+        sil_score = silhouette_score(embeddings, cluster_labels)
+        print(f"Silhouette Score: {sil_score:.4f}")
+        
+        # Original routing performance
+        routing_perf = evaluate_cluster_routing(
+            merged_df, cluster_col=f"synthetic_cluster_{k}"
+        )
+        
+        # Enhanced evaluation using tier-2 ensemble analysis
+        ensemble_perf = evaluate_cluster_with_tier2_ensembles(
+            merged_df,
+            person_set=person_set,
+            case=case,
+            cluster_col=f"synthetic_cluster_{k}",
+            k=k
+        )
+        
+        # Combine metrics
+        routing_perf["ensemble_metrics"] = ensemble_perf
+        routing_perf["silhouette_score"] = sil_score
+        detailed_results[k] = {
+            "routing": routing_perf,
+            "ensemble": ensemble_perf,
+            "silhouette": sil_score
+        }
+        
+        best_k_results.append((k, routing_perf))
+    
+    # Select best k based on combined metrics
+    best_k, best_perf = select_best_k(best_k_results)
+    
+    print(f"\n{'='*80}")
+    print(f"FINAL SELECTION: k={best_k}")
+    print(f"Expected Accuracy: {best_perf['expected_accuracy']:.4f}")
+    print(f"Best Cluster Ensemble Accuracy: {best_perf['ensemble_metrics']['best_cluster_ensemble_acc']:.4f}")
+    print(f"Average Rescue Rate: {best_perf['ensemble_metrics']['avg_rescue_rate']:.4f}")
+    print(f"{'='*80}")
+    
+    # Keep only the best cluster column
+    keep_col = f"synthetic_cluster_{best_k}"
+    drop_cols = [c for c in merged_df.columns if c.startswith("synthetic_cluster_") and c != keep_col]
+    merged_df = merged_df.drop(columns=drop_cols)
+    
+    return merged_df, best_perf
+
+
+def evaluate_cluster_routing(df, cluster_col):
+    """Original cluster routing evaluation with added prints."""
+    
+    print(f"\nCluster Routing Analysis:")
+    print(f"{'Cluster':<10} {'Size':<8} {'Best Profile':<25} {'Best Acc':<10}")
+    print("-" * 55)
+    
+    cluster_perfs = {}
+    profile_cols = [col for col in df.columns if col.startswith("profile")]
+    
+    for c, subdf in df.groupby(cluster_col):
+        # accuracy of each profile in cluster
+        prof_acc = {p: (subdf[p] == subdf["true_label"]).mean() for p in profile_cols}
+        best_prof, best_acc = max(prof_acc.items(), key=lambda x: x[1])
+        cluster_perfs[c] = {
+            "best_prof": best_prof, 
+            "best_acc": best_acc, 
+            "size": len(subdf)
+        }
+        print(f"{c:<10} {len(subdf):<8} {best_prof[:25]:<25} {best_acc:<10.4f}")
+    
+    # weighted expected performance
+    weighted_acc = sum(
+        len(subdf)/len(df) * cluster_perfs[c]["best_acc"]
+        for c, subdf in df.groupby(cluster_col)
+    )
+    
+    print(f"\nWeighted Expected Accuracy: {weighted_acc:.4f}")
+    
+    return {"cluster_perfs": cluster_perfs, "expected_accuracy": weighted_acc}
+
+
+def evaluate_cluster_with_tier2_ensembles(merged_df: pd.DataFrame,
+                                          person_set: PersonSet,
+                                          case: CaseConfig,
+                                          cluster_col: str,
+                                          k: int) -> Dict[str, Any]:
+    """
+    Evaluate clusters using tier-2 ensemble_by_trait_analysis.
+    This function works without category columns as it uses PersonSet metadata.
+    """
+    
+    print(f"\nTier-2 Ensemble Analysis for {k} clusters:")
+    
+    cluster_ensemble_metrics = {}
+    all_cluster_metrics = []
+    
+    # Analyze each cluster using ensemble_by_trait_analysis
+    for cluster_id, cluster_df in merged_df.groupby(cluster_col):
+        n_samples = len(cluster_df)
+        print(f"\n  Analyzing Cluster {cluster_id} (n={n_samples}):")
+        
+        # Run ensemble_by_trait_analysis for this cluster
+        try:
+            ensemble_results = ensemble_by_trait_analysis(
+                cluster_df,
+                person_set,
+                case=case,
+                group_keys=("gender", "ethnicity", "age")
+            )
+            
+            # Extract key metrics from ensemble analysis
+            baseline_acc = ensemble_results.get('baseline_accuracy', 0)
+            
+            # Get best ensemble performance
+            if ensemble_results.get('ensemble_results'):
+                best_ensemble_info = max(
+                    ensemble_results['ensemble_results'].items(),
+                    key=lambda x: x[1]['accuracy']
+                )
+                best_ensemble_name = best_ensemble_info[0]
+                best_ensemble_metrics = best_ensemble_info[1]
+                best_ensemble_acc = best_ensemble_metrics['accuracy']
+                best_rescue_rate = best_ensemble_metrics['rescue_rate']
+                best_extra_error_rate = best_ensemble_metrics['extra_error_rate']
+                
+                # Get average metrics across all ensembles
+                all_ensembles = ensemble_results['ensemble_results'].values()
+                avg_ensemble_acc = np.mean([e['accuracy'] for e in all_ensembles])
+                avg_rescue_rate = np.mean([e['rescue_rate'] for e in all_ensembles])
+                avg_extra_error_rate = np.mean([e['extra_error_rate'] for e in all_ensembles])
+            else:
+                best_ensemble_name = "none"
+                best_ensemble_acc = baseline_acc
+                best_rescue_rate = 0
+                best_extra_error_rate = 0
+                avg_ensemble_acc = baseline_acc
+                avg_rescue_rate = 0
+                avg_extra_error_rate = 0
+            
+            cluster_ensemble_metrics[cluster_id] = {
+                "size": n_samples,
+                "baseline_acc": baseline_acc,
+                "best_ensemble": best_ensemble_name,
+                "best_ensemble_acc": best_ensemble_acc,
+                "best_rescue_rate": best_rescue_rate,
+                "best_extra_error_rate": best_extra_error_rate,
+                "avg_ensemble_acc": avg_ensemble_acc,
+                "avg_rescue_rate": avg_rescue_rate,
+                "avg_extra_error_rate": avg_extra_error_rate,
+                "improvement": best_ensemble_acc - baseline_acc,
+                "n_ensembles_tested": len(ensemble_results.get('ensemble_results', {}))
+            }
+            
+            print(f"    Baseline: {baseline_acc:.4f}")
+            print(f"    Best Ensemble ({best_ensemble_name}): {best_ensemble_acc:.4f}")
+            print(f"    Improvement: {best_ensemble_acc - baseline_acc:.4f}")
+            print(f"    Rescue Rate: {best_rescue_rate:.4f}")
+            print(f"    Extra Error Rate: {best_extra_error_rate:.4f}")
+            print(f"    Ensembles Tested: {len(ensemble_results.get('ensemble_results', {}))}")
+            
+        except Exception as e:
+            print(f"    ERROR in ensemble analysis: {e}")
+            # Fallback to basic metrics
+            baseline_acc = accuracy_score(cluster_df['true_label'], cluster_df['base_pred'])
+            cluster_ensemble_metrics[cluster_id] = {
+                "size": n_samples,
+                "baseline_acc": baseline_acc,
+                "best_ensemble": "error",
+                "best_ensemble_acc": baseline_acc,
+                "best_rescue_rate": 0,
+                "best_extra_error_rate": 0,
+                "avg_ensemble_acc": baseline_acc,
+                "avg_rescue_rate": 0,
+                "avg_extra_error_rate": 0,
+                "improvement": 0,
+                "n_ensembles_tested": 0,
+                "error": str(e)
+            }
+        
+        all_cluster_metrics.append(cluster_ensemble_metrics[cluster_id])
+    
+    # Calculate overall metrics across all clusters
+    if all_cluster_metrics:
+        valid_clusters = [m for m in all_cluster_metrics if "error" not in m]
+        if valid_clusters:
+            overall_metrics = {
+                "k": k,
+                "best_cluster_ensemble_acc": max(m["best_ensemble_acc"] for m in valid_clusters),
+                "avg_ensemble_acc": np.mean([m["avg_ensemble_acc"] for m in valid_clusters]),
+                "avg_baseline_acc": np.mean([m["baseline_acc"] for m in valid_clusters]),
+                "avg_improvement": np.mean([m["improvement"] for m in valid_clusters]),
+                "avg_rescue_rate": np.mean([m["avg_rescue_rate"] for m in valid_clusters]),
+                "avg_extra_error_rate": np.mean([m["avg_extra_error_rate"] for m in valid_clusters]),
+                "total_ensembles_tested": sum(m["n_ensembles_tested"] for m in valid_clusters),
+                "clusters": cluster_ensemble_metrics
+            }
+        else:
+            # All clusters had errors
+            overall_metrics = {
+                "k": k,
+                "best_cluster_ensemble_acc": 0,
+                "avg_ensemble_acc": 0,
+                "avg_baseline_acc": 0,
+                "avg_improvement": 0,
+                "avg_rescue_rate": 0,
+                "avg_extra_error_rate": 0,
+                "total_ensembles_tested": 0,
+                "clusters": cluster_ensemble_metrics
+            }
+    else:
+        overall_metrics = {
+            "k": k,
+            "best_cluster_ensemble_acc": 0,
+            "avg_ensemble_acc": 0,
+            "avg_baseline_acc": 0,
+            "avg_improvement": 0,
+            "avg_rescue_rate": 0,
+            "avg_extra_error_rate": 0,
+            "total_ensembles_tested": 0,
+            "clusters": {}
+        }
+    
+    print(f"\n  Overall Metrics for k={k}:")
+    print(f"    Average Baseline Accuracy: {overall_metrics['avg_baseline_acc']:.4f}")
+    print(f"    Average Ensemble Accuracy: {overall_metrics['avg_ensemble_acc']:.4f}")
+    print(f"    Average Improvement: {overall_metrics['avg_improvement']:.4f}")
+    print(f"    Average Rescue Rate: {overall_metrics['avg_rescue_rate']:.4f}")
+    print(f"    Total Ensembles Tested: {overall_metrics['total_ensembles_tested']}")
+    
+    return overall_metrics
+
+
+def select_best_k(best_k_results) -> Tuple[int, Dict]:
+    """
+    Select best k using combined metrics.
+    
+    Considers:
+    - Expected accuracy (routing performance)
+    - Ensemble accuracy from tier-2 analysis
+    - Rescue rate
+    - Silhouette score
+    """
+    
+    print(f"\n{'='*80}")
+    print("SCORING EACH K VALUE")
+    print(f"{'='*80}")
+    print(f"{'K':<5} {'Expected':<10} {'Ensemble':<10} {'Rescue':<10} {'Silhouette':<12} {'Score':<10}")
+    print("-" * 60)
+    
+    scored_results = []
+    
+    for k, perf in best_k_results:
+        # Components of the score
+        expected_acc = perf["expected_accuracy"]
+        ensemble_acc = perf["ensemble_metrics"]["best_cluster_ensemble_acc"]
+        rescue_rate = perf["ensemble_metrics"]["avg_rescue_rate"]
+        sil_score = perf["silhouette_score"]
+        
+        # Weighted combination
+        score = (
+            expected_acc * 0.35 +           # Routing accuracy
+            ensemble_acc * 0.35 +            # Ensemble performance from tier-2
+            rescue_rate * 0.20 +             # Rescue capability
+            sil_score * 0.10                 # Clustering quality
+        )
+        
+        print(f"{k:<5} {expected_acc:<10.4f} {ensemble_acc:<10.4f} {rescue_rate:<10.4f} {sil_score:<12.4f} {score:<10.4f}")
+        
+        scored_results.append((k, perf, score))
+    
+    # Select best based on combined score
+    best_k, best_perf, best_score = max(scored_results, key=lambda x: x[2])
+    
+    return best_k, best_perf
