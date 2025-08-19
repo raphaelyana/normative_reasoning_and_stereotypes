@@ -21,7 +21,8 @@ def add_text_clusters(merged_df: pd.DataFrame,
                      sample_df: pd.DataFrame,
                      person_set: PersonSet,
                      min_k=3,
-                     max_k=10):
+                     max_k=10,
+                     complexity_penalty="bic"):
     """
     Add text clusters and evaluate using ensemble-based methods.
     
@@ -101,7 +102,7 @@ def add_text_clusters(merged_df: pd.DataFrame,
         best_k_results.append((k, routing_perf))
     
     # Select best k based on combined metrics
-    best_k, best_perf = select_best_k(best_k_results)
+    best_k, best_perf = select_best_k(best_k_results, complexity_penalty=complexity_penalty)
     
     print(f"\n{'='*80}")
     print(f"FINAL SELECTION: k={best_k}")
@@ -141,7 +142,7 @@ def evaluate_cluster_routing(df, cluster_col):
     
     # weighted expected performance
     weighted_acc = sum(
-        len(subdf)/len(df) * cluster_perfs[c]["best_acc"]
+        len(subdf)/len(df)*cluster_perfs[c]["best_acc"]
         for c, subdf in df.groupby(cluster_col)
     )
     
@@ -301,22 +302,34 @@ def evaluate_cluster_with_tier2_ensembles(merged_df: pd.DataFrame,
     return overall_metrics
 
 
-def select_best_k(best_k_results) -> Tuple[int, Dict]:
+def select_best_k(best_k_results, complexity_penalty="bic") -> Tuple[int, Dict]:
     """
-    Select best k using combined metrics.
+    Select best k using combined metrics with complexity penalty.
     
     Considers:
     - Expected accuracy (routing performance)
     - Ensemble accuracy from tier-2 analysis
     - Rescue rate
     - Silhouette score
+    - Complexity penalty (BIC, AIC, or minimum cluster size)
+    
+    Parameters:
+    - best_k_results: list of (k, performance) tuples
+    - complexity_penalty: "bic", "aic", "min_size", or None
     """
     
     print(f"\n{'='*80}")
     print("SCORING EACH K VALUE")
     print(f"{'='*80}")
-    print(f"{'K':<5} {'Expected':<10} {'Ensemble':<10} {'Rescue':<10} {'Silhouette':<12} {'Score':<10}")
-    print("-" * 60)
+    
+    # Get total number of samples from first result
+    first_k, first_perf = best_k_results[0]
+    n_samples = sum(cluster['size'] for cluster in first_perf['ensemble_metrics']['clusters'].values())
+    print(f"Total samples: {n_samples}")
+    print(f"Complexity penalty method: {complexity_penalty}")
+    
+    print(f"\n{'K':<5} {'Expected':<10} {'Ensemble':<10} {'Rescue':<10} {'Sil':<8} {'Penalty':<10} {'Score':<10}")
+    print("-" * 75)
     
     scored_results = []
     
@@ -327,19 +340,78 @@ def select_best_k(best_k_results) -> Tuple[int, Dict]:
         rescue_rate = perf["ensemble_metrics"]["avg_rescue_rate"]
         sil_score = perf["silhouette_score"]
         
-        # Weighted combination
-        score = (
+        # Calculate complexity penalty
+        if complexity_penalty == "bic":
+            # BIC-style penalty with stronger scaling
+            base_penalty = (k * np.log(n_samples)) / n_samples
+            # Scale up the penalty to be more impactful
+            penalty = base_penalty * 0.5  # Increased from 0.1 to 0.5
+            penalty = min(penalty, 0.25)  # Cap at 0.25
+        elif complexity_penalty == "aic":
+            # AIC-style penalty with stronger scaling
+            base_penalty = (2 * k) / n_samples
+            penalty = base_penalty * 0.3
+            penalty = min(penalty, 0.20)
+        elif complexity_penalty == "min_size":
+            # Penalty based on smallest cluster size
+            min_cluster_size = min(cluster['size'] for cluster in perf['ensemble_metrics']['clusters'].values())
+            # Penalize if any cluster has fewer than 5% of samples
+            min_threshold = n_samples * 0.05
+            if min_cluster_size < min_threshold:
+                penalty = 0.1 * (1 - min_cluster_size / min_threshold)
+            else:
+                penalty = 0.0
+        elif complexity_penalty == "sqrt":
+            # Square root penalty - grows slower than linear but still meaningful
+            penalty = 0.01 * np.sqrt(k)
+        elif complexity_penalty == "linear":
+            # Simple linear penalty
+            penalty = 0.01 * k
+        else:
+            penalty = 0.0
+        
+        # Weighted combination with penalty
+        raw_score = (
             expected_acc * 0.35 +           # Routing accuracy
             ensemble_acc * 0.35 +            # Ensemble performance from tier-2
             rescue_rate * 0.20 +             # Rescue capability
             sil_score * 0.10                 # Clustering quality
         )
         
-        print(f"{k:<5} {expected_acc:<10.4f} {ensemble_acc:<10.4f} {rescue_rate:<10.4f} {sil_score:<12.4f} {score:<10.4f}")
+        final_score = raw_score - penalty
         
-        scored_results.append((k, perf, score))
+        print(f"{k:<5} {expected_acc:<10.4f} {ensemble_acc:<10.4f} {rescue_rate:<10.4f} "
+              f"{sil_score:<8.4f} {penalty:<10.4f} {final_score:<10.4f}")
+        
+        scored_results.append((k, perf, final_score))
     
-    # Select best based on combined score
+    # Select best based on combined score with penalty
     best_k, best_perf, best_score = max(scored_results, key=lambda x: x[2])
+    
+    # Also show elbow detection
+    print(f"\n{'='*80}")
+    print("ELBOW ANALYSIS")
+    print(f"{'='*80}")
+    
+    if len(scored_results) > 2:
+        scores = [s[2] for s in scored_results]
+        improvements = [scores[i+1] - scores[i] for i in range(len(scores)-1)]
+        
+        print("Score improvements by k:")
+        for i, (k, _, _) in enumerate(scored_results[:-1]):
+            print(f"  k={k} to k={k+1}: {improvements[i]:+.4f}")
+        
+        # Find elbow point (where improvement drops significantly)
+        if len(improvements) > 1:
+            # More robust elbow detection
+            positive_improvements = [imp for imp in improvements if imp > 0]
+            if positive_improvements:
+                avg_positive_improvement = np.mean(positive_improvements)
+                for i, imp in enumerate(improvements):
+                    # Look for first significant drop in improvement
+                    if i > 0 and imp < avg_positive_improvement * 0.3 and improvements[i-1] > avg_positive_improvement * 0.5:
+                        elbow_k = scored_results[i][0]
+                        print(f"\nElbow detected at k={elbow_k} (improvement drops to {imp:.4f})")
+                        break
     
     return best_k, best_perf

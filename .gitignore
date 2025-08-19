@@ -30,11 +30,8 @@ case_studies.py
 utils_visualisation.py
 analysis_dump.py
 analysis/
-MoP/
-mop_constructor.py
+
 mop_strategy1.py
-mop_strategy2.py
 mop_strategy3.py
 objectives.py
 data_playground.py
-analysis.ipynb
