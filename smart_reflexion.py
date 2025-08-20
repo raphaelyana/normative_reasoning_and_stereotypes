@@ -1,7 +1,7 @@
 from typing import Optional, Dict, Literal, List
 import time
 import openai
-from utils.utils import call_llm
+from utils.call_llm import call_llm
 from profiles.profile_message import make_system_message
 from profiles.profile_dict import PERSON_SEEDS
 from pydantic import BaseModel

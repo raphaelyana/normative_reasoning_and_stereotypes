@@ -3,7 +3,7 @@ import json
 import time
 import openai
 import pandas as pd
-from utils.utils import call_llm
+from utils.call_llm import call_llm
 from pydantic import BaseModel
 from dataclasses import dataclass
 from cases.cases_config import CaseConfig
@@ -297,10 +297,6 @@ Your analysis:"""
         return prompt
     
     def _build_zero_shot_plus_prompt(self, input_text: str) -> str:
-        """
-        Fast classification with minimal guidance and *no numeric confidence*.
-        If unsure, provide 1–2 sentences of reasoning. Else, just classify.
-        """
         rules = "\n".join(f"- {r}" for r in self.case.label_rules)
         label_list = self.case.valid_labels
 

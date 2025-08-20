@@ -1,7 +1,7 @@
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 from enum import Enum
-from utils.utils import call_llm
+from utils.call_llm import call_llm
 from cases.cases_config import CaseConfig
 import numpy as np
 import pandas as pd

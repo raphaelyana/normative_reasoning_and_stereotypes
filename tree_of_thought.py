@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 import openai
 import time
-from utils.utils import call_llm
+from utils.call_llm import call_llm
 import re
 import pandas as pd
 from collections import defaultdict
