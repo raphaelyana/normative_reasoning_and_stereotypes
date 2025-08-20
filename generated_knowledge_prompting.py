@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any, Literal
 from collections import defaultdict
 import openai
-from utils import call_llm
+from utils.utils import call_llm
 import re
 import pandas as pd
 from cases.cases_config import CaseConfig

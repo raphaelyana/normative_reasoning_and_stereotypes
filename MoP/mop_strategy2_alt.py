@@ -15,8 +15,8 @@ class ClusterRoutingConfiguration:
     max_experts_per_cluster: int = 3
     fallback_ensemble_size: int = 5
     fallback_equal_weights: bool = True
-    cluster_column: str = 'synthetic_cluster_8'  # Default to k=8 based on your results
-    require_demographic_diversity: bool = True
+    cluster_column: str = None
+    #require_demographic_diversity: bool = True
     use_ensemble_for_cluster: bool = True  # Whether to use ensemble or single expert per cluster
 
 
@@ -24,7 +24,7 @@ class ClusterRoutingConfiguration:
 class ClusterRoutingRule:
     """A routing rule that maps clusters to expert profiles or ensembles."""
     cluster_id: int
-    expert_profiles: List[str]  # Can be single expert or ensemble
+    expert_profiles: List[str]  # single expert or ensemble of experts
     expert_accuracy: float
     baseline_accuracy: float
     improvement: float
@@ -51,6 +51,7 @@ class ClusterSmartRoutingMoP(base_MoP):
         self.fallback_ensemble_ = None
         self.cluster_column_ = None
         self.is_fitted_ = False
+
         
     def _analyze_cluster_performance(self, merged_df: pd.DataFrame) -> Dict[int, Dict]:
         """
@@ -169,7 +170,7 @@ class ClusterSmartRoutingMoP(base_MoP):
         if use_ensemble:
             # Calculate ensemble predictions
             predictions = []
-            for idx, row in df.iterrows():
+            for _, row in df.iterrows():
                 votes = []
                 for profile in profiles:
                     if profile in row:

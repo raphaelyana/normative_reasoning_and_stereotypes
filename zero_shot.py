@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 import openai
 import time
-from utils import call_llm
+from utils.utils import call_llm
 from profiles.profile_dict import PERSON_SEEDS
 from profiles.profile_message import make_system_message
 import re

@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from statistics import mean, stdev
 from typing import Any, Dict, List, Optional, Sequence, Literal
-from utils import call_llm
+from utils.utils import call_llm
 
 import openai
 import asyncio

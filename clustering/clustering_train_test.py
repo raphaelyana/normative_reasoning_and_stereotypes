@@ -9,7 +9,7 @@ from datetime import datetime
 from sklearn.cluster import KMeans
 from sentence_transformers import SentenceTransformer
 
-from clustering.clustering_alt import add_text_clusters, evaluate_cluster_with_tier2_ensembles
+from clustering.clustering import add_text_clusters, evaluate_cluster_with_tier2_ensembles
 from MoP.mop_strategy2_integration import create_cluster_routing_mop, ClusterSmartRoutingMoP
 from profiles.schema import PersonSet
 from cases.cases_config import CaseConfig

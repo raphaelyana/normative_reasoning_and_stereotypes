@@ -4,7 +4,7 @@ from typing import Dict, Optional, Tuple
 from dataclasses import dataclass
 
 # Import your existing functions
-from clustering.clustering_alt import add_text_clusters
+from clustering.clustering import add_text_clusters
 from MoP.mop_strategy2_alt import create_cluster_routing_mop, ClusterSmartRoutingMoP
 from profiles.schema import PersonSet
 from cases.cases_config import CaseConfig
@@ -61,7 +61,6 @@ def auto_configure_cluster_routing(
     print("AUTOMATED CLUSTER-BASED ROUTING CONFIGURATION")
     print("="*80)
     
-    # Step 1: Find optimal clustering
     print("\nStep 1: Finding optimal clustering...")
     merged_df_with_clusters, clustering_results = add_text_clusters(
         merged_df=merged_df,
@@ -73,14 +72,12 @@ def auto_configure_cluster_routing(
         complexity_penalty=complexity_penalty
     )
     
-    # Extract selected k from results
     selected_k = clustering_results.get('ensemble_metrics', {}).get('k', 8)
     cluster_column = f"synthetic_cluster_{selected_k}"
     
     print(f"\nOptimal clustering: k={selected_k}")
     print(f"Expected accuracy: {clustering_results.get('expected_accuracy', 0):.3f}")
     
-    # Step 2: Configure routing model
     print("\nStep 2: Configuring routing model...")
     routing_model = create_cluster_routing_mop(
         person_set=person_set,
@@ -88,16 +85,13 @@ def auto_configure_cluster_routing(
         case=case
     )
     
-    # Fit with automatic configuration
     routing_model.fit(
         merged_df=merged_df_with_clusters,
         clustering_results=clustering_results
     )
     
-    # Step 3: Generate predictions
     print("\nStep 3: Generating predictions...")
     
-    # Determine which dataset to evaluate on
     eval_df = evaluate_on_test if evaluate_on_test is not None else merged_df_with_clusters
     
     # Ensure cluster column exists in evaluation data
@@ -106,7 +100,8 @@ def auto_configure_cluster_routing(
         # You would need to assign clusters to test data here
         # This is a simplified version - in practice you'd use the fitted KMeans model
         eval_df = eval_df.copy()
-        eval_df[cluster_column] = 0  # Placeholder - should use actual cluster assignments
+        eval_embeddings = model.encode(eval_df[case.input_col].tolist(), show_progress_bar=True)
+        eval_df[cluster_column] = kmeans.predict(eval_embeddings)
     
     predictions = routing_model.predict(eval_df)
     
