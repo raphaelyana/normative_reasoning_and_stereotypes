@@ -1,4 +1,5 @@
 from xai_sdk.chat import user, system
+from typing import Optional
 
 def call_llm(client, model, prompt, system_message=None, max_tokens=300, temperature=0.0):
     
