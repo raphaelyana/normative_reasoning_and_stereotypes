@@ -13,11 +13,15 @@ DEFAULT_MODEL_DICT = {
     'default': 'gpt-4o-mini',
 }
 
+
+
 class SampleStats(BaseModel):
     tokens_used: Optional[int]
     prompt_tokens: Optional[int]
     completion_tokens: Optional[int]
     latency: float
+
+
 
 class ChainOfThoughts:
     def __init__(

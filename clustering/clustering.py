@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, Literal
 import pandas as pd
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -22,7 +22,8 @@ def add_text_clusters(merged_df: pd.DataFrame,
                      person_set: PersonSet,
                      min_k=3,
                      max_k=10,
-                     complexity_penalty="bic"):
+                     complexity_penalty="bic", 
+                     model: Literal["all-MiniLM-L6-v2"] = "all-MiniLM-L6-v2"):
     """
     Add text clusters and evaluate using ensemble-based methods.
     
@@ -48,19 +49,18 @@ def add_text_clusters(merged_df: pd.DataFrame,
             on="sample_id", how="left"
         )
     
-    # Generate embeddings
+
     print(f"\nGenerating embeddings for {len(merged_df)} samples...")
     model = SentenceTransformer("all-MiniLM-L6-v2")
     texts = merged_df[case.input_col].astype(str).tolist()
     embeddings = model.encode(texts, show_progress_bar=True)
     print(f"Embedding shape: {embeddings.shape}")
     
-    # Evaluate different k values
     best_k_results = []
     detailed_results = {}
     
     print(f"\n{'='*80}")
-    print("EVALUATING DIFFERENT K VALUES")
+    print("EVALUATING K VALUES")
     print(f"{'='*80}")
     
     for k in range(min_k, max_k+1):
@@ -72,16 +72,13 @@ def add_text_clusters(merged_df: pd.DataFrame,
         cluster_labels = kmeans.fit_predict(embeddings)
         merged_df[f"synthetic_cluster_{k}"] = cluster_labels
         
-        # Calculate silhouette score
         sil_score = silhouette_score(embeddings, cluster_labels)
         print(f"Silhouette Score: {sil_score:.4f}")
         
-        # Original routing performance
         routing_perf = evaluate_cluster_routing(
             merged_df, cluster_col=f"synthetic_cluster_{k}"
         )
         
-        # Enhanced evaluation using tier-2 ensemble analysis
         ensemble_perf = evaluate_cluster_with_tier2_ensembles(
             merged_df,
             person_set=person_set,
@@ -90,7 +87,6 @@ def add_text_clusters(merged_df: pd.DataFrame,
             k=k
         )
         
-        # Combine metrics
         routing_perf["ensemble_metrics"] = ensemble_perf
         routing_perf["silhouette_score"] = sil_score
         detailed_results[k] = {
@@ -101,7 +97,7 @@ def add_text_clusters(merged_df: pd.DataFrame,
         
         best_k_results.append((k, routing_perf))
     
-    # Select best k based on combined metrics
+
     best_k, best_perf = select_best_k(best_k_results, complexity_penalty=complexity_penalty)
     
     print(f"\n{'='*80}")
@@ -111,7 +107,6 @@ def add_text_clusters(merged_df: pd.DataFrame,
     print(f"Average Rescue Rate: {best_perf['ensemble_metrics']['avg_rescue_rate']:.4f}")
     print(f"{'='*80}")
     
-    # Keep only the best cluster column
     keep_col = f"synthetic_cluster_{best_k}"
     drop_cols = [c for c in merged_df.columns if c.startswith("synthetic_cluster_") and c != keep_col]
     merged_df = merged_df.drop(columns=drop_cols)
@@ -130,7 +125,6 @@ def evaluate_cluster_routing(df, cluster_col):
     profile_cols = [col for col in df.columns if col.startswith("profile")]
     
     for c, subdf in df.groupby(cluster_col):
-        # accuracy of each profile in cluster
         prof_acc = {p: (subdf[p] == subdf["true_label"]).mean() for p in profile_cols}
         best_prof, best_acc = max(prof_acc.items(), key=lambda x: x[1])
         cluster_perfs[c] = {
@@ -140,7 +134,6 @@ def evaluate_cluster_routing(df, cluster_col):
         }
         print(f"{c:<10} {len(subdf):<8} {best_prof[:25]:<25} {best_acc:<10.4f}")
     
-    # weighted expected performance
     weighted_acc = sum(
         len(subdf)/len(df)*cluster_perfs[c]["best_acc"]
         for c, subdf in df.groupby(cluster_col)
@@ -166,12 +159,10 @@ def evaluate_cluster_with_tier2_ensembles(merged_df: pd.DataFrame,
     cluster_ensemble_metrics = {}
     all_cluster_metrics = []
     
-    # Analyze each cluster using ensemble_by_trait_analysis
     for cluster_id, cluster_df in merged_df.groupby(cluster_col):
         n_samples = len(cluster_df)
         print(f"\n  Analyzing Cluster {cluster_id} (n={n_samples}):")
         
-        # Run ensemble_by_trait_analysis for this cluster
         try:
             ensemble_results = ensemble_by_trait_analysis(
                 cluster_df,
@@ -180,10 +171,8 @@ def evaluate_cluster_with_tier2_ensembles(merged_df: pd.DataFrame,
                 group_keys=("gender", "ethnicity", "age")
             )
             
-            # Extract key metrics from ensemble analysis
             baseline_acc = ensemble_results.get('baseline_accuracy', 0)
             
-            # Get best ensemble performance
             if ensemble_results.get('ensemble_results'):
                 best_ensemble_info = max(
                     ensemble_results['ensemble_results'].items(),
@@ -195,7 +184,6 @@ def evaluate_cluster_with_tier2_ensembles(merged_df: pd.DataFrame,
                 best_rescue_rate = best_ensemble_metrics['rescue_rate']
                 best_extra_error_rate = best_ensemble_metrics['extra_error_rate']
                 
-                # Get average metrics across all ensembles
                 all_ensembles = ensemble_results['ensemble_results'].values()
                 avg_ensemble_acc = np.mean([e['accuracy'] for e in all_ensembles])
                 avg_rescue_rate = np.mean([e['rescue_rate'] for e in all_ensembles])
@@ -232,7 +220,6 @@ def evaluate_cluster_with_tier2_ensembles(merged_df: pd.DataFrame,
             
         except Exception as e:
             print(f"    ERROR in ensemble analysis: {e}")
-            # Fallback to basic metrics
             baseline_acc = accuracy_score(cluster_df['true_label'], cluster_df['base_pred'])
             cluster_ensemble_metrics[cluster_id] = {
                 "size": n_samples,
@@ -251,7 +238,6 @@ def evaluate_cluster_with_tier2_ensembles(merged_df: pd.DataFrame,
         
         all_cluster_metrics.append(cluster_ensemble_metrics[cluster_id])
     
-    # Calculate overall metrics across all clusters
     if all_cluster_metrics:
         valid_clusters = [m for m in all_cluster_metrics if "error" not in m]
         if valid_clusters:
@@ -267,7 +253,6 @@ def evaluate_cluster_with_tier2_ensembles(merged_df: pd.DataFrame,
                 "clusters": cluster_ensemble_metrics
             }
         else:
-            # All clusters had errors
             overall_metrics = {
                 "k": k,
                 "best_cluster_ensemble_acc": 0,
