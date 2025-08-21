@@ -27,22 +27,17 @@ class ChainOfThoughts:
         model: Optional[str] = None,
         max_tokens: int = 800,
         task_definition: Optional[str] = None,
-        num_reasoning_steps: int = 4,  # kept for compatibility, not used
         person_key: Optional[str] = None,
         role_playing: Literal["active", "passive", "none"] = "none",
-        examples_df: Optional[pd.DataFrame] = None
     ):
         self.case = case
         self.case_name = case.case_name
         self.task_definition = task_definition
-        self.num_reasoning_steps = num_reasoning_steps
-
         self.client = client
         self.model = model if model else DEFAULT_MODEL_DICT["default"]
         self.max_tokens = max_tokens
         self.person_key = person_key
         self.role_playing = role_playing
-        self.examples_df = examples_df
 
         self.total_tokens = 0
         self.total_prompt_tokens = 0
@@ -106,14 +101,12 @@ Classification: [Choose from {label_list}]
 
 
 
-    def classify_with_strategy(self, text: str, strategy: Literal["optimized", "zero_plus"] = "optimized"):
+    def classify_with_strategy(self, text: str, strategy: Literal["optimized"] = "optimized"):
         """
         Run one of the two supported strategies and return (final_label, metrics_dict).
         """
         if strategy == "optimized":
             user_prompt = self._build_optimized_cot_prompt(text)
-        elif strategy == "zero_plus":
-            user_prompt = self._build_zero_shot_plus_prompt(text)
         else:
             raise ValueError(f"Unknown strategy: {strategy}. Use 'optimized' or 'zero_plus'.")
 
