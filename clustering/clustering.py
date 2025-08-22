@@ -39,9 +39,9 @@ def add_text_clusters(merged_df: pd.DataFrame,
         )
     
     print(f"\nGenerating embeddings for {len(merged_df)} samples...")
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+    embedding_model = SentenceTransformer(model)
     texts = merged_df[case.input_col].astype(str).tolist()
-    embeddings = model.encode(texts, show_progress_bar=True)
+    embeddings = embedding_model.encode(texts, show_progress_bar=True)
     print(f"Embedding shape: {embeddings.shape}")
     
     best_k_results = []
@@ -95,10 +95,10 @@ def add_text_clusters(merged_df: pd.DataFrame,
     print(f"{'='*80}")
     
     keep_col = f"synthetic_cluster_{best_k}"
-    drop_cols = [c for c in merged_df.columns if c.startswith("synthetic_cluster_") and c != keep_col]
+    drop_cols = [c for c in merged_df.columns if c.startswith("synthetic_cluster_") and c!=keep_col]
     merged_df = merged_df.drop(columns=drop_cols)
     
-    return merged_df, best_perf
+    return merged_df, best_perf, detailed_results
 
 
 def evaluate_cluster_routing(df, cluster_col):
@@ -292,35 +292,39 @@ def select_best_k(best_k_results, complexity_penalty="bic") -> Tuple[int, Dict]:
         sil_score = perf["silhouette_score"]
         
         if complexity_penalty == "bic":
-            base_penalty = (k * np.log(n_samples)) / n_samples
-            penalty = base_penalty * 0.5
+            base_penalty = (k*np.log(n_samples))/n_samples
+            penalty = base_penalty*0.5
             penalty = min(penalty, 0.25)
+
         elif complexity_penalty == "aic":
-            base_penalty = (2 * k) / n_samples
-            penalty = base_penalty * 0.3
+            base_penalty = (2 * k)/n_samples
+            penalty = base_penalty*0.3
             penalty = min(penalty, 0.20)
+
         elif complexity_penalty == "min_size":
             min_cluster_size = min(cluster['size'] for cluster in perf['ensemble_metrics']['clusters'].values())
-            min_threshold = n_samples * 0.05
+            min_threshold = n_samples*0.05
             if min_cluster_size < min_threshold:
-                penalty = 0.1 * (1 - min_cluster_size / min_threshold)
+                penalty = 0.1 * (1 - min_cluster_size/min_threshold)
             else:
                 penalty = 0.0
+
         elif complexity_penalty == "sqrt":
-            penalty = 0.01 * np.sqrt(k)
+            penalty = 0.01*np.sqrt(k)
+
         elif complexity_penalty == "linear":
-            penalty = 0.01 * k
+            penalty = 0.01*k
         else:
             penalty = 0.0
         
         raw_score = (
-            expected_acc * 0.35 +
-            ensemble_acc * 0.35 +
-            rescue_rate * 0.20 +
-            sil_score * 0.10
+            expected_acc*0.35 +
+            ensemble_acc*0.35 +
+            rescue_rate*0.20 +
+            sil_score*0.10
         )
         
-        final_score = raw_score - penalty
+        final_score = raw_score-penalty
         
         print(f"{k:<5} {expected_acc:<10.4f} {ensemble_acc:<10.4f} {rescue_rate:<10.4f} "
               f"{sil_score:<8.4f} {penalty:<10.4f} {final_score:<10.4f}")
