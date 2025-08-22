@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Callable
+from typing import List, Callable, Optional
 
 class CaseConfig(BaseModel):
     case_name: str
@@ -14,3 +14,5 @@ class CaseConfig(BaseModel):
     example_template_fewshots: Callable
     example_template_tot: Callable
     category_cols: list[str] = []
+    cot_focus: Optional[str] = None
+    cot_adversarial: Optional[str] = None

@@ -18,24 +18,12 @@ DEFAULT_MODEL_DICT = {
     'default': 'gpt-4o-mini',
 }
 
-##############################################
-###           ThoughState Class            ###
-##############################################
-
 class ThoughtState(Enum):
     PENDING = "pending"
     EVALUATING = "evaluating"
     COMPLETED = "completed"
     FAILED = "failed"
 
-
-
-##############################################
-###           dataclass Thought            ###
-###                                        ###
-###  Defines the different attributes at   ###
-###         every node of the tree.        ###
-##############################################
 
 @dataclass
 class Thought:
@@ -51,16 +39,6 @@ class Thought:
         if self.children is None:
             self.children = []
 
-
-
-
-
-##############################################
-###           class TreeOfThought          ###
-###                                        ###
-###  Defines the different attributes at   ###
-###         every node of the tree.        ###
-##############################################
 
 
 class TreeOfThought:
@@ -209,7 +187,7 @@ When the user requests labeled thoughts, always return a **valid JSON list** whe
 
 Each object must look like: { "thought": "...", "label": "Yes" } or { "thought": "...", "label": "No" }
 
-⚠️ If you omit the label field, the reasoning will be discarded.
+If you omit the label field, the reasoning will be discarded.
 
 The only valid label values are: "Yes" or "No".
 Do NOT use any other label values. Do NOT omit the label field.
@@ -281,49 +259,6 @@ Do NOT add text before or after the JSON."""
                 continue
 
         return thoughts
-
-    
-    unufel = """         #thoughts = []
-        #sections = re.split(r"###\s*Thought\s+\d+\s*", content)
-        
-        for i, section in enumerate(sections[1:]):
-            lines = section.strip().split("\n")
-            content_line = next((line for line in lines if line.lower().strip().startswith("- thought:")), "")
-            verdict_line = next((line for line in lines if line.lower().strip().startswith("- label:")), None)
-        
-            content_match = re.match(r"-\s*Thought\s*:\s*(.*)", content_line, re.IGNORECASE)
-            verdict_match = re.match(r"-\s*Label\s*:\s*(.*)", verdict_line, re.IGNORECASE) if verdict_line else None
-        
-            if not content_match:
-                print(f"[SKIP] No valid thought in section {i+1}")
-                continue
-        
-            thought_text = content_match.group(1).strip()
-            verdict = verdict_match.group(1).strip().capitalize() if verdict_match else None
-
-
-            if verdict and verdict not in {v.capitalize() for v in self.case.valid_labels}:
-                print(f"[WARN] Invalid label: '{verdict}' in section {i+1} → defaulting to None")
-                verdict = None
-        
-            try:
-                validated = ThoughtOutput.model_validate({
-                    "Thought": thought_text,
-                    "Label": verdict
-                })
-                new_thought = Thought(
-                    id="",
-                    parent_id=parent_id,
-                    content=validated.thought,
-                    state=ThoughtState.PENDING,
-                    score=0.0,
-                    verdict=validated.label
-                )
-            except Exception as e:
-                print(f"[ERROR] Invalid ThoughtOutput: {e}")
-                continue
-        
-            thoughts.append(new_thought)"""
 
 
     def evaluate_thought(self, thought: Thought, parent_thought: Optional[Thought] = None) -> float:
@@ -605,6 +540,25 @@ Do NOT add text before or after the JSON."""
         return self.case.label_map.get(raw_label, raw_label)
 
 
+    def enumerate_leaf_paths(tot) -> list[list]:
+        paths = []
+        root = tot.thoughts.get(tot.root_id)
+        if not root:
+            return paths
+    
+        def dfs(node, cur):
+            cur.append(node)
+            if not node.children:
+                if getattr(node, "verdict", None) is not None:
+                    paths.append(list(cur))
+            else:
+                for ch in node.children:
+                    dfs(ch, cur)
+            cur.pop()
+    
+        dfs(root, [])
+        return paths
+
 
     def print_full_tree(self, root: Optional[Thought] = None, indent: int = 0):
         if root is None:
@@ -642,103 +596,3 @@ Do NOT add text before or after the JSON."""
                 node_data["label"] = t.verdict
             tree_dict[node_id] = node_data
         return tree_dict
-
-    
-    
-
-
-
-
-
-##############################################
-###                                        ###
-###              Example usage             ###
-###                                        ###
-##############################################
-
-if __name__ == "__main__":
-
-    import os
-    from dotenv import load_dotenv
-    import openai
-
-    from case_studies import manipulation, stereotypes
-    from stereotype_definitions import stereotype_definition_short_binary as stereotype_definition
-    from manipulation_definitions import mental_manipulation_def1
-
-    from tree_of_thought import TreeOfThought  # adjust import path as needed
-
-    load_dotenv()
-    client = openai.OpenAI(api_key=os.environ.get("API_KEY_OPENAI"))
-
-    print("===== Stereotype Detection =====\n")
-
-    tot_stereotype = TreeOfThought(
-        case=stereotypes,
-        client=client,
-        max_branching_factor=3,
-        max_depth=3,
-        task_definition=stereotype_definition
-    )
-
-    prompt_stereotype = "French people are good kissers."
-    solution_stereotype = tot_stereotype.solve(prompt_stereotype)
-
-    print("\n📊 Metrics Summary (Stereotype):")
-    print(f"  Total LLM Calls        : {tot_stereotype.total_calls}")
-    print(f"  Total Tokens Used      : {tot_stereotype.total_tokens}")
-    print(f"    └─ Prompt Tokens     : {tot_stereotype.total_prompt_tokens}")
-    print(f"    └─ Completion Tokens : {tot_stereotype.total_completion_tokens}")
-    print(f"  Total Latency (sec)    : {tot_stereotype.total_latency:.2f}")
-    if tot_stereotype.total_calls > 0:
-        avg = tot_stereotype.total_latency / tot_stereotype.total_calls
-        print(f"  Avg Latency per Call   : {avg:.2f} sec")
-
-    print("\nSolution Path (Stereotype):\n")
-    for i, thought in enumerate(solution_stereotype):
-        print(f"Level {i}:")
-        print(f"  Thought: {thought.content.strip()}")
-        print(f"  Label: {thought.verdict}")
-        print(f"  Score: {thought.score:.2f}")
-        print("-" * 60)
-
-    print("\nFull Tree (Stereotype):\n")
-    tot_stereotype.print_full_tree()
-
-    print("\n\n===== Manipulation Detection =====\n")
-
-    tot_manipulation = TreeOfThought(
-        case=manipulation,
-        client=client,
-        max_branching_factor=3,
-        max_depth=3,
-        task_definition=mental_manipulation_def1
-    )
-
-    prompt_manipulation = """Person1: You think I'm a fake.
-Person2: I think it's what you think.
-Person1: No, it isn't what I think.
-Person2: Look... You made a very calculated move, and then made me feel embarrassed for responding to you. That wasn't necessary."""
-
-    solution_manipulation = tot_manipulation.solve(prompt_manipulation)
-
-    print("\n📊 Metrics Summary (Manipulation):")
-    print(f"  Total LLM Calls        : {tot_manipulation.total_calls}")
-    print(f"  Total Tokens Used      : {tot_manipulation.total_tokens}")
-    print(f"    └─ Prompt Tokens     : {tot_manipulation.total_prompt_tokens}")
-    print(f"    └─ Completion Tokens : {tot_manipulation.total_completion_tokens}")
-    print(f"  Total Latency (sec)    : {tot_manipulation.total_latency:.2f}")
-    if tot_manipulation.total_calls > 0:
-        avg = tot_manipulation.total_latency / tot_manipulation.total_calls
-        print(f"  Avg Latency per Call   : {avg:.2f} sec")
-
-    print("\nSolution Path (Manipulation):\n")
-    for i, thought in enumerate(solution_manipulation):
-        print(f"Level {i}:")
-        print(f"  Thought: {thought.content.strip()}")
-        print(f"  Label: {thought.verdict}")
-        print(f"  Score: {thought.score:.2f}")
-        print("-" * 60)
-
-    print("\nFull Tree (Manipulation):\n")
-    tot_manipulation.print_full_tree()

@@ -66,5 +66,9 @@ manipulation_case = CaseConfig(
     ),
 
     category_cols=["technique", "vulnerability"],
+
+    cot_focus="emotional pressure, hidden agendas, and coercive tactics",
+    
+    cot_adversarial="someone using subtle psychological pressure while appearing helpful",
 )
 

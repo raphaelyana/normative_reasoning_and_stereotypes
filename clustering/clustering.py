@@ -24,17 +24,6 @@ def add_text_clusters(merged_df: pd.DataFrame,
                      max_k=10,
                      complexity_penalty="bic", 
                      model: Literal["all-MiniLM-L6-v2"] = "all-MiniLM-L6-v2"):
-    """
-    Add text clusters and evaluate using ensemble-based methods.
-    
-    Parameters:
-    - merged_df: DataFrame with predictions
-    - case: CaseConfig object
-    - sample_df: DataFrame with sample data
-    - person_set: PersonSet object
-    - min_k: minimum number of clusters
-    - max_k: maximum number of clusters
-    """
     
     print(f"\n{'='*80}")
     print(f"CLUSTERING ANALYSIS: k={min_k} to k={max_k}")
@@ -49,7 +38,6 @@ def add_text_clusters(merged_df: pd.DataFrame,
             on="sample_id", how="left"
         )
     
-
     print(f"\nGenerating embeddings for {len(merged_df)} samples...")
     model = SentenceTransformer("all-MiniLM-L6-v2")
     texts = merged_df[case.input_col].astype(str).tolist()
@@ -97,7 +85,6 @@ def add_text_clusters(merged_df: pd.DataFrame,
         
         best_k_results.append((k, routing_perf))
     
-
     best_k, best_perf = select_best_k(best_k_results, complexity_penalty=complexity_penalty)
     
     print(f"\n{'='*80}")
@@ -115,7 +102,6 @@ def add_text_clusters(merged_df: pd.DataFrame,
 
 
 def evaluate_cluster_routing(df, cluster_col):
-    """Original cluster routing evaluation with added prints."""
     
     print(f"\nCluster Routing Analysis:")
     print(f"{'Cluster':<10} {'Size':<8} {'Best Profile':<25} {'Best Acc':<10}")
@@ -149,10 +135,6 @@ def evaluate_cluster_with_tier2_ensembles(merged_df: pd.DataFrame,
                                           case: CaseConfig,
                                           cluster_col: str,
                                           k: int) -> Dict[str, Any]:
-    """
-    Evaluate clusters using tier-2 ensemble_by_trait_analysis.
-    This function works without category columns as it uses PersonSet metadata.
-    """
     
     print(f"\nTier-2 Ensemble Analysis for {k} clusters:")
     
@@ -288,26 +270,11 @@ def evaluate_cluster_with_tier2_ensembles(merged_df: pd.DataFrame,
 
 
 def select_best_k(best_k_results, complexity_penalty="bic") -> Tuple[int, Dict]:
-    """
-    Select best k using combined metrics with complexity penalty.
-    
-    Considers:
-    - Expected accuracy (routing performance)
-    - Ensemble accuracy from tier-2 analysis
-    - Rescue rate
-    - Silhouette score
-    - Complexity penalty (BIC, AIC, or minimum cluster size)
-    
-    Parameters:
-    - best_k_results: list of (k, performance) tuples
-    - complexity_penalty: "bic", "aic", "min_size", or None
-    """
     
     print(f"\n{'='*80}")
     print("SCORING EACH K VALUE")
     print(f"{'='*80}")
     
-    # Get total number of samples from first result
     first_k, first_perf = best_k_results[0]
     n_samples = sum(cluster['size'] for cluster in first_perf['ensemble_metrics']['clusters'].values())
     print(f"Total samples: {n_samples}")
@@ -319,48 +286,38 @@ def select_best_k(best_k_results, complexity_penalty="bic") -> Tuple[int, Dict]:
     scored_results = []
     
     for k, perf in best_k_results:
-        # Components of the score
         expected_acc = perf["expected_accuracy"]
         ensemble_acc = perf["ensemble_metrics"]["best_cluster_ensemble_acc"]
         rescue_rate = perf["ensemble_metrics"]["avg_rescue_rate"]
         sil_score = perf["silhouette_score"]
         
-        # Calculate complexity penalty
         if complexity_penalty == "bic":
-            # BIC-style penalty with stronger scaling
             base_penalty = (k * np.log(n_samples)) / n_samples
-            # Scale up the penalty to be more impactful
-            penalty = base_penalty * 0.5  # Increased from 0.1 to 0.5
-            penalty = min(penalty, 0.25)  # Cap at 0.25
+            penalty = base_penalty * 0.5
+            penalty = min(penalty, 0.25)
         elif complexity_penalty == "aic":
-            # AIC-style penalty with stronger scaling
             base_penalty = (2 * k) / n_samples
             penalty = base_penalty * 0.3
             penalty = min(penalty, 0.20)
         elif complexity_penalty == "min_size":
-            # Penalty based on smallest cluster size
             min_cluster_size = min(cluster['size'] for cluster in perf['ensemble_metrics']['clusters'].values())
-            # Penalize if any cluster has fewer than 5% of samples
             min_threshold = n_samples * 0.05
             if min_cluster_size < min_threshold:
                 penalty = 0.1 * (1 - min_cluster_size / min_threshold)
             else:
                 penalty = 0.0
         elif complexity_penalty == "sqrt":
-            # Square root penalty - grows slower than linear but still meaningful
             penalty = 0.01 * np.sqrt(k)
         elif complexity_penalty == "linear":
-            # Simple linear penalty
             penalty = 0.01 * k
         else:
             penalty = 0.0
         
-        # Weighted combination with penalty
         raw_score = (
-            expected_acc * 0.35 +           # Routing accuracy
-            ensemble_acc * 0.35 +            # Ensemble performance from tier-2
-            rescue_rate * 0.20 +             # Rescue capability
-            sil_score * 0.10                 # Clustering quality
+            expected_acc * 0.35 +
+            ensemble_acc * 0.35 +
+            rescue_rate * 0.20 +
+            sil_score * 0.10
         )
         
         final_score = raw_score - penalty
@@ -370,10 +327,8 @@ def select_best_k(best_k_results, complexity_penalty="bic") -> Tuple[int, Dict]:
         
         scored_results.append((k, perf, final_score))
     
-    # Select best based on combined score with penalty
     best_k, best_perf, best_score = max(scored_results, key=lambda x: x[2])
     
-    # Also show elbow detection
     print(f"\n{'='*80}")
     print("ELBOW ANALYSIS")
     print(f"{'='*80}")
@@ -386,14 +341,11 @@ def select_best_k(best_k_results, complexity_penalty="bic") -> Tuple[int, Dict]:
         for i, (k, _, _) in enumerate(scored_results[:-1]):
             print(f"  k={k} to k={k+1}: {improvements[i]:+.4f}")
         
-        # Find elbow point (where improvement drops significantly)
         if len(improvements) > 1:
-            # More robust elbow detection
             positive_improvements = [imp for imp in improvements if imp > 0]
             if positive_improvements:
                 avg_positive_improvement = np.mean(positive_improvements)
                 for i, imp in enumerate(improvements):
-                    # Look for first significant drop in improvement
                     if i > 0 and imp < avg_positive_improvement * 0.3 and improvements[i-1] > avg_positive_improvement * 0.5:
                         elbow_k = scored_results[i][0]
                         print(f"\nElbow detected at k={elbow_k} (improvement drops to {imp:.4f})")
