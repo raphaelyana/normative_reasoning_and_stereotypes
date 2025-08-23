@@ -551,7 +551,7 @@ def consistency_vs_boldness_analysis(merged_df,
 def plot_consistency_boldness_analysis(consistency_results, 
                                        person_set: PersonSet = None,
                                        group_keys=("gender", "ethnicity", "age"),
-                                       figsize=(16, 10)):
+                                       figsize=(10, 6)):
     """
     Create comprehensive visualizations for consistency vs boldness analysis.
     
@@ -563,9 +563,6 @@ def plot_consistency_boldness_analysis(consistency_results,
     
     Updated for PersonSet structure and demographic bias detection.
     """
-    
-    fig, axes = plt.subplots(2, 2, figsize=figsize)
-    fig.suptitle('Consistency vs Boldness Analysis', fontsize=16, fontweight='bold')
     
     # Extract data
     consistency_data = consistency_results['consistency_data']
@@ -590,57 +587,47 @@ def plot_consistency_boldness_analysis(consistency_results,
     
     colors = [archetype_colors.get(archetypes[p]['archetype'], '#8c564b') for p in profiles]
     
-    # ===== PANEL 1: Consistency vs Boldness Scatter with Demographics =====
-    ax = axes[0, 0]
+    def _new_fig(title):
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
+        fig.suptitle('Consistency vs Boldness Analysis', fontsize=14, fontweight='bold')
+        ax.set_title(title)
+        return fig, ax
     
-    # Create demographic-based markers if PersonSet available
+    figs = {}
+
+    # Figure A: Consistency vs Boldness
+    figA, ax = _new_fig('Consistency vs Boldness Tradeoff')
     if person_set and len(analysis_df) > 0:
-        # Use first demographic trait for marker shapes
         primary_trait = group_keys[0] if group_keys else 'gender'
-        
         if primary_trait in analysis_df.columns:
-            trait_values = analysis_df[primary_trait].unique()
-            trait_values = [v for v in trait_values if v != "Unknown"]
-            
+            trait_values = [v for v in analysis_df[primary_trait].unique() if v != "Unknown"]
             markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p']
             trait_markers = {val: markers[i % len(markers)] for i, val in enumerate(trait_values)}
-            
-            # Plot by demographic groups
             for trait_val in trait_values:
                 mask = analysis_df[primary_trait] == trait_val
                 trait_subset = analysis_df[mask]
-                
                 if len(trait_subset) > 0:
                     vols = trait_subset['volatility'].values
                     bolds = trait_subset['boldness_score'].values
                     trait_colors = [archetype_colors.get(archetypes[p]['archetype'], '#8c564b') 
-                                  for p in trait_subset['profile'].values]
-                    
+                                    for p in trait_subset['profile'].values]
                     ax.scatter(vols, bolds, c=trait_colors, s=100, alpha=0.7, 
-                             marker=trait_markers[trait_val], edgecolors='black', linewidth=1,
-                             label=f'{primary_trait}={trait_val}')
-        else:
-            # Fallback to regular scatter
-            ax.scatter(volatilities, boldness_scores, c=colors, s=100, alpha=0.7, edgecolors='black')
+                               marker=trait_markers[trait_val], edgecolors='black', linewidth=1,
+                               label=f'{primary_trait}={trait_val}')
     else:
-        # Fallback to regular scatter
         ax.scatter(volatilities, boldness_scores, c=colors, s=100, alpha=0.7, edgecolors='black')
-    
-    # Add profile labels for extreme cases
+
     for i, profile in enumerate(profiles):
         if volatilities[i] > np.percentile(volatilities, 80) or boldness_scores[i] > np.percentile(boldness_scores, 80):
-            # Get demographic info for label
             if person_set:
                 traits = person_set.get_traits(profile, group_keys)
                 demo_label = "_".join(str(traits.get(k, '?'))[:3] for k in group_keys[:2] if traits.get(k) != "Unknown")
                 label = demo_label if demo_label else profile.replace('profile', 'P')
             else:
                 label = profile.replace('profile', 'P')
-                
             ax.annotate(label, (volatilities[i], boldness_scores[i]),
-                       xytext=(5, 5), textcoords='offset points', fontsize=8)
-    
-    # Add correlation line if significant
+                        xytext=(5, 5), textcoords='offset points', fontsize=8)
+
     if 'volatility_vs_boldness' in consistency_results['correlations']:
         corr_data = consistency_results['correlations']['volatility_vs_boldness']
         if corr_data['significant']:
@@ -648,23 +635,18 @@ def plot_consistency_boldness_analysis(consistency_results,
             p = np.poly1d(z)
             ax.plot(sorted(volatilities), p(sorted(volatilities)), "r--", alpha=0.8)
             ax.text(0.05, 0.95, f"r={corr_data['correlation']:.3f}*", 
-                   transform=ax.transAxes, bbox=dict(boxstyle="round", facecolor='white', alpha=0.8))
-    
+                    transform=ax.transAxes, bbox=dict(boxstyle="round", facecolor='white', alpha=0.8))
     ax.set_xlabel('Volatility (Higher = Less Consistent)')
     ax.set_ylabel('Boldness Score')
-    ax.set_title('Consistency vs Boldness Tradeoff')
     ax.grid(True, alpha=0.3)
-    
-    # Add legend if demographics used
     if person_set and len(analysis_df) > 0:
         ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
-    
-    # ===== PANEL 2: Volatility vs Rescue Rate =====
-    ax = axes[0, 1]
-    
+    plt.tight_layout()
+    figs['consistency_vs_boldness'] = figA
+
+    # Figure B: Volatility vs Rescue
+    figB, ax = _new_fig('Consistency vs Moral Value')
     ax.scatter(volatilities, rescue_rates, c=colors, s=100, alpha=0.7, edgecolors='black')
-    
-    # Add correlation line if significant
     if 'volatility_vs_rescue' in consistency_results['correlations']:
         corr_data = consistency_results['correlations']['volatility_vs_rescue']
         if corr_data['significant']:
@@ -672,129 +654,89 @@ def plot_consistency_boldness_analysis(consistency_results,
             p = np.poly1d(z)
             ax.plot(sorted(volatilities), p(sorted(volatilities)), "g--", alpha=0.8)
             ax.text(0.05, 0.95, f"r={corr_data['correlation']:.3f}*", 
-                   transform=ax.transAxes, bbox=dict(boxstyle="round", facecolor='white', alpha=0.8))
-    
+                    transform=ax.transAxes, bbox=dict(boxstyle="round", facecolor='white', alpha=0.8))
     ax.set_xlabel('Volatility (Higher = Less Consistent)')
     ax.set_ylabel('Rescue Rate (Moral Value)')
-    ax.set_title('Consistency vs Moral Value')
     ax.grid(True, alpha=0.3)
-    
-    # ===== PANEL 3: Profile Archetype Distribution by Demographics =====
-    ax = axes[1, 0]
-    
-    if person_set and len(analysis_df) > 0 and group_keys:
-        # Create stacked bar chart showing archetype distribution by demographics
+    plt.tight_layout()
+    figs['volatility_vs_rescue'] = figB
+
+    # Figure C: Archetype Distribution
+    figC, ax = _new_fig('Profile Archetype Distribution')
+    if person_set and len(analysis_df) > 0 and group_keys and group_keys[0] in analysis_df.columns:
         primary_trait = group_keys[0]
-        
-        if primary_trait in analysis_df.columns:
-            trait_values = analysis_df[primary_trait].unique()
-            trait_values = [v for v in trait_values if v != "Unknown"]
-            
-            archetype_by_trait = {}
-            for trait_val in trait_values:
-                archetype_by_trait[trait_val] = {}
-                subset = analysis_df[analysis_df[primary_trait] == trait_val]
-                
-                for _, row in subset.iterrows():
-                    profile = row['profile']
-                    if profile in archetypes:
-                        arch = archetypes[profile]['archetype']
-                        archetype_by_trait[trait_val][arch] = archetype_by_trait[trait_val].get(arch, 0) + 1
-            
-            # Create stacked bar chart
-            archetypes_list = list(archetype_colors.keys())
-            trait_positions = np.arange(len(trait_values))
-            
-            bottom = np.zeros(len(trait_values))
-            
-            for arch in archetypes_list:
-                counts = [archetype_by_trait[trait_val].get(arch, 0) for trait_val in trait_values]
-                ax.bar(trait_positions, counts, bottom=bottom, 
-                      color=archetype_colors[arch], label=arch, alpha=0.8)
-                bottom += counts
-            
-            ax.set_xticks(trait_positions)
-            ax.set_xticklabels(trait_values, rotation=45)
-            ax.set_xlabel(primary_trait.capitalize())
-            ax.set_ylabel('Number of Profiles')
-            ax.set_title(f'Archetype Distribution by {primary_trait.capitalize()}')
-            ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
-        else:
-            # Fallback to pie chart
-            archetype_counts = {}
-            for profile_data in archetypes.values():
-                arch = profile_data['archetype']
-                archetype_counts[arch] = archetype_counts.get(arch, 0) + 1
-            
-            archetype_names = list(archetype_counts.keys())
-            counts = list(archetype_counts.values())
-            colors_pie = [archetype_colors.get(arch, '#8c564b') for arch in archetype_names]
-            
-            wedges, texts, autotexts = ax.pie(counts, labels=archetype_names, colors=colors_pie, 
-                                             autopct='%1.0f%%', startangle=90)
-            ax.set_title('Profile Archetype Distribution')
+        trait_values = [v for v in analysis_df[primary_trait].unique() if v != "Unknown"]
+        archetype_by_trait = {}
+        for trait_val in trait_values:
+            archetype_by_trait[trait_val] = {}
+            subset = analysis_df[analysis_df[primary_trait] == trait_val]
+            for _, row in subset.iterrows():
+                profile = row['profile']
+                if profile in archetypes:
+                    arch = archetypes[profile]['archetype']
+                    archetype_by_trait[trait_val][arch] = archetype_by_trait[trait_val].get(arch, 0) + 1
+        archetypes_list = list(archetype_colors.keys())
+        trait_positions = np.arange(len(trait_values))
+        bottom = np.zeros(len(trait_values))
+        for arch in archetypes_list:
+            counts = [archetype_by_trait[trait_val].get(arch, 0) for trait_val in trait_values]
+            ax.bar(trait_positions, counts, bottom=bottom, 
+                   color=archetype_colors[arch], label=arch, alpha=0.8)
+            bottom += counts
+        ax.set_xticks(trait_positions)
+        ax.set_xticklabels(trait_values, rotation=45)
+        ax.set_xlabel(primary_trait.capitalize())
+        ax.set_ylabel('Number of Profiles')
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
     else:
-        # Fallback to pie chart
         archetype_counts = {}
         for profile_data in archetypes.values():
             arch = profile_data['archetype']
             archetype_counts[arch] = archetype_counts.get(arch, 0) + 1
-        
         archetype_names = list(archetype_counts.keys())
         counts = list(archetype_counts.values())
         colors_pie = [archetype_colors.get(arch, '#8c564b') for arch in archetype_names]
-        
-        wedges, texts, autotexts = ax.pie(counts, labels=archetype_names, colors=colors_pie, 
-                                         autopct='%1.0f%%', startangle=90)
-        ax.set_title('Profile Archetype Distribution')
-    
-    # ===== PANEL 4: Consistency Trends Across CV Folds =====
-    ax = axes[1, 1]
-    
-    # Show accuracy trends across folds for representative profiles
+        ax.pie(counts, labels=archetype_names, colors=colors_pie, autopct='%1.0f%%', startangle=90)
+    ax.grid(False)
+    plt.tight_layout()
+    figs['archetype_by_demo'] = figC
+
+    # Figure D: CV fold trends
+    figD, ax = _new_fig('Consistency Across CV Folds')
     representative_profiles = []
-    
-    # Get one profile from each archetype if possible
     for archetype in archetype_colors.keys():
         for profile, data in archetypes.items():
             if data['archetype'] == archetype and profile not in representative_profiles:
                 representative_profiles.append(profile)
                 break
-    
-    # Limit to 4 most interesting profiles
     representative_profiles = representative_profiles[:4]
-    
     if consistency_data:
         fold_numbers = list(range(1, len(list(consistency_data.values())[0]['fold_accuracies']) + 1))
-        
         for i, profile in enumerate(representative_profiles):
             if profile in consistency_data:
                 fold_accs = consistency_data[profile]['fold_accuracies']
                 if fold_accs:
                     archetype = archetypes[profile]['archetype']
                     color = archetype_colors.get(archetype, '#8c564b')
-                    
-                    # Get demographic info for legend
                     if person_set:
                         traits = person_set.get_traits(profile, group_keys)
                         demo_info = "_".join(str(traits.get(k, '?'))[:3] for k in group_keys[:2] if traits.get(k) != "Unknown")
                         legend_label = f"{demo_info} ({archetype})"
                     else:
                         legend_label = f"{profile.replace('profile', 'P')} ({archetype})"
-                
-                    ax.plot(fold_numbers, fold_accs, 'o-', color=color, alpha=0.7, 
-                           label=legend_label)
-                        
+                    ax.plot(fold_numbers, fold_accs, 'o-', color=color, alpha=0.7, label=legend_label)
         ax.set_xlabel('Cross-Validation Fold')
         ax.set_ylabel('Accuracy')
-        ax.set_title('Consistency Across CV Folds')
         ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
         ax.grid(True, alpha=0.3)
-    
     plt.tight_layout()
+    figs['cv_trends'] = figD
+
     plt.show()
-    
-    return fig
+
+    return figs
+
+
 
 
 def simplified_causal_modeling(merged_df, 
@@ -1439,7 +1381,7 @@ def simplified_causal_modeling(merged_df,
     }
 
 
-def visualize_causal_model(causal_results, figsize=(16, 12)):
+def visualize_causal_model(causal_results, figsize=(10, 6)):
     """
     Create comprehensive visualizations for causal modeling results.
     
@@ -1452,200 +1394,148 @@ def visualize_causal_model(causal_results, figsize=(16, 12)):
     Updated to work with PersonSet structure and professional output.
     """
     
-    fig, axes = plt.subplots(2, 2, figsize=figsize)
-    fig.suptitle('Causal Modeling: Profile Traits Effects on Bias Outcomes', fontsize=16, fontweight='bold')
-    
     causal_data = causal_results['causal_results']
     outcomes = list(causal_data.keys())
 
-    # Get all predictors and separate demographics from other traits
-    all_coeffs = list(next(iter(causal_data.values()))['coefficients'].keys())
+    # Collect predictors
+    all_coeffs = list(next(iter(causal_data.values()))['coefficients'].keys()) if causal_data else []
     demographic_predictors = [p for p in all_coeffs if any(x in p for x in ['gender', 'ethnicity'])]
     other_predictors = [p for p in all_coeffs if p not in demographic_predictors]
     all_predictors = demographic_predictors + other_predictors
-    
-    # ===== PANEL 1: Variance Decomposition =====
-    ax = axes[0, 0]
+
+    def _new_fig(title):
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
+        fig.suptitle('Causal Modeling: Profile Traits Effects on Bias Outcomes', fontsize=14, fontweight='bold')
+        ax.set_title(title, fontsize=11)
+        return fig, ax
+
+    figs = {}
+
+
+    # A) Variance Decomposition
+    figA, ax = _new_fig('Variance Decomposition: Demographics vs Other Traits')
     demo_contrib = [causal_data[o].get('demo_unique', 0) for o in outcomes]
     other_contrib = [causal_data[o].get('other_unique', 0) for o in outcomes]
     shared_contrib = [causal_data[o].get('shared_variance', 0) for o in outcomes]
-    
     x = np.arange(len(outcomes))
     width = 0.6
-    
     ax.bar(x, demo_contrib, width, label='Demographics', color='#1f77b4', alpha=0.8)
     ax.bar(x, other_contrib, width, bottom=demo_contrib, label='Other Traits', color='#ff7f0e', alpha=0.8)
     ax.bar(x, shared_contrib, width, bottom=np.array(demo_contrib) + np.array(other_contrib), 
            label='Shared Variance', color='#2ca02c', alpha=0.8)
-    
     for i, outcome in enumerate(outcomes):
         r2 = causal_data[outcome].get('r2_full', 0)
         ax.text(i, r2 + 0.01, f'R²={r2:.2f}', ha='center', va='bottom', fontweight='bold')
-    
     ax.set_xlabel('Outcome Variables')
     ax.set_ylabel('Variance Explained (R²)')
-    ax.set_title('Variance Decomposition: Demographics vs Other Traits')
     ax.set_xticks(x)
     ax.set_xticklabels([o.replace('_', ' ').title() for o in outcomes], rotation=45, ha='right')
     ax.legend()
     ax.grid(True, alpha=0.3)
-    
-    # ===== PANEL 2: Coefficient Heatmap =====
-    ax = axes[0, 1]
-    coef_matrix = np.zeros((len(all_predictors), len(outcomes)))
-    
-    for j, outcome in enumerate(outcomes):
-        for i, predictor in enumerate(all_predictors):
-            coef_matrix[i, j] = causal_data[outcome]['coefficients'].get(predictor, 0)
-    
-    # Scientific notation for color scaling + better contrast
-    vmax = max(0.05, np.abs(coef_matrix).max() * 0.8)
-    im = ax.imshow(coef_matrix, cmap='RdBu_r', aspect='auto',
-                   vmin=-vmax, vmax=vmax)
-    
-    # Add coefficient values in scientific notation
-    for i in range(len(all_predictors)):
-        for j in range(len(outcomes)):
-            value = coef_matrix[i, j]
-            text_color = "white" if abs(value) > vmax * 0.5 else "black"
-            ax.text(j, i, f'{value:.1e}', ha="center", va="center",
-                    color=text_color, fontweight='bold', fontsize=8)
-    
-    ax.set_xticks(np.arange(len(outcomes)))
-    ax.set_yticks(np.arange(len(all_predictors)))
-    ax.set_xticklabels([o.replace('_', ' ').title() for o in outcomes],
-                       rotation=45, ha='right', fontsize=8)
-    ax.set_yticklabels([p.replace('_', ' ').title() for p in all_predictors],
-                       fontsize=8)
-    ax.set_title('Causal Path Coefficients (β)', fontsize=10)
-    
-    plt.colorbar(im, ax=ax, shrink=0.8, format='%.1e').set_label('Coefficient Value')
-    
-    # ===== PANEL 3: Mediation Analysis =====
-    ax = axes[1, 0]
+    plt.tight_layout()
+    figs['variance_decomposition'] = figA
+
+
+    # B) Coefficient Heatmap
+    figB, ax = _new_fig('Causal Path Coefficients (β)')
+    if all_predictors and outcomes:
+        coef_matrix = np.zeros((len(all_predictors), len(outcomes)))
+        for j, outcome in enumerate(outcomes):
+            for i, predictor in enumerate(all_predictors):
+                coef_matrix[i, j] = causal_data[outcome]['coefficients'].get(predictor, 0)
+        vmax = max(0.05, np.abs(coef_matrix).max() * 0.8)
+        im = ax.imshow(coef_matrix, cmap='RdBu_r', aspect='auto', vmin=-vmax, vmax=vmax)
+        for i in range(len(all_predictors)):
+            for j in range(len(outcomes)):
+                value = coef_matrix[i, j]
+                text_color = "white" if abs(value) > vmax * 0.5 else "black"
+                ax.text(j, i, f'{value:.1e}', ha="center", va="center",
+                        color=text_color, fontweight='bold', fontsize=8)
+        ax.set_xticks(np.arange(len(outcomes)))
+        ax.set_yticks(np.arange(len(all_predictors)))
+        ax.set_xticklabels([o.replace('_', ' ').title() for o in outcomes],
+                           rotation=45, ha='right', fontsize=8)
+        ax.set_yticklabels([p.replace('_', ' ').title() for p in all_predictors], fontsize=8)
+        plt.colorbar(im, ax=ax, shrink=0.8, format='%.1e').set_label('Coefficient Value')
+    else:
+        ax.text(0.5, 0.5, 'No coefficients available', ha='center', va='center', transform=ax.transAxes)
+    plt.tight_layout()
+    figs['coef_heatmap'] = figB
+
+
+    # C) Mediation Analysis
+    figC, ax = _new_fig('Mediation Analysis: Other Traits vs Demographics')
     mediation = causal_results.get('mediation_evidence', {})
-    
     if mediation:
         ratios = [mediation[o].get('mediation_strength', 0) for o in outcomes if o in mediation]
         valid_outcomes = [o for o in outcomes if o in mediation]
-        
         if ratios:
             colors = ['#2ca02c' if r > 1.5 else '#ff7f0e' if r > 0.8 else '#d62728' for r in ratios]
-            
             bars = ax.bar(range(len(valid_outcomes)), ratios, color=colors, alpha=0.7)
             ax.axhline(1.5, color='green', linestyle='--', label='Strong Mediation (>1.5)', alpha=0.7)
             ax.axhline(0.8, color='orange', linestyle='--', label='Partial Mediation (>0.8)', alpha=0.7)
-            
             for i, (bar, r) in enumerate(zip(bars, ratios)):
-                ax.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.1,
-                        f'{r:.2f}', ha='center', va='bottom', fontweight='bold')
-            
-            ax.set_ylabel('Mediation Ratio (Other Traits / Demographics)')
-            ax.set_title('Mediation Analysis: Other Traits vs Demographics')
+                ax.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.1, f'{r:.2f}',
+                        ha='center', va='bottom', fontweight='bold')
+            ax.set_ylabel('Mediation Ratio')
             ax.set_xticks(range(len(valid_outcomes)))
             ax.set_xticklabels([o.replace('_', ' ').title() for o in valid_outcomes], rotation=45, ha='right')
             ax.legend()
             ax.grid(True, alpha=0.3)
         else:
-            ax.text(0.5, 0.5, 'No mediation data available', ha='center', va='center', 
-                   transform=ax.transAxes, fontsize=12)
-            ax.set_title('Mediation Analysis: No Data')
+            ax.text(0.5, 0.5, 'No mediation data available', ha='center', va='center', transform=ax.transAxes)
     else:
-        ax.text(0.5, 0.5, 'No mediation analysis available', ha='center', va='center', 
-               transform=ax.transAxes, fontsize=12)
-        ax.set_title('Mediation Analysis: No Data')
+        ax.text(0.5, 0.5, 'No mediation analysis available', ha='center', va='center', transform=ax.transAxes)
+    plt.tight_layout()
+    figs['mediation'] = figC
 
-    # ===== PANEL 4: Simplified Causal Network =====
-    ax = axes[1, 1]
-    
-    # Define node positions
-    node_pos = {
-        'Demographics': (0.2, 0.8),
-        'Other Traits': (0.2, 0.5),
-        'Accuracy': (0.8, 0.9),
-        'Rescue Rate': (0.8, 0.7),
-        'Extra Error Rate': (0.8, 0.5),
-        'Bias Magnitude': (0.8, 0.3)
-    }
-    
-    # Handle additional outcomes like volatility
-    outcome_positions = [(0.8, 0.9), (0.8, 0.7), (0.8, 0.5), (0.8, 0.3), (0.8, 0.1)]
+
+    # D) Causal Network
+    figD, ax = _new_fig('Causal Network Structure')
+    outcome_positions = [(0.8, y) for y in (0.9, 0.7, 0.5, 0.3, 0.1)]
+    actual_node_pos = {'Demographics': (0.2, 0.8), 'Other Traits': (0.2, 0.4)}
     outcome_names = [o.replace('_', ' ').title() for o in outcomes]
-    
-    # Update node positions for actual outcomes
-    actual_node_pos = {
-        'Demographics': (0.2, 0.8),
-        'Other Traits': (0.2, 0.4)
-    }
-    
     for i, outcome_name in enumerate(outcome_names):
         if i < len(outcome_positions):
             actual_node_pos[outcome_name] = outcome_positions[i]
-
-    # Draw nodes
     for node, (x, y) in actual_node_pos.items():
         if node == 'Demographics':
-            color = '#1f77b4'
-            size = 1200
+            color = '#1f77b4'; size = 1200
         elif node == 'Other Traits':
-            color = '#ff7f0e' 
-            size = 1200
+            color = '#ff7f0e'; size = 1200
         else:
-            color = '#2ca02c'
-            size = 800
-            
+            color = '#2ca02c'; size = 800
         ax.scatter(x, y, s=size, c=color, edgecolors='black', alpha=0.7, linewidth=2)
         ax.text(x, y-0.06, node, ha='center', va='top', fontweight='bold', fontsize=9,
                 bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8))
-
-    # Draw arrows for strongest causal paths
     strongest_predictors = causal_results.get('strongest_predictors', {})
-    
     for outcome, pred_info in strongest_predictors.items():
         if not pred_info or not pred_info.get('predictor'):
             continue
-            
         predictor = pred_info['predictor']
         coefficient = pred_info.get('coefficient', 0)
-        
         outcome_display = outcome.replace('_', ' ').title()
         if outcome_display not in actual_node_pos:
             continue
-            
-        # Determine source node
-        if any(predictor.startswith(f'{trait}_') for trait in ['gender', 'ethnicity']):
-            start_node = 'Demographics'
-        else:
-            start_node = 'Other Traits'
-        
-        if start_node in actual_node_pos:
-            start_pos = actual_node_pos[start_node]
-            end_pos = actual_node_pos[outcome_display]
-            
-            # Calculate arrow properties
-            line_width = min(abs(coefficient) * 20, 4) + 0.5
-            color = '#2ca02c' if coefficient > 0 else '#d62728'
-            
-            ax.annotate('', xy=end_pos, xytext=start_pos, 
-                        arrowprops=dict(arrowstyle='->', lw=line_width,
-                                        color=color, alpha=0.7))
-
-    # Add interaction arrow between Demographics and Other Traits
+        start_node = 'Demographics' if any(predictor.startswith(f'{t}_') for t in ['gender','ethnicity']) else 'Other Traits'
+        start_pos = actual_node_pos[start_node]; end_pos = actual_node_pos[outcome_display]
+        line_width = min(abs(coefficient) * 20, 4) + 0.5
+        color = '#2ca02c' if coefficient > 0 else '#d62728'
+        ax.annotate('', xy=end_pos, xytext=start_pos, 
+                    arrowprops=dict(arrowstyle='->', lw=line_width, color=color, alpha=0.7))
     if 'Demographics' in actual_node_pos and 'Other Traits' in actual_node_pos:
         ax.annotate('', xy=actual_node_pos['Other Traits'], xytext=actual_node_pos['Demographics'],
                     arrowprops=dict(arrowstyle='->', lw=2, color='#1f77b4', alpha=0.5, linestyle='--'))
-
-    ax.axis('off')
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.set_title('Causal Network Structure')
+    ax.axis('off'); ax.set_xlim(0,1); ax.set_ylim(0,1)
     ax.text(0.02, 0.02, 'Green = Positive Effect, Red = Negative Effect\nLine thickness ∝ Effect size',
             transform=ax.transAxes, bbox=dict(boxstyle="round", facecolor='white', alpha=0.9), 
-            fontsize=8, verticalalignment='bottom')
-
+            fontsize=8, va='bottom')
     plt.tight_layout()
+    figs['causal_network'] = figD
+
     plt.show()
-    return fig
+
+    return figs
 
 
 
