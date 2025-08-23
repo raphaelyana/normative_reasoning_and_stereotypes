@@ -57,8 +57,6 @@ def fetch_categories_mmlu(subject_list: List[str] = SUBJECT_LIST,
         dfs.append(df)
 
     mmlu_full_df = pd.concat(dfs, ignore_index=True)
-    print(mmlu_full_df.shape)
-    print(mmlu_full_df.head())
 
     return mmlu_full_df
 

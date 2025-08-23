@@ -832,7 +832,7 @@ def simplified_causal_modeling(merged_df,
                 rs["category_col"] = cat_col
                 rescue_stats_list.append(rs)
         
-                bp = detect_systematic_biases(merged_df, category_col=cat_col)
+                bp = detect_systematic_biases(merged_df, person_set=person_set, category_col=cat_col)
                 bp["category_col"] = cat_col
                 bias_patterns_list.append(bp)
         if not rescue_stats_list:
@@ -844,7 +844,6 @@ def simplified_causal_modeling(merged_df,
         print(f"WARNING: Could not get rescue/bias stats: {e}")
         print("Creating simplified metrics...")
         
-        # Fallback: create simplified stats
         rescue_stats = []
         bias_patterns = []
         
@@ -852,7 +851,6 @@ def simplified_causal_modeling(merged_df,
             if profile not in merged_df.columns:
                 continue
                 
-            # Simplified rescue rate
             base_correct = (merged_df['base_pred'] == merged_df['true_label'])
             profile_correct = (merged_df[profile] == merged_df['true_label'])
             rescued = ((~base_correct) & profile_correct).sum()
