@@ -28,7 +28,7 @@ mmlu_case = CaseConfig(
 
     example_template_tot=lambda row: "",
 
-    category_cols=[],       # will actually be updated depending on the chosen categories
+    category_cols=["subject"],       # will actually be updated depending on the chosen categories
                             # in the implementation part, so to leave empty    
 
     # Not sure yet these work for the CoT using MMLU but it is worth trying it.

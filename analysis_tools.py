@@ -8,7 +8,7 @@ import numpy as np
 from enum import Enum
 from profiles.schema import PersonSet
 from cases.cases_config import CaseConfig
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 
 
 def load_and_merge_profiles(
@@ -19,6 +19,7 @@ def load_and_merge_profiles(
     sample_id_col: str = "sample_id",
     label_col: str = "true_label",
     pred_col: str = "pred_label",
+    extra_sample_cols: Optional[List[str]] = None,
 ) -> pd.DataFrame:
 
     df_base = pd.read_csv(base_file_path)
@@ -46,9 +47,14 @@ def load_and_merge_profiles(
     sample_df = sample_df.reset_index(drop=True)
     sample_df[sample_id_col] = sample_df.index
 
-    extra_cols = [col for col in case.category_cols if col in sample_df.columns]
+    meta_candidates = (case.category_cols if hasattr(case, "category_cols") else [])
+    if extra_sample_cols:
+        meta_candidates = list(meta_candidates) + list(extra_sample_cols)
+
+    meta_columns = [col for col in meta_candidates if col in sample_df.columns]
+
     merged = merged.merge(
-        sample_df[[sample_id_col] + extra_cols],
+        sample_df[[sample_id_col] + meta_columns],
         on=sample_id_col,
         how="left"
     )
@@ -59,8 +65,6 @@ def load_and_merge_profiles(
         merged[col] = merged[col].astype(str).str.strip().str.lower()
 
     fixed_columns = [sample_id_col, label_col, "base_pred"]
-    meta_columns = extra_cols
-
     profile_columns = [
         col for col in merged.columns
         if col.startswith("profile") and col not in fixed_columns + meta_columns
@@ -68,7 +72,7 @@ def load_and_merge_profiles(
 
     def extract_profile_number(col_name):
         match = re.search(r"profile(\d+)", col_name)
-        return int(match.group(1)) if match else float('inf')
+        return int(match.group(1)) if match else float("inf")
 
     profile_columns = sorted(profile_columns, key=extract_profile_number)
 
