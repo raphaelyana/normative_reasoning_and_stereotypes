@@ -777,6 +777,7 @@ def print_all_rescue_analyses(rescue_analysis_all: Dict[str, Dict[str, Any]]) ->
     else:
         print(f"\nSingle category column analysis complete.")
 
+
 def detect_systematic_biases(
     merged: pd.DataFrame,
     person_set: PersonSet,
@@ -784,105 +785,105 @@ def detect_systematic_biases(
     baseline_col: str = "base_pred",
     profile_prefix: str = "profile",
     positive_label: str = "stereotype",
-    negative_label: str = "unrelated",
-    label_col: Optional[str] = None,
-    alpha: float = 0.05
+    negative_label: str = "unrelated"
 ) -> pd.DataFrame:
+    """
+    Fixed version using get_demographic_info_fixed
+    
+    Parameters:
+    -----------
+    merged : pd.DataFrame
+        DataFrame containing predictions and categories
+    person_set : PersonSet
+        PersonSet containing profile metadata
+    category_col : str, default="stereotype_type"
+        Column name containing category labels
+    baseline_col : str, default="base_pred"
+        Column name containing baseline predictions
+    profile_prefix : str, default="profile"
+        Prefix for identifying profile columns
+    positive_label : str, default="stereotype"
+        Label representing positive class
+    negative_label : str, default="unrelated"
+        Label representing negative class
+    
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame containing bias patterns with columns:
+        - category: Category value
+        - profile: Profile identifier
+        - demographic: Demographic information for profile
+        - bias_direction: Direction of bias (more_positive, more_negative, neutral)
+        - bias_magnitude: Magnitude of bias (0-1)
+        - weighted_bias_magnitude: Bias weighted by category size
+        - n_mislabelling: Total number of mislabeled instances
+        - mislabelling_rate: Rate of mislabeling in category
+        - category_size: Number of samples in category
+        - positive_mislabelling: Number of false positives
+        - negative_mislabelling: Number of false negatives
+    """
 
-    if category_col not in merged.columns or baseline_col not in merged.columns:
-        raise ValueError("Missing required columns.")
+    required_cols = [category_col, baseline_col]
+    missing_cols = [c for c in required_cols if c not in merged.columns]
+    if missing_cols:
+        raise ValueError(f"Missing required columns: {missing_cols}")
 
     profile_cols = [c for c in merged.columns if c.startswith(profile_prefix)]
     if not profile_cols:
         raise ValueError(f"No columns found with prefix '{profile_prefix}'")
 
-    if label_col is None:
-        raise ValueError("Cannot infer true_label column from merged_df; provide it explicitly.")
-
-    df = merged.copy()
-    for c in [baseline_col, label_col] + profile_cols:
-        df[c] = df[c].astype(str).str.strip().str.lower()
-
+    # Map profiles to demographics once using fixed function
     trait_by_profile = {p: get_demographic_info(p, person_set) for p in profile_cols}
 
-    global_size = len(df)
-    rows = []
+    bias_patterns = []
+    global_size = len(merged)
 
-    union_labels = set(df[label_col].dropna().unique())
-    union_labels |= set(df[baseline_col].dropna().unique())
-    for p in profile_cols:
-        union_labels |= set(df[p].dropna().unique())
-    task_is_binary = len(union_labels) == 2
-    posneg_strings_present = {positive_label, negative_label}.issubset(union_labels)
+    for category_value in merged[category_col].dropna().unique():
+        category_data = merged[merged[category_col] == category_value]
+        baseline = category_data[baseline_col]
+        size = len(category_data)
 
-    for cat_val, cat_df in df.groupby(category_col, dropna=True):
-        size = len(cat_df)
-        y = cat_df[label_col].values
-        b0 = cat_df[baseline_col].values
-        base_err = (b0 != y)
+        for profile in profile_cols:
+            profile_preds = category_data[profile]
+            
+            # Count mislabeling in both directions
+            pos_mislabelling = ((baseline == negative_label) & (profile_preds == positive_label)).sum()
+            neg_mislabelling = ((baseline == positive_label) & (profile_preds == negative_label)).sum()
 
-        for p in profile_cols:
-            pp = cat_df[p].values
-            prof_err = (pp != y)
+            total_mislabelling = pos_mislabelling + neg_mislabelling
+            mislabelling_rate = total_mislabelling / size if size > 0 else 0
 
-            a = int((~base_err & ~prof_err).sum())
-            b = int((~base_err &  prof_err).sum())
-            c = int(( base_err & ~prof_err).sum())
-            d = int(( base_err &  prof_err).sum())
-
-            bias_mag = (b - c) / size if size else 0.0
-            weighted = bias_mag * (size / global_size if global_size else 0.0)
-
-            direction = "more_errors" if b > c else ("fewer_errors" if c > b else "neutral")
-
-            orig_dir = None
-            if task_is_binary and posneg_strings_present:
-                pos_mis = int(((b0 == negative_label) & (pp == positive_label)).sum())
-                neg_mis = int(((b0 == positive_label) & (pp == negative_label)).sum())
-                if pos_mis > neg_mis:
-                    orig_dir = "more_positive"
-                elif neg_mis > pos_mis:
-                    orig_dir = "more_negative"
-                else:
-                    orig_dir = "neutral"
-
-            if mcnemar is not None:
-                try:
-                    exact = (b + c) <= 25
-                    res = mcnemar([[a, b], [c, d]], exact=exact, correction=not exact)
-                    pval = float(res.pvalue)
-                except Exception:
-                    pval = 1.0
+            # Determine bias direction and magnitude
+            if pos_mislabelling > neg_mislabelling:
+                bias_direction = "more_positive"
+                bias_magnitude = (pos_mislabelling - neg_mislabelling) / size
+            elif neg_mislabelling > pos_mislabelling:
+                bias_direction = "more_negative"
+                bias_magnitude = (neg_mislabelling - pos_mislabelling) / size
             else:
-                pval = 1.0
+                bias_direction = "neutral"
+                bias_magnitude = 0.0
 
-            rescue_rate = c/((b0!=y).sum()) if (b0 != y).sum()>0 else 0.0
-            extra_err_rate = b/((b0 == y).sum()) if (b0 == y).sum()>0 else 0.0
+            # Weight bias by category size relative to total dataset
+            weighted_bias_magnitude = bias_magnitude * (size / global_size)
 
-
-            rows.append({
-                "category": cat_val,
-                "profile": p,
-                "demographic": trait_by_profile[p],
-                "bias_direction": direction,
-                "orig_bias_direction": orig_dir,
-                "bias_magnitude": bias_mag,
-                "weighted_bias_magnitude": weighted,
-                "n_mislabelling": b+c,
-                "mislabelling_rate": (b + c)/size if size else 0.0,
-                "rescue_rate": rescue_rate,          
-                "extra_err_rate": extra_err_rate,  
+            bias_patterns.append({
+                "category": category_value,
+                "profile": profile,
+                "demographic": trait_by_profile[profile],
+                "bias_direction": bias_direction,
+                "bias_magnitude": bias_magnitude,
+                "weighted_bias_magnitude": weighted_bias_magnitude,
+                "n_mislabelling": total_mislabelling,
+                "mislabelling_rate": mislabelling_rate,
                 "category_size": size,
-                "a_both_correct": a,
-                "b_base_correct_profile_wrong": b,
-                "c_base_wrong_profile_correct": c,
-                "d_both_wrong": d,
-                "mcnemar_p": pval,
-                "statistically_meaningful": pval < alpha
+                "positive_mislabelling": pos_mislabelling,
+                "negative_mislabelling": neg_mislabelling,
             })
 
-    bias_df = pd.DataFrame(rows)
-    bias_df = bias_df.sort_values("weighted_bias_magnitude", ascending=False, key=lambda s: s.abs())
+    bias_df = pd.DataFrame(bias_patterns)
+    bias_df = bias_df.sort_values("weighted_bias_magnitude", ascending=False, key=abs)
     return bias_df
 
 
@@ -891,24 +892,51 @@ def analyze_systematic_bias_patterns(
     person_set: PersonSet,
     category_col: str = "stereotype_type",
     baseline_col: str = "base_pred",
-    profile_prefix: str = "profile",
-    label_col: Optional[str] = None,
-    alpha: float = 0.05
+    profile_prefix: str = "profile"
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Comprehensive analysis of systematic bias patterns with statistical rigor.
+    
+    Performs complete bias pattern analysis including sample size considerations,
+    reliability assessments, and meaningful pattern identification. Provides
+    comprehensive statistical analysis of prediction biases across demographic
+    profiles and content categories.
+    
+    Parameters:
+    -----------
+    merged_df : pd.DataFrame
+        DataFrame containing predictions, categories, and profile information
+    person_set : PersonSet
+        PersonSet containing profile metadata
+    category_col : str, default="stereotype_type"
+        Column name containing category labels
+    baseline_col : str, default="base_pred"
+        Column name containing baseline predictions
+    profile_prefix : str, default="profile"
+        Prefix for identifying profile columns
+    
+    Returns:
+    --------
+    Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
+        - bias_patterns: Complete bias analysis results
+        - meaningful_patterns: Statistically significant patterns only
+        - category_summary: Category-level aggregated statistics
+    """
+    
     print("SYSTEMATIC BIAS PATTERN ANALYSIS")
     print("=" * 60)
 
+    # Run bias detection with fixed function
     bias_patterns = detect_systematic_biases(
         merged_df,
         person_set,
         category_col=category_col,
         baseline_col=baseline_col,
-        profile_prefix=profile_prefix,
-        label_col=label_col,
-        alpha=alpha
+        profile_prefix=profile_prefix
     )
-    bias_patterns = bias_patterns.sort_values("weighted_bias_magnitude", ascending=False, key=lambda s: s.abs())
+    bias_patterns = bias_patterns.sort_values("weighted_bias_magnitude", ascending=False, key=abs)
 
+    # Dataset composition
     category_sizes = merged_df.groupby(category_col).size().reset_index()
     category_sizes.columns = ['category', 'sample_size']
     total_samples = len(merged_df)
@@ -934,6 +962,7 @@ def analyze_systematic_bias_patterns(
         print(f"{str(row['category']):<15}{str(row['profile']):<20}{row['bias_direction']:<15}"
               f"{row['bias_magnitude']:<10.3f}{row['weighted_bias_magnitude']:<10.3f}{row['n_mislabelling']:<8}{row['category_size']}")
 
+    # Reliability analysis
     large = bias_patterns[bias_patterns['category_size'] >= 100]
     medium = bias_patterns[(bias_patterns['category_size'] >= 50) & (bias_patterns['category_size'] < 100)]
     small = bias_patterns[bias_patterns['category_size'] < 50]
@@ -944,7 +973,8 @@ def analyze_systematic_bias_patterns(
     print(f"Medium (50–99): {medium['category'].nunique()}")
     print(f"Small (<50): {small['category'].nunique()}")
 
-    def meets_effect_floor(row):
+    # Statistically meaningful bias detection
+    def assess_bias_significance(row):
         if row['category_size'] >= 100:
             return abs(row['bias_magnitude']) >= 0.02
         elif row['category_size'] >= 50:
@@ -952,9 +982,9 @@ def analyze_systematic_bias_patterns(
         else:
             return abs(row['bias_magnitude']) >= 0.05
 
-    bias_patterns['effect_floor'] = bias_patterns.apply(meets_effect_floor, axis=1)
-    meaningful = bias_patterns[(bias_patterns['statistically_meaningful']) & (bias_patterns['effect_floor'])].copy()
-    meaningful = meaningful.sort_values("weighted_bias_magnitude", key=lambda s: s.abs(), ascending=False)
+    bias_patterns['statistically_meaningful'] = bias_patterns.apply(assess_bias_significance, axis=1)
+    meaningful = bias_patterns[bias_patterns['statistically_meaningful']].copy()
+    meaningful = meaningful.sort_values("weighted_bias_magnitude", key=abs, ascending=False)
 
     print(f"\nSTATISTICALLY MEANINGFUL BIAS PATTERNS")
     print("-" * 70)
@@ -962,12 +992,18 @@ def analyze_systematic_bias_patterns(
 
     print(f"\nTOP 15 STATISTICALLY MEANINGFUL PATTERNS")
     print("-" * 90)
-    print(f"{'Category':<15}{'Profile':<20}{'Direction':<15}{'Mag.':<10}{'Weighted':<10}{'Size':<8}{'p'}")
+    print(f"{'Category':<15}{'Profile':<20}{'Direction':<15}{'Mag.':<10}{'Weighted':<10}{'Size':<8}{'Threshold'}")
     print("-" * 90)
     for _, row in meaningful.head(15).iterrows():
+        threshold = (
+            "≥2.0%" if row['category_size'] >= 100 else
+            "≥3.0%" if row['category_size'] >= 50 else
+            "≥5.0%"
+        )
         print(f"{str(row['category']):<15}{str(row['profile']):<20}{row['bias_direction']:<15}"
-              f"{row['bias_magnitude']:<10.3f}{row['weighted_bias_magnitude']:<10.3f}{row['category_size']:<8}{row['mcnemar_p']:.3g}")
+              f"{row['bias_magnitude']:<10.3f}{row['weighted_bias_magnitude']:<10.3f}{row['category_size']:<8}{threshold}")
 
+    # Category summary
     category_summary = bias_patterns.groupby('category').agg({
         'bias_magnitude': ['mean', 'max', 'std'],
         'weighted_bias_magnitude': 'sum',
@@ -975,7 +1011,7 @@ def analyze_systematic_bias_patterns(
         'mislabelling_rate': 'mean',
         'category_size': 'first'
     }).round(3)
-
+    
     category_summary.columns = [
         'avg_bias_magnitude', 'max_bias_magnitude', 'bias_std',
         'total_weighted_bias', 'total_mislabelling', 'avg_mislabelling_rate', 'sample_size'
@@ -1008,77 +1044,92 @@ def analyze_systematic_bias_patterns_multi_category(
     person_set: PersonSet,
     case: CaseConfig,
     baseline_col: str = "base_pred",
-    profile_prefix: str = "profile",
-    label_col: Optional[str] = None,
-    alpha: float = 0.05
+    profile_prefix: str = "profile"
 ) -> Dict[str, Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
+    """
+    Analyze systematic bias patterns across all category columns in the case
+    
+    Returns:
+    --------
+    Dict mapping category_col -> (bias_patterns, meaningful_patterns, category_summary)
+    """
+    
     print("MULTI-CATEGORY SYSTEMATIC BIAS PATTERN ANALYSIS")
     print("=" * 80)
-
+    
     results = {}
+    
     for cat_col in case.category_cols:
         if cat_col not in merged_df.columns:
             print(f"  Category '{cat_col}' not found in data, skipping...")
             continue
-
+            
         print(f"\n{'='*60}")
         print(f"ANALYZING CATEGORY: {cat_col.upper()}")
         print(f"{'='*60}")
-
+        
+        # Check if this category has sufficient data
         category_counts = merged_df[cat_col].value_counts()
         print(f"Category distribution for {cat_col}:")
         for cat_val, count in category_counts.head(10).items():
             print(f"  {cat_val}: {count} samples")
-
+        
         if len(category_counts) < 2:
             print(f"  Category '{cat_col}' has insufficient variation, skipping...")
             continue
-
+            
         try:
             bias_patterns, meaningful_patterns, category_summary = analyze_systematic_bias_patterns(
                 merged_df,
                 person_set=person_set,
                 category_col=cat_col,
                 baseline_col=baseline_col,
-                profile_prefix=profile_prefix,
-                label_col=label_col,
-                alpha=alpha
+                profile_prefix=profile_prefix
             )
+            
             results[cat_col] = (bias_patterns, meaningful_patterns, category_summary)
-
+            
+            # Print summary for this category
             print(f"\nSUMMARY FOR {cat_col.upper()}:")
             print(f"  • Total bias patterns: {len(bias_patterns)}")
             print(f"  • Meaningful patterns: {len(meaningful_patterns)}")
             print(f"  • Categories analyzed: {bias_patterns['category'].nunique()}")
             print(f"  • Profiles with bias: {bias_patterns['profile'].nunique()}")
+            
             if len(meaningful_patterns) > 0:
                 top_bias = meaningful_patterns.iloc[0]
                 print(f"  • Strongest bias: {top_bias['category']} | {top_bias['profile']} | "
                       f"{top_bias['bias_direction']} | mag={top_bias['bias_magnitude']:.3f}")
+            
         except Exception as e:
             print(f"=== Error analyzing category '{cat_col}': {e}")
             continue
-
+    
     print(f"\n{'='*80}")
     print("MULTI-CATEGORY ANALYSIS COMPLETE")
     print(f"{'='*80}")
     print(f"Successfully analyzed {len(results)} out of {len(case.category_cols)} categories")
+    
     return results
 
 
 
 def print_multi_category_bias_summary(bias_results: Dict[str, Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]):
+    """
+    Print a comprehensive summary across all category columns with proper terminology
+    """
     print("\n" + "="*80)
     print("CROSS-CATEGORY BIAS ANALYSIS SUMMARY")
     print("="*80)
-
+    
     total_patterns = 0
     total_meaningful = 0
     category_stats = []
-
+    
     for cat_col, (bias_patterns, meaningful_patterns, category_summary) in bias_results.items():
         total_patterns += len(bias_patterns)
         total_meaningful += len(meaningful_patterns)
+        
         category_stats.append({
             'category_column': cat_col,
             'total_patterns': len(bias_patterns),
@@ -1088,46 +1139,50 @@ def print_multi_category_bias_summary(bias_results: Dict[str, Tuple[pd.DataFrame
             'avg_bias_magnitude': bias_patterns['bias_magnitude'].mean() if len(bias_patterns) > 0 else 0,
             'unique_category_values': bias_patterns['category'].nunique() if len(bias_patterns) > 0 else 0
         })
-
+    
     print(f"OVERALL STATISTICS:")
     print(f"  • Total category columns analyzed: {len(bias_results)}")
     print(f"  • Total bias patterns: {total_patterns:,}")
     print(f"  • Total meaningful patterns: {total_meaningful:,}")
-    print(f"  • Overall meaningful rate: {0 if total_patterns==0 else total_meaningful/total_patterns:.1%}")
-
+    print(f"  • Overall meaningful rate: {total_meaningful/total_patterns:.1%}")
+    
     print(f"\nPER-CATEGORY COLUMN BREAKDOWN:")
     print(f"{'Category Column':<20}{'Patterns':<10}{'Meaningful':<12}{'Rate':<8}{'Max Bias':<10}{'Avg Bias':<10}{'Values'}")
     print("-" * 85)
+    
     for stats in sorted(category_stats, key=lambda x: x['meaningful_patterns'], reverse=True):
         print(f"{stats['category_column']:<20}{stats['total_patterns']:<10}{stats['meaningful_patterns']:<12}"
               f"{stats['meaningful_rate']:<8.1%}{stats['max_bias_magnitude']:<10.3f}"
               f"{stats['avg_bias_magnitude']:<10.3f}{stats['unique_category_values']}")
-
+    
+    # Find cross-category patterns - Fixed terminology
     print(f"\nCROSS-CATEGORY INSIGHTS:")
-    if len(bias_results) == 0:
-        return
-    frames = []
-    for cat, (_, meaningful, _) in bias_results.items():
-        if meaningful is not None and len(meaningful) > 0:
-            frames.append(meaningful.assign(source_category_column=cat))
-    if len(frames) == 0:
-        return
-    all_meaningful = pd.concat(frames, ignore_index=True)
-    profile_bias_counts = all_meaningful['profile'].value_counts()
-    print(f"  • Most frequently biased profiles across category values:")
-    for profile, count in profile_bias_counts.head(5).items():
-        print(f"    - {profile}: appears in {count} category values")
-    if len(bias_results) > 1:
-        category_bias_counts = all_meaningful['source_category_column'].value_counts()
-        print(f"  • Category columns with most bias patterns:")
-        for category, count in category_bias_counts.items():
-            print(f"    - {category}: {count} meaningful bias patterns")
-    else:
-        category_value_counts = all_meaningful['category'].value_counts()
-        only_key = list(bias_results.keys())[0]
-        print(f"  • Category values with most bias patterns in {only_key}:")
-        for category_value, count in category_value_counts.items():
-            print(f"    - {category_value}: {count} meaningful bias patterns")
+    
+    # Most biased profiles across all category columns
+    all_meaningful = pd.concat([
+        meaningful.assign(source_category_column=cat) 
+        for cat, (_, meaningful, _) in bias_results.items()
+    ], ignore_index=True)
+    
+    if len(all_meaningful) > 0:
+        profile_bias_counts = all_meaningful['profile'].value_counts()
+        print(f"  • Most frequently biased profiles across category values:")
+        for profile, count in profile_bias_counts.head(5).items():
+            print(f"    - {profile}: appears in {count} category values")
+        
+        # Most problematic category columns
+        if len(bias_results) > 1:
+            category_bias_counts = all_meaningful['source_category_column'].value_counts()
+            print(f"  • Category columns with most bias patterns:")
+            for category, count in category_bias_counts.items():
+                print(f"    - {category}: {count} meaningful bias patterns")
+        else:
+            # Single category column - show breakdown by category values
+            category_value_counts = all_meaningful['category'].value_counts()
+            print(f"  • Category values with most bias patterns in {list(bias_results.keys())[0]}:")
+            for category_value, count in category_value_counts.items():
+                print(f"    - {category_value}: {count} meaningful bias patterns")
+
 
 
 
@@ -1605,9 +1660,7 @@ def run_full_preliminary_analysis(
     bias_results = analyze_systematic_bias_patterns_multi_category(
         merged_df,
         person_set=person_set,
-        case=case,
-        label_col="true_label",
-        alpha=0.05
+        case=case
     )
     
     # Extract results by category

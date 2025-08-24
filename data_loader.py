@@ -224,7 +224,6 @@ def load_mentalmanip_dataset(
     return sample_mentalmanip, sample_examples_mentalmanip
 
 
-
 def load_mmlu_dataset(
         input_df: pd.DataFrame,
         sample_per_subject: int = 50,
@@ -295,6 +294,24 @@ def load_mmlu_dataset(
 
     sample_mmlu["sample_id"] = sample_mmlu.index
     sample_examples_mmlu["sample_id"] = sample_examples_mmlu.index
+
+    col_order = [
+        "sample_id",
+        "question",
+        "answer",
+        "subject",
+        "category",
+        "choices",
+        "formatted_prompt",
+    ]
+
+    def reorder(df):
+        final_cols = [c for c in col_order if c in df.columns]
+        other_cols = [c for c in df.columns if c not in final_cols]
+        return df[final_cols + other_cols]
+
+    sample_mmlu = reorder(sample_mmlu)
+    sample_examples_mmlu = reorder(sample_examples_mmlu)
 
     return sample_mmlu, sample_examples_mmlu
 
