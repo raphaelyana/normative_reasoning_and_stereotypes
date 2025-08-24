@@ -856,6 +856,10 @@ def detect_systematic_biases(
             else:
                 pval = 1.0
 
+            rescue_rate = c/((b0!=y).sum()) if (b0 != y).sum()>0 else 0.0
+            extra_err_rate = b/((b0 == y).sum()) if (b0 == y).sum()>0 else 0.0
+
+
             rows.append({
                 "category": cat_val,
                 "profile": p,
@@ -866,6 +870,8 @@ def detect_systematic_biases(
                 "weighted_bias_magnitude": weighted,
                 "n_mislabelling": b+c,
                 "mislabelling_rate": (b + c)/size if size else 0.0,
+                "rescue_rate": rescue_rate,          
+                "extra_err_rate": extra_err_rate,  
                 "category_size": size,
                 "a_both_correct": a,
                 "b_base_correct_profile_wrong": b,

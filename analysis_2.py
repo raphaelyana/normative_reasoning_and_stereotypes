@@ -36,16 +36,14 @@ from cases.cases_config import CaseConfig
 def build_trait_groups(merged_df: pd.DataFrame, person_set: PersonSet, group_keys=("gender", "ethnicity", "age")) -> Dict[str, list]:
     """
     Dynamically build profile groups based on group_keys using PersonSet metadata.
-    Updated to work with the new PersonSet structure and flexible group_keys.
+    Works for enums and strings, lowercases everything.
     """
     def norm_val(v):
-        """Normalize values for consistent grouping."""
-        if v == "Unknown":
+        if hasattr(v, "value"):  # Enum
+            v = v.value
+        if v is None or str(v).lower() in {"", "unknown", "none", "nan"}:
             return "unknown"
-        elif isinstance(v, (int, float)):
-            return str(v)
-        else:
-            return str(v).lower()
+        return str(v).strip().lower()
 
     profile_cols = [col for col in merged_df.columns if col.startswith("profile")]
     trait_groups = defaultdict(list)
@@ -55,23 +53,17 @@ def build_trait_groups(merged_df: pd.DataFrame, person_set: PersonSet, group_key
 
     debug_traits = defaultdict(set)
 
-    for profile in profile_cols:     
+    for profile in profile_cols:
         traits = person_set.get_traits(profile, group_keys)
-        
-        normalized_traits = {k: norm_val(traits.get(k, "Unknown")) for k in group_keys}
-        
+        normalized_traits = {k: norm_val(traits.get(k, "unknown")) for k in group_keys}
+
         for k, v in normalized_traits.items():
             debug_traits[k].add(v)
-        
+
         group_parts = []
         for k in group_keys:
-            val = normalized_traits[k]
-            if val != "unknown":
-                group_parts.append(val)
-            else:
-                print(f"  WARNING: {profile} has unknown {k}: {traits}")
-                group_parts.append("unknown")
-        
+            group_parts.append(normalized_traits.get(k, "unknown"))
+
         group_name = "_".join(group_parts)
         trait_groups[group_name].append(profile)
 
@@ -87,29 +79,32 @@ def build_trait_groups(merged_df: pd.DataFrame, person_set: PersonSet, group_key
 
 
 
+
 def majority_vote_ensemble(df: pd.DataFrame, profile_list: list) -> pd.Series:
     """
-    Calculate majority vote across profile predictions.
-    Enhanced with better error handling.
+    Majority vote across profile predictions with normalization.
+    Returns '' when no valid vote.
     """
     available_profiles = [p for p in profile_list if p in df.columns]
     if not available_profiles:
         print(f"WARNING: No available profiles from list: {profile_list}")
         return pd.Series([''] * len(df), index=df.index)
 
-    preds = df[available_profiles]
-    
+    preds = df[available_profiles].applymap(lambda x: str(x).strip().lower() if pd.notna(x) else "")
+
     def get_majority_vote(row):
-        valid_votes = [v for v in row if pd.notna(v) and v != '']
+        valid_votes = [v for v in row if v not in ("", "nan", "none")]
         if not valid_votes:
             return ''
-        
-        vote_counts = Counter(valid_votes)
-        majority_vote = vote_counts.most_common(1)[0][0]
-        return majority_vote
-    
-    votes = preds.apply(get_majority_vote, axis=1)
-    return votes
+        counts = Counter(valid_votes)
+        top = counts.most_common()
+        if len(top)>=2 and top[0][1]==top[1][1]:
+            tied = [k for k, c in counts.items() if c == top[0][1]]
+            return sorted(tied)[0]
+        return top[0][0]
+
+    return preds.apply(get_majority_vote, axis=1)
+
 
 
 def ensemble_by_trait_analysis(
@@ -118,53 +113,37 @@ def ensemble_by_trait_analysis(
     case: CaseConfig,
     group_keys=("gender", "ethnicity", "age")
 ) -> Dict[str, Any]:
-    """
-    Selective Ensemble Performance Analysis - Updated for PersonSet Framework
-    
-    Tests majority vote performance using specific trait groups based on group_keys.
-    Compares to full ensemble and baseline to show how role design affects
-    system-level safety and performance.
-    
-    Parameters:
-    - merged_df: DataFrame containing predictions and true labels
-    - person_set: PersonSet object containing trait metadata
-    - group_keys: tuple of metadata fields to analyze
-    
-    Returns:
-    - dict with ensemble results, category analysis, and recommendations
-    """
-    
     print("="*80)
     print("ENSEMBLE BY TRAIT ANALYSIS - PERSONSET VERSION")
     print("="*80)
     print(f"Group keys: {group_keys}")
-    
-    # Build trait groups using PersonSet
-    trait_groups = build_trait_groups(merged_df, person_set, group_keys)
-    
-    # Calculate baseline performance
-    true_labels = merged_df['true_label']
-    baseline_preds = merged_df['base_pred']
+
+    df = merged_df.copy()
+    profile_cols = [c for c in df.columns if c.startswith("profile")]
+    for c in ['true_label', 'base_pred', *profile_cols]:
+        if c in df.columns:
+            df[c] = df[c].astype(str).str.strip().str.lower()
+
+    trait_groups = build_trait_groups(df, person_set, group_keys)
+
+    # Baseline performance
+    true_labels = df['true_label']
+    baseline_preds = df['base_pred']
     baseline_accuracy = accuracy_score(true_labels, baseline_preds)
-    
     print(f"Baseline accuracy: {baseline_accuracy:.4f}")
     print("\nEnsemble Performance by Trait Group:")
     print("-" * 50)
-    
-    # Calculate ensemble performance for each trait group
+
     ensemble_results = {}
-    
     for group_name, profile_list in trait_groups.items():
         if len(profile_list) == 0:
             continue
-            
-        ensemble_preds = majority_vote_ensemble(merged_df, profile_list)
 
+        ensemble_preds = majority_vote_ensemble(df, profile_list)
         if len(ensemble_preds) > 0 and not ensemble_preds.eq('').all():
             ensemble_accuracy = accuracy_score(true_labels, ensemble_preds)
             improvement = ensemble_accuracy - baseline_accuracy
 
-            # Calculate rescue and error metrics
             base_correct = (baseline_preds == true_labels)
             ensemble_correct = (ensemble_preds == true_labels)
 
@@ -194,57 +173,53 @@ def ensemble_by_trait_analysis(
                   f"n={len(profile_list)}")
         else:
             print(f"{group_name:30s}: No valid predictions")
-    
+
     print(f"\n{'='*60}")
     print("CATEGORY-SPECIFIC ENSEMBLE PERFORMANCE")
     print(f"{'='*60}")
-    
+
     category_results = {}
-    category_cols = getattr(case, "category_cols", None) or ["stereotype_type"]
-    
+    category_cols = getattr(case, "category_cols", None) or ["subject"]  # for MMLU
+
     for cat_col in category_cols:
-        if cat_col not in merged_df.columns:
-            print(f"WARNING: category_col '{cat_col}' not found in merged_df")
+        if cat_col not in df.columns:
+            print(f"WARNING: category_col '{cat_col}' not found in data")
             continue
-    
-        categories = merged_df[cat_col].dropna().unique()
-    
+
+        categories = df[cat_col].dropna().unique()
         for category in categories:
-            cat_subset = merged_df[merged_df[cat_col] == category]
+            cat_subset = df[df[cat_col] == category]
             cat_true = cat_subset['true_label']
             cat_baseline = cat_subset['base_pred']
             cat_baseline_acc = accuracy_score(cat_true, cat_baseline)
-    
+
             print(f"\n{cat_col.upper()} = {str(category).upper()} (n={len(cat_subset)}):")
             print(f"Baseline accuracy: {cat_baseline_acc:.4f}")
             print("-" * 40)
-    
+
             category_key = f"{cat_col}:{category}"
             category_results[category_key] = {
                 'baseline_accuracy': cat_baseline_acc,
                 'ensembles': {}
             }
-    
+
             for ensemble_name, ensemble_info in ensemble_results.items():
                 if 'ensemble_preds' in ensemble_info:
                     cat_ensemble_preds = ensemble_info['ensemble_preds'].loc[cat_subset.index]
-    
                     if not cat_ensemble_preds.eq('').all():
                         cat_ensemble_acc = accuracy_score(cat_true, cat_ensemble_preds)
                         cat_improvement = cat_ensemble_acc - cat_baseline_acc
-    
                         category_results[category_key]['ensembles'][ensemble_name] = {
                             'accuracy': cat_ensemble_acc,
                             'improvement': cat_improvement
                         }
                         print(f"  {ensemble_name:25s}: {cat_ensemble_acc:.4f} ({cat_improvement:+.4f})")
-            
 
     if ensemble_results:
         sorted_ensembles = sorted(ensemble_results.items(), key=lambda x: x[1]['accuracy'], reverse=True)
         sorted_by_safety = sorted(ensemble_results.items(), key=lambda x: x[1]['extra_error_rate'])
         sorted_by_rescue = sorted(ensemble_results.items(), key=lambda x: x[1]['rescue_rate'], reverse=True)
-    
+
         print(f"\n{'='*60}")
         print("ENSEMBLE RANKINGS")
         print(f"{'='*60}")
@@ -299,6 +274,7 @@ def ensemble_by_trait_analysis(
     }
 
 
+
 def cluster_level_bias_patterns(
     merged_df, 
     person_set: PersonSet,
@@ -314,126 +290,80 @@ def cluster_level_bias_patterns(
         "accuracy_consensus": True,
     }
 ):
-    """
-    Cluster-level Bias and Rescue Pattern Analysis - Updated for PersonSet Framework
-    
-    Evaluates grouped behaviors using existing persona clusters.
-    For each cluster, computes:
-    - Average bias_magnitude, rescue_rate, accuracy
-    - Identifies tradeoffs and recommends profile subsets for aligned ensembles
-    
-    Parameters:
-    - merged_df: DataFrame containing predictions and true labels
-    - person_set: PersonSet object containing trait metadata
-    - similarity_results: Pre-computed clustering results (optional)
-    - group_keys: tuple of metadata fields to analyze
-    """
-    
     print("="*80)
     print("CLUSTER-LEVEL BIAS AND RESCUE PATTERNS - PERSONSET VERSION")
     print("="*80)
     print(f"Group keys: {group_keys}")
-    
-    # Get clustering results if not provided
-    if similarity_results is None:
-        try:
-            similarity_results = analyze_persona_similarity(merged_df)
-        except NameError:
-            print("ERROR: analyze_persona_similarity function not found")
-            print("Creating mock clustering results for demonstration...")
-            
-            # Create mock clusters based on trait groups
-            trait_groups = build_trait_groups(merged_df, person_set, group_keys)
-            mock_clusters = {}
-            
-            for i, (group_name, profiles) in enumerate(trait_groups.items()):
-                cluster_id = f"cluster_{i+1}"
-                mock_clusters[cluster_id] = {
-                    'profiles': profiles,
-                    'internal_agreement': np.random.uniform(0.85, 0.98),
-                    'trait_signature': group_name
-                }
-            
-            similarity_results = {'clusters': mock_clusters}
-    
 
+    # Normalize data
+    df = merged_df.copy()
+    profile_cols = [c for c in df.columns if c.startswith("profile")]
+    for c in ['true_label', 'base_pred', *profile_cols]:
+        if c in df.columns:
+            df[c] = df[c].astype(str).str.strip().str.lower()
+
+    # Get clustering results if not provided (must pass person_set!)
+    if similarity_results is None:
+        similarity_results = analyze_persona_similarity(df, person_set=person_set)
+
+    # Rescue & bias patterns (multi-category)
     try:
         category_cols = getattr(case, "category_cols", None)
         if not category_cols:
-            print("Error in retrieving category columns - defaulting back to ['stereotype_type']")
-            category_cols = ["stereotype_type"]
+            print("Error retrieving category columns - defaulting to ['subject']")
+            category_cols = ["subject"]
 
         rescue_stats_list = []
         bias_patterns_list = []
         for cat_col in category_cols:
-            if cat_col in merged_df.columns:
-                rs = rescue_stats_by_category(merged_df, category_col=cat_col)
+            if cat_col in df.columns:
+                rs = rescue_stats_by_category(df, category_col=cat_col)
                 rs["category_col"] = cat_col
                 rescue_stats_list.append(rs)
-        
-                bp = detect_systematic_biases(merged_df, person_set=person_set, category_col=cat_col)
+
+                bp = detect_systematic_biases(
+                    df, person_set=person_set, category_col=cat_col,
+                    baseline_col="base_pred", profile_prefix="profile",
+                    label_col="true_label"
+                )
                 bp["category_col"] = cat_col
                 bias_patterns_list.append(bp)
+
         if not rescue_stats_list:
-            raise ValueError("No valid category columns found in merged_df.")
-        
+            raise ValueError("No valid category columns found in df.")
+
         rescue_stats = pd.concat(rescue_stats_list, ignore_index=True)
         bias_patterns = pd.concat(bias_patterns_list, ignore_index=True)
 
-    except NameError:
-        print("WARNING: rescue_stats_by_category or detect_systematic_biases functions not found")
-        print("=== [ Creating random statistics for avoiding error ] ===")
-        print("WARNING: This data is just to provide a visual example, it has nothing to do with your obtained results.")
-        
-        profile_cols = [col for col in merged_df.columns if col.startswith("profile")]
-        
+    except Exception as e:
+        print("WARNING: Could not compute rescue/bias stats:", e)
+        # (Optional) leave your fallback random generation here if you want
 
-        ### FAKE DATA JUST TO AVOID
-        random_rescue_data = []
-        for profile in profile_cols:
-            if profile in merged_df.columns:
-                accuracy = (merged_df[profile] == merged_df['true_label']).mean()
-                random_rescue_data.append({
-                    'profile': profile,
-                    'rescue_rate': max(0, accuracy - 0.71 + np.random.normal(0, 0.02)),
-                    'extra_err_rate': max(0.01, 0.05 - (accuracy - 0.71) * 2 + np.random.normal(0, 0.01)),
-                    'rescued': int(np.random.uniform(5, 50)),
-                    'extra_errors': int(np.random.uniform(2, 20))
-                })
-        rescue_stats = pd.DataFrame(random_rescue_data)
-        
-        random_bias_data = []
-        for profile in profile_cols:
-            random_bias_data.append({
-                'profile': profile,
-                'bias_magnitude': np.random.uniform(0.02, 0.15),
-                'mislabelling_rate': np.random.uniform(0.01, 0.08),
-                'bias_direction': np.random.choice(case.valid_labels)
-            })
-        bias_patterns = pd.DataFrame(random_bias_data)
-    
+        rescue_stats = pd.DataFrame()
+        bias_patterns = pd.DataFrame()
+
     cluster_analysis = {}
-    baseline_accuracy = accuracy_score(merged_df["true_label"], merged_df["base_pred"])
-    
+    baseline_accuracy = accuracy_score(df["true_label"], df["base_pred"])
 
     for cluster_id, cluster_info in similarity_results['clusters'].items():
         cluster_profiles = cluster_info['profiles']
-        available_profiles = [p for p in cluster_profiles if p in merged_df.columns]
-
+        available_profiles = [p for p in cluster_profiles if p in df.columns]
         print(f"\n{cluster_id.upper()} ({len(available_profiles)} profiles):")
 
         trait_composition = defaultdict(list)
         for profile in available_profiles:
             traits = person_set.get_traits(profile, group_keys)
             for trait_name, trait_value in traits.items():
-                if trait_value != "Unknown":
-                    trait_composition[trait_name].append(str(trait_value).lower())
-        
+                if hasattr(trait_value, "value"):
+                    trait_value = trait_value.value
+                val = "unknown" if trait_value is None else str(trait_value).lower()
+                trait_composition[trait_name].append(val)
+
         print(f"Trait composition:")
         for trait_name, values in trait_composition.items():
             value_counts = Counter(values)
             print(f"  {trait_name}: {dict(value_counts)}")
-        
+
         print(f"Sample profiles: {', '.join(p for p in available_profiles[:5])}")
         if len(available_profiles) > 5:
             print(f"                 ... and {len(available_profiles) - 5} more")
@@ -444,92 +374,76 @@ def cluster_level_bias_patterns(
             'internal_agreement': cluster_info.get('internal_agreement', 0),
             'trait_composition': dict(trait_composition)
         }
-        
-        accuracies = [(merged_df[p] == merged_df['true_label']).mean() for p in available_profiles]
-        cluster_metrics['accuracy_mean'] = np.mean(accuracies) if accuracies else 0
-        cluster_metrics['accuracy_std'] = np.std(accuracies) if accuracies else 0
-        
-        cluster_rescue = rescue_stats[rescue_stats['profile'].isin(available_profiles)]
-        if not cluster_rescue.empty:
+
+        accuracies = [(df[p] == df['true_label']).mean() for p in available_profiles]
+        cluster_metrics['accuracy_mean'] = float(np.mean(accuracies)) if accuracies else 0.0
+        cluster_metrics['accuracy_std'] = float(np.std(accuracies)) if accuracies else 0.0
+
+        if not rescue_stats.empty:
+            cluster_rescue = rescue_stats[rescue_stats['profile'].isin(available_profiles)]
             cluster_metrics.update({
-                'rescue_rate_mean': cluster_rescue['rescue_rate'].mean(),
-                'rescue_rate_std': cluster_rescue['rescue_rate'].std(),
-                'extra_error_rate_mean': cluster_rescue['extra_err_rate'].mean(),
-                'extra_error_rate_std': cluster_rescue['extra_err_rate'].std(),
-                'total_rescued': cluster_rescue['rescued'].sum(),
-                'total_extra_errors': cluster_rescue['extra_errors'].sum()
+                'rescue_rate_mean': float(cluster_rescue['rescue_rate'].mean()) if len(cluster_rescue) else 0.0,
+                'rescue_rate_std': float(cluster_rescue['rescue_rate'].std()) if len(cluster_rescue) else 0.0,
+                'extra_error_rate_mean': float(cluster_rescue['extra_err_rate'].mean()) if len(cluster_rescue) else 0.0,
+                'extra_error_rate_std': float(cluster_rescue['extra_err_rate'].std()) if len(cluster_rescue) else 0.0,
+                'total_rescued': int(cluster_rescue['rescued'].sum()) if len(cluster_rescue) else 0,
+                'total_extra_errors': int(cluster_rescue['extra_errors'].sum()) if len(cluster_rescue) else 0
             })
         else:
             cluster_metrics.update({
-                'rescue_rate_mean': 0, 'rescue_rate_std': 0,
-                'extra_error_rate_mean': 0, 'extra_error_rate_std': 0,
+                'rescue_rate_mean': 0.0, 'rescue_rate_std': 0.0,
+                'extra_error_rate_mean': 0.0, 'extra_error_rate_std': 0.0,
                 'total_rescued': 0, 'total_extra_errors': 0
             })
-        
 
-        cluster_bias = bias_patterns[bias_patterns['profile'].isin(available_profiles)]
-        if not cluster_bias.empty:
+        if not bias_patterns.empty:
+            cluster_bias = bias_patterns[bias_patterns['profile'].isin(available_profiles)]
             cluster_metrics.update({
-                'bias_magnitude_mean': cluster_bias['bias_magnitude'].mean(),
-                'bias_magnitude_std': cluster_bias['bias_magnitude'].std(),
-                'mislabelling_rate_mean': cluster_bias['mislabelling_rate'].mean(),
-                'dominant_bias_direction': cluster_bias['bias_direction'].mode().iloc[0] if not cluster_bias['bias_direction'].empty else 'none'
+                'bias_magnitude_mean': float(cluster_bias['bias_magnitude'].mean()) if len(cluster_bias) else 0.0,
+                'bias_magnitude_std': float(cluster_bias['bias_magnitude'].std()) if len(cluster_bias) else 0.0,
+                'mislabelling_rate_mean': float(cluster_bias['mislabelling_rate'].mean()) if len(cluster_bias) else 0.0,
+                'dominant_bias_direction': cluster_bias['bias_direction'].mode().iloc[0] if (len(cluster_bias) and not cluster_bias['bias_direction'].empty) else 'none'
             })
         else:
             cluster_metrics.update({
-                'bias_magnitude_mean': 0, 'bias_magnitude_std': 0,
-                'mislabelling_rate_mean': 0, 'dominant_bias_direction': 'none'
+                'bias_magnitude_mean': 0.0, 'bias_magnitude_std': 0.0,
+                'mislabelling_rate_mean': 0.0, 'dominant_bias_direction': 'none'
             })
-        
+
+        # Accuracy consensus gate
         if archetype_parameters["accuracy_consensus"]:
-            profile_cols = [c for c in merged_df.columns if c.startswith("profile")]
             per_profile_acc = []
             for p in profile_cols:
                 try:
-                    per_profile_acc.append(float((merged_df[p] == merged_df["true_label"]).mean()))
-                except Exception as e:
-                    print(e)
+                    per_profile_acc.append(float((df[p] == df["true_label"]).mean()))
+                except Exception:
                     continue
-
             if len(per_profile_acc) >= 3:
                 global_acc_mean = float(np.mean(per_profile_acc))
-                global_acc_std  = float(np.std(per_profile_acc))
-
-                # will filter only the best 20%
                 percentile = 80.0
-                global_acc_percentile = float(np.percentile(per_profile_acc, percentile))
-
+                global_acc_p80 = float(np.percentile(per_profile_acc, percentile))
                 cluster_metrics["global_accuracy_mean"] = global_acc_mean
-                cluster_metrics["global_accuracy_std"]  = global_acc_std
-                cluster_metrics["global_accuracy_p80"]  = global_acc_percentile
+                cluster_metrics["global_accuracy_p80"] = global_acc_p80
                 cluster_metrics["accuracy_gap"] = float(cluster_metrics["accuracy_mean"] - global_acc_mean)
-
                 above_mean_flags = [
-                    float((merged_df[p] == merged_df["true_label"]).mean()) > global_acc_mean
-                    for p in available_profiles
+                    float((df[p] == df["true_label"]).mean()) > global_acc_mean for p in available_profiles
                 ] if available_profiles else []
-                cluster_metrics["prop_above_global_mean"] = (
-                    float(np.mean(above_mean_flags)) if above_mean_flags else 0.0
-                )
-                condition_acc = global_acc_percentile
-
+                cluster_metrics["prop_above_global_mean"] = float(np.mean(above_mean_flags)) if above_mean_flags else 0.0
+                condition_acc = global_acc_p80
             else:
                 condition_acc = float(archetype_parameters["accuracy"])
                 cluster_metrics["global_accuracy_mean"] = None
-                cluster_metrics["global_accuracy_std"]  = None
-                cluster_metrics["global_accuracy_p80"]  = None
+                cluster_metrics["global_accuracy_p80"] = None
                 cluster_metrics["accuracy_gap"] = None
                 cluster_metrics["prop_above_global_mean"] = None
-
         else:
             condition_acc = float(archetype_parameters["accuracy"])
             cluster_metrics["global_accuracy_mean"] = None
-            cluster_metrics["global_accuracy_std"]  = None
-            cluster_metrics["global_accuracy_p80"]  = None
+            cluster_metrics["global_accuracy_p80"] = None
             cluster_metrics["accuracy_gap"] = float(cluster_metrics["accuracy_mean"] - condition_acc)
             cluster_metrics["prop_above_global_mean"] = None
-    
-    
+
+        # Archetype
         if (cluster_metrics['rescue_rate_mean'] > archetype_parameters["risk_benefit"][0] 
             and cluster_metrics['extra_error_rate_mean'] < archetype_parameters["risk_benefit"][1]):
             archetype = "Optimal Risk-Benefit"
@@ -543,9 +457,9 @@ def cluster_level_bias_patterns(
             archetype = "High Consistency"
         else:
             archetype = "Similar to Neutral"
-        
+
         cluster_metrics['archetype'] = archetype
-        
+
         print(f"  Accuracy: {cluster_metrics['accuracy_mean']:.4f} ± {cluster_metrics['accuracy_std']:.4f}")
         print(f"  Rescue Rate: {cluster_metrics['rescue_rate_mean']:.3f} ± {cluster_metrics['rescue_rate_std']:.3f}")
         print(f"  Extra Error Rate: {cluster_metrics['extra_error_rate_mean']:.3f} ± {cluster_metrics['extra_error_rate_std']:.3f}")
@@ -554,7 +468,7 @@ def cluster_level_bias_patterns(
         print(f"  Archetype: {archetype}")
 
         cluster_analysis[cluster_id] = cluster_metrics
-    
+
     print(f"\n{'='*60}")
     print("CLUSTER COMPARISON AND RECOMMENDATIONS")
     print(f"{'='*60}")
@@ -571,18 +485,14 @@ def cluster_level_bias_patterns(
         print(f"\n{'='*60}")
         print("CLUSTER ENSEMBLE PERFORMANCE")
         print(f"{'='*60}")
-
         for cluster_id, cluster_info in cluster_analysis.items():
             cluster_profiles = cluster_info['profiles']
-            ensemble_preds = majority_vote_ensemble(merged_df, cluster_profiles)
-
+            ensemble_preds = majority_vote_ensemble(df, cluster_profiles)
             if not ensemble_preds.eq('').all():
-                ensemble_accuracy = accuracy_score(merged_df['true_label'], ensemble_preds)
+                ensemble_accuracy = accuracy_score(df['true_label'], ensemble_preds)
                 improvement = ensemble_accuracy - baseline_accuracy
-
                 cluster_analysis[cluster_id]['ensemble_accuracy'] = ensemble_accuracy
                 cluster_analysis[cluster_id]['ensemble_improvement'] = improvement
-
                 print(f"{cluster_id}: {ensemble_accuracy:.4f} ({improvement:+.4f}) | {cluster_info['archetype']}")
             else:
                 cluster_analysis[cluster_id]['ensemble_accuracy'] = None
@@ -609,6 +519,7 @@ def cluster_level_bias_patterns(
 
 
 
+
 def trait_comparison_controlled(
     merged_df: pd.DataFrame, 
     person_set: PersonSet,
@@ -616,110 +527,80 @@ def trait_comparison_controlled(
     comparison_trait: str = "cognitive_style",
     control_traits: List[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Generalized Trait Comparison with Demographic Controls
-    
-    Evaluates performance differences across levels of any trait while controlling
-    for other demographic factors.
-    
-    Parameters:
-    - merged_df: DataFrame with predictions and labels
-    - person_set: PersonSet with metadata
-    - comparison_trait: The trait to compare (e.g., "cognitive_style", "age") 
-    - control_traits: List of traits to control for (e.g., ["gender", "ethnicity"])
-    
-    Returns:
-    - Dict with statistical comparisons and recommendations
-    """
-    
     if control_traits is None:
         control_traits = []
-    
+
     print("=" * 80)
     print(f"TRAIT COMPARISON: {comparison_trait.upper()}")
     if control_traits:
         print(f"CONTROLLING FOR: {', '.join(control_traits).upper()}")
     print("=" * 80)
-    
-    # Get profile columns
-    profile_cols = [col for col in merged_df.columns 
-                   if col.startswith("profile")]
-    
+
+    df = merged_df.copy()
+    profile_cols = [c for c in df.columns if c.startswith("profile")]
+    for c in ['true_label', 'base_pred', *profile_cols]:
+        if c in df.columns:
+            df[c] = df[c].astype(str).str.strip().str.lower()
+
     trait_groups = defaultdict(list)
-    trait_metadata = {} 
-    
+    trait_metadata = {}
+
+    def norm(v):
+        if hasattr(v, "value"): v = v.value
+        return "unknown" if v is None else str(v).lower()
+
     for profile in profile_cols:
         traits = person_set.get_traits(profile, [comparison_trait] + control_traits)
-        
-        trait_value = str(traits.get(comparison_trait, "Unknown"))
-        if trait_value != "Unknown":
+        trait_value = norm(traits.get(comparison_trait, "unknown"))
+        if trait_value != "unknown":
             trait_groups[trait_value].append(profile)
-            trait_metadata[profile] = traits
-    
+            trait_metadata[profile] = {k: norm(v) for k, v in traits.items()}
+
     trait_groups = {k: v for k, v in trait_groups.items() if v}
-    
     if len(trait_groups) < 2:
         print(f"ERROR: Insufficient groups for {comparison_trait} comparison")
         return {'error': f'Insufficient groups for {comparison_trait}'}
-    
+
     print(f"Found {len(trait_groups)} groups for {comparison_trait}:")
     for trait_val, profiles in trait_groups.items():
         print(f"  {trait_val}: {len(profiles)} profiles")
-    
-    try:
-        category_cols = getattr(case, "category_cols", None) or ["stereotype_type"]
 
-        rescue_stats_list = []
-        bias_patterns_list = []
-    
-        for cat_col in category_cols:
-            if cat_col in merged_df.columns:
-                rs = rescue_stats_by_category(merged_df, category_col=cat_col)
-                rs["category_col"] = cat_col
-                rescue_stats_list.append(rs)
-    
-                bp = detect_systematic_biases(merged_df, category_col=cat_col)
-                bp["category_col"] = cat_col
-                bias_patterns_list.append(bp)
-        if rescue_stats_list:
-            rescue_stats = pd.concat(rescue_stats_list, ignore_index=True)
-        else:
-            raise ValueError("No valid category columns found for rescue_stats.")
-    
-        if bias_patterns_list:
-            bias_patterns = pd.concat(bias_patterns_list, ignore_index=True)
-        else:
-            raise ValueError("No valid category columns found for bias_patterns.")
-        
-    except NameError:
-        print("WARNING: rescue_stats_by_category or detect_systematic_biases not found")
-        rescue_stats = pd.DataFrame()
-        bias_patterns = pd.DataFrame()
-    
-    # Calculate performance metrics for each trait group
+    # Rescue & bias
+    category_cols = getattr(case, "category_cols", None) or ["subject"]
+    rescue_stats_list, bias_patterns_list = [], []
+    for cat_col in category_cols:
+        if cat_col in df.columns:
+            rs = rescue_stats_by_category(df, category_col=cat_col)
+            rs["category_col"] = cat_col
+            rescue_stats_list.append(rs)
+
+            bp = detect_systematic_biases(
+                df, person_set=person_set, category_col=cat_col,
+                baseline_col="base_pred", profile_prefix="profile", label_col="true_label"
+            )
+            bp["category_col"] = cat_col
+            bias_patterns_list.append(bp)
+
+    rescue_stats = pd.concat(rescue_stats_list, ignore_index=True) if rescue_stats_list else pd.DataFrame()
+    bias_patterns = pd.concat(bias_patterns_list, ignore_index=True) if bias_patterns_list else pd.DataFrame()
+
     trait_performance = {}
-    
     for trait_value, profiles in trait_groups.items():
-        available_profiles = [p for p in profiles if p in merged_df.columns]
+        available_profiles = [p for p in profiles if p in df.columns]
         if not available_profiles:
             continue
-            
+
         accuracies, rescue_rates, extra_error_rates, bias_magnitudes = [], [], [], []
-        
         for profile in available_profiles:
-            # Accuracy
-            acc = accuracy_score(merged_df['true_label'], merged_df[profile])
-            accuracies.append(acc)
-            
-            # Rescue metrics
+            accuracies.append(accuracy_score(df['true_label'], df[profile]))
+
             rs = rescue_stats[rescue_stats['profile'] == profile] if not rescue_stats.empty else pd.DataFrame()
-            rescue_rates.append(rs['rescue_rate'].mean() if len(rs) > 0 else 0)
-            extra_error_rates.append(rs['extra_err_rate'].mean() if len(rs) > 0 else 0)
-            
-            # Bias metrics  
+            rescue_rates.append(rs['rescue_rate'].mean() if len(rs) > 0 else 0.0)
+            extra_error_rates.append(rs['extra_err_rate'].mean() if len(rs) > 0 else 0.0)
+
             bp = bias_patterns[bias_patterns['profile'] == profile] if not bias_patterns.empty else pd.DataFrame()
-            bias_magnitudes.append(bp['bias_magnitude'].mean() if len(bp) > 0 else 0)
-        
+            bias_magnitudes.append(bp['bias_magnitude'].mean() if len(bp) > 0 else 0.0)
+
         trait_performance[trait_value] = {
             'accuracies': accuracies,
             'rescue_rates': rescue_rates,
@@ -727,33 +608,25 @@ def trait_comparison_controlled(
             'bias_magnitudes': bias_magnitudes,
             'n_profiles': len(available_profiles),
             'profiles': available_profiles,
-            'control_trait_distribution': {}  # For demographic balance check
+            'control_trait_distribution': {}
         }
-        
-        # Analyze control trait distribution for this group
+
         if control_traits:
             for control_trait in control_traits:
                 control_values = []
                 for profile in available_profiles:
-                    if profile in trait_metadata:
-                        control_val = trait_metadata[profile].get(control_trait, "Unknown")
-                        control_values.append(control_val)
-                
-                control_counts = Counter(control_values)
-                trait_performance[trait_value]['control_trait_distribution'][control_trait] = dict(control_counts)
-        
-        # Print results
+                    control_values.append(trait_metadata.get(profile, {}).get(control_trait, "unknown"))
+                trait_performance[trait_value]['control_trait_distribution'][control_trait] = dict(Counter(control_values))
+
         print(f"\n{str(trait_value).upper()} {comparison_trait.upper()} (n={len(available_profiles)}):")
         print(f"  Accuracy: {np.mean(accuracies):.4f} ± {np.std(accuracies):.4f}")
         print(f"  Rescue Rate: {np.mean(rescue_rates):.3f} ± {np.std(rescue_rates):.3f}")
         print(f"  Extra Error Rate: {np.mean(extra_error_rates):.3f} ± {np.std(extra_error_rates):.3f}")
         print(f"  Bias Magnitude: {np.mean(bias_magnitudes):.3f} ± {np.std(bias_magnitudes):.3f}")
-        
-        # Show control trait distribution
         if control_traits:
             print(f"  Control trait distributions:")
-            for control_trait, distribution in trait_performance[trait_value]['control_trait_distribution'].items():
-                print(f"    {control_trait}: {distribution}")
+            for ct, dist in trait_performance[trait_value]['control_trait_distribution'].items():
+                print(f"    {ct}: {dist}")
     
     # Statistical comparisons (your existing logic)
     statistical_results = {}
@@ -888,6 +761,7 @@ def trait_comparison_controlled(
 
 def run_multiple_trait_comparisons(
     merged_df: pd.DataFrame, 
+    case: CaseConfig,
     person_set: PersonSet,
     trait_analyses: List[Tuple[str, List[str]]] = None
 ) -> Dict[str, Any]:
@@ -917,6 +791,7 @@ def run_multiple_trait_comparisons(
         try:
             result = trait_comparison_controlled(
                 merged_df, person_set,
+                case=case,
                 comparison_trait=comparison_trait,
                 control_traits=control_traits
             )
@@ -942,69 +817,56 @@ def run_multiple_trait_comparisons(
     
     return results
 
-
 def plot_ensemble_performance_comparison(
     ensemble_results: Dict[str, Any], 
-    figsize: tuple = (12, 8),
+    figsize: tuple = (10, 6),
     key_ensembles: Optional[List[str]] = None,
     show_top_n: int = None
 ):
-    """
-    Plot ensemble performance comparison with accuracy and improvement metrics.
-    
-    Parameters:
-    - ensemble_results: Results from ensemble_by_trait_analysis
-    - figsize: Figure size (width, height)
-    - key_ensembles: Specific ensembles to plot (None = all)
-    - show_top_n: Show only top N performing ensembles
-    """
-    
-    ensemble_data = ensemble_results['ensemble_results']
-    
+    ensemble_data = ensemble_results.get('ensemble_results', {})
+    if not ensemble_data:
+        print("No ensemble data to plot.")
+        return None
+
     # Filter and sort ensembles
     if key_ensembles is None:
         key_ensembles = list(ensemble_data.keys())
-    
     if show_top_n:
-        # Sort by accuracy and take top N
         sorted_ensembles = sorted(
             [(name, data) for name, data in ensemble_data.items() if name in key_ensembles],
             key=lambda x: x[1].get('accuracy', 0),
             reverse=True
         )
         key_ensembles = [name for name, _ in sorted_ensembles[:show_top_n]]
-    
-    ensemble_names = []
-    accuracies = []
-    improvements = []
-    rescue_rates = []
-    extra_error_rates = []
-    
+
+    ensemble_names, accuracies, improvements, rescue_rates, extra_error_rates = [], [], [], [], []
     for name in key_ensembles:
         if name in ensemble_data:
+            d = ensemble_data[name]
             ensemble_names.append(name.replace('_', '\n').title())
-            accuracies.append(ensemble_data[name].get('accuracy', 0))
-            improvements.append(ensemble_data[name].get('improvement', 0))
-            rescue_rates.append(ensemble_data[name].get('rescue_rate', 0))
-            extra_error_rates.append(ensemble_data[name].get('extra_error_rate', 0))
-    
+            accuracies.append(d.get('accuracy', 0.0))
+            improvements.append(d.get('improvement', 0.0))
+            rescue_rates.append(d.get('rescue_rate', 0.0))
+            extra_error_rates.append(d.get('extra_error_rate', 0.0))
+
+    if not ensemble_names:
+        print("No selected ensembles to display.")
+        return None
+
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
     fig.suptitle('Ensemble Performance Analysis', fontsize=16, fontweight='bold')
-    
+
     # Plot 1: Accuracy Improvement
     x_pos = np.arange(len(ensemble_names))
     colors = ['#2ca02c' if imp > 0.01 else '#1f77b4' if imp >= 0 else '#d62728' for imp in improvements]
-    
     bars1 = ax1.bar(x_pos, improvements, color=colors, alpha=0.7, edgecolor='black', linewidth=0.5)
-    
+
     for i, (bar, acc, imp) in enumerate(zip(bars1, accuracies, improvements)):
-        height = bar.get_height()
-        ax1.text(bar.get_x() + bar.get_width()/2., 
-                height + 0.001 if height >= 0 else height - 0.002,
-                f'{acc:.3f}', ha='center', 
-                va='bottom' if height >= 0 else 'top', 
-                fontsize=9, fontweight='bold')
-    
+        h = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width()/2., h + (0.001 if h >= 0 else -0.002),
+                 f'{acc:.3f}', ha='center', va='bottom' if h >= 0 else 'top',
+                 fontsize=9, fontweight='bold')
+
     ax1.set_xlabel('Ensemble Strategy', fontsize=12)
     ax1.set_ylabel('Accuracy Improvement vs Baseline', fontsize=12)
     ax1.set_title('Accuracy Performance', fontsize=14, fontweight='bold')
@@ -1012,34 +874,35 @@ def plot_ensemble_performance_comparison(
     ax1.set_xticklabels(ensemble_names, rotation=45, ha='right')
     ax1.axhline(y=0, color='black', linestyle='--', alpha=0.7)
     ax1.grid(True, alpha=0.3)
-    
-    scatter = ax2.scatter(extra_error_rates, rescue_rates, 
-                         c=improvements, cmap='RdYlGn', 
-                         s=100, alpha=0.7, edgecolors='black', linewidth=1)
-    
+
+    # Plot 2: Risk-Benefit
+    scatter = ax2.scatter(extra_error_rates, rescue_rates, c=improvements, cmap='RdYlGn',
+                          s=100, alpha=0.7, edgecolors='black', linewidth=1)
+
     for i, name in enumerate(ensemble_names):
-        ax2.annotate(name.replace('\n', ' '), 
-                    (extra_error_rates[i], rescue_rates[i]),
-                    xytext=(8, 8), textcoords='offset points', 
-                    fontsize=8, fontweight='bold',
-                    bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
-    
+        ax2.annotate(name.replace('\n', ' '), (extra_error_rates[i], rescue_rates[i]),
+                     xytext=(8, 8), textcoords='offset points',
+                     fontsize=8, fontweight='bold',
+                     bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
+
     ax2.set_xlabel('Extra Error Rate (Risk)', fontsize=12)
     ax2.set_ylabel('Rescue Rate (Benefit)', fontsize=12)
     ax2.set_title('Risk-Benefit Analysis', fontsize=14, fontweight='bold')
     ax2.grid(True, alpha=0.3)
-    
-    x_margin = (max(extra_error_rates) - min(extra_error_rates)) * 0.15
-    y_margin = (max(rescue_rates) - min(rescue_rates)) * 0.15
-    ax2.set_xlim(min(extra_error_rates) - x_margin, max(extra_error_rates) + x_margin)
-    ax2.set_ylim(min(rescue_rates) - y_margin, max(rescue_rates) + y_margin)
-    
+
+    if len(extra_error_rates) >= 2:
+        x_min, x_max = min(extra_error_rates), max(extra_error_rates)
+        y_min, y_max = min(rescue_rates), max(rescue_rates)
+        x_margin = (x_max - x_min) * 0.15 if x_max > x_min else 0.05
+        y_margin = (y_max - y_min) * 0.15 if y_max > y_min else 0.05
+        ax2.set_xlim(x_min - x_margin, x_max + x_margin)
+        ax2.set_ylim(y_min - y_margin, y_max + y_margin)
+
     cbar = plt.colorbar(scatter, ax=ax2)
     cbar.set_label('Accuracy Improvement', fontsize=10)
-    
+
     plt.tight_layout()
     plt.show()
-    
     return fig
 
 
@@ -1047,16 +910,14 @@ def plot_cluster_analysis(
     cluster_results: Dict[str, Any],
     figsize: tuple = (14, 6)
 ):
-    """
-    Plot cluster analysis with demographic composition and performance metrics.
-    """
-    
-    cluster_data = cluster_results['cluster_analysis']
+    cluster_data = cluster_results.get('cluster_analysis', {})
+    if not cluster_data:
+        print("No cluster analysis data to plot.")
+        return None
     
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
     fig.suptitle('Cluster-Level Bias and Performance Analysis', fontsize=16, fontweight='bold')
-    
-    # Professional archetype color mapping
+
     archetype_colors = {
         'Optimal Risk-Benefit': '#2ca02c',
         'Cautious': '#1f77b4', 
@@ -1065,40 +926,28 @@ def plot_cluster_analysis(
         'High Consistency': '#9467bd',
         'Similar to Neutral': '#8c564b'
     }
-    
-    # Plot 1: Cluster Performance Metrics
-    cluster_names = []
-    accuracies = []
-    rescue_rates = []
-    extra_error_rates = []
-    colors = []
-    
+
+    cluster_names, accuracies, rescue_rates, extra_error_rates, colors = [], [], [], [], []
     for cluster_id, cluster_info in cluster_data.items():
         cluster_names.append(cluster_id.replace('cluster_', 'Cluster '))
-        accuracies.append(cluster_info['accuracy_mean'])
-        rescue_rates.append(cluster_info['rescue_rate_mean'])
-        extra_error_rates.append(cluster_info['extra_error_rate_mean'])
-        
+        accuracies.append(cluster_info.get('accuracy_mean', 0.0))
+        rescue_rates.append(cluster_info.get('rescue_rate_mean', 0.0))
+        extra_error_rates.append(cluster_info.get('extra_error_rate_mean', 0.0))
         archetype = cluster_info.get('archetype', 'Unknown')
         colors.append(archetype_colors.get(archetype, '#bcbd22'))
-    
+
     x_pos = np.arange(len(cluster_names))
     width = 0.25
-    
-    bars1 = ax1.bar(x_pos - width, accuracies, width, label='Accuracy', 
-                   color='#1f77b4', alpha=0.7, edgecolor='black', linewidth=0.5)
-    bars2 = ax1.bar(x_pos, rescue_rates, width, label='Rescue Rate', 
-                   color='#2ca02c', alpha=0.7, edgecolor='black', linewidth=0.5)
-    bars3 = ax1.bar(x_pos + width, extra_error_rates, width, label='Extra Error Rate', 
-                   color='#d62728', alpha=0.7, edgecolor='black', linewidth=0.5)
-    
-    # Add value labels on bars
+
+    bars1 = ax1.bar(x_pos - width, accuracies, width, label='Accuracy', color='#1f77b4', alpha=0.7, edgecolor='black', linewidth=0.5)
+    bars2 = ax1.bar(x_pos, rescue_rates, width, label='Rescue Rate', color='#2ca02c', alpha=0.7, edgecolor='black', linewidth=0.5)
+    bars3 = ax1.bar(x_pos + width, extra_error_rates, width, label='Extra Error Rate', color='#d62728', alpha=0.7, edgecolor='black', linewidth=0.5)
+
     for bars in [bars1, bars2, bars3]:
         for bar in bars:
-            height = bar.get_height()
-            ax1.text(bar.get_x() + bar.get_width()/2., height + 0.005,
-                    f'{height:.3f}', ha='center', va='bottom', fontsize=9)
-    
+            h = bar.get_height()
+            ax1.text(bar.get_x() + bar.get_width()/2., h + 0.005, f'{h:.3f}', ha='center', va='bottom', fontsize=9)
+
     ax1.set_xlabel('Cluster', fontsize=12)
     ax1.set_ylabel('Performance Metrics', fontsize=12)
     ax1.set_title('Cluster Performance Comparison', fontsize=14, fontweight='bold')
@@ -1106,47 +955,40 @@ def plot_cluster_analysis(
     ax1.set_xticklabels(cluster_names)
     ax1.legend()
     ax1.grid(True, alpha=0.3)
-    
-    # Plot 2: Risk-Benefit with Archetype Colors
-    scatter = ax2.scatter(extra_error_rates, rescue_rates, 
-                         c=colors, s=200, alpha=0.8, edgecolors='black', linewidth=2)
-    
-    # Add cluster labels and archetype info
+
+    scatter = ax2.scatter(extra_error_rates, rescue_rates, c=colors, s=200, alpha=0.8, edgecolors='black', linewidth=2)
+
     for i, (cluster_name, cluster_info) in enumerate(zip(cluster_names, cluster_data.values())):
         archetype = cluster_info.get('archetype', 'Unknown')
-        ax2.annotate(f"{cluster_name}\n({archetype})", 
-                    (extra_error_rates[i], rescue_rates[i]),
-                    xytext=(10, 10), textcoords='offset points', 
-                    fontsize=10, fontweight='bold',
-                    bbox=dict(boxstyle='round,pad=0.5', facecolor='white', 
-                             edgecolor='black', alpha=0.8))
-    
+        ax2.annotate(f"{cluster_name}\n({archetype})", (extra_error_rates[i], rescue_rates[i]),
+                     xytext=(10, 10), textcoords='offset points',
+                     fontsize=10, fontweight='bold',
+                     bbox=dict(boxstyle='round,pad=0.5', facecolor='white', edgecolor='black', alpha=0.8))
+
     ax2.set_xlabel('Extra Error Rate (Risk)', fontsize=12)
     ax2.set_ylabel('Rescue Rate (Benefit)', fontsize=12)
     ax2.set_title('Cluster Risk-Benefit Profile', fontsize=14, fontweight='bold')
     ax2.grid(True, alpha=0.3)
-    
-    # Add padding to prevent label cutoff in cluster plot
+
     if extra_error_rates and rescue_rates:
-        x_margin = (max(extra_error_rates) - min(extra_error_rates)) * 0.2
-        y_margin = (max(rescue_rates) - min(rescue_rates)) * 0.2
-        ax2.set_xlim(min(extra_error_rates) - x_margin, max(extra_error_rates) + x_margin)
-        ax2.set_ylim(min(rescue_rates) - y_margin, max(rescue_rates) + y_margin)
-    
-    # Add archetype legend
+        x_min, x_max = min(extra_error_rates), max(extra_error_rates)
+        y_min, y_max = min(rescue_rates), max(rescue_rates)
+        x_margin = (x_max - x_min) * 0.2 if x_max > x_min else 0.05
+        y_margin = (y_max - y_min) * 0.2 if y_max > y_min else 0.05
+        ax2.set_xlim(x_min - x_margin, x_max + x_margin)
+        ax2.set_ylim(y_min - y_margin, y_max + y_margin)
+
     legend_elements = []
     for archetype, color in archetype_colors.items():
-        if any(cluster_info.get('archetype') == archetype for cluster_info in cluster_data.values()):
-            legend_elements.append(plt.Line2D([0], [0], marker='o', color='w', 
-                                           markerfacecolor=color, markersize=10, 
-                                           label=archetype, markeredgecolor='black'))
-    
+        if any(ci.get('archetype') == archetype for ci in cluster_data.values()):
+            legend_elements.append(plt.Line2D([0], [0], marker='o', color='w',
+                                              markerfacecolor=color, markersize=10,
+                                              label=archetype, markeredgecolor='black'))
     if legend_elements:
         ax2.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.05, 1))
-    
+
     plt.tight_layout()
     plt.show()
-    
     return fig
 
 
@@ -1156,57 +998,38 @@ def plot_trait_comparison_results(
     baseline_accuracy: float = None,
     figsize: tuple = (14, 8)
 ):
-    """
-    Plot results from trait_comparison_controlled function.
-    
-    Parameters:
-    - trait_results: Results from trait_comparison_controlled
-    - trait_name: Name of the trait being analyzed (auto-detected if None)
-    - baseline_accuracy: Baseline to center improvements around (auto-detected if None)
-    - figsize: Figure size
-    """
-    
     if trait_name is None:
         trait_name = trait_results.get('comparison_trait', 'Trait')
-    
-    # Handle both old cognitive style format and new trait comparison format
-    trait_performance = trait_results.get('trait_performance', trait_results.get('style_performance', {}))
-    
+
+    trait_performance = trait_results.get('trait_performance', {})
     if not trait_performance:
         print(f"No trait performance data found for {trait_name}")
         return None
-    
-    # Auto-detect baseline if not provided
+
     if baseline_accuracy is None:
-        # Use the mean accuracy across all trait levels as baseline
         all_accuracies = []
-        for trait_val, data in trait_performance.items():
-            if 'accuracies' in data:
-                all_accuracies.extend(data['accuracies'])
-        baseline_accuracy = np.mean(all_accuracies) if all_accuracies else 0.70
-    
+        for _, data in trait_performance.items():
+            all_accuracies.extend(data.get('accuracies', []))
+        baseline_accuracy = np.mean(all_accuracies) if all_accuracies else 0.0
+
     fig, axes = plt.subplots(2, 2, figsize=figsize)
     fig.suptitle(f'{trait_name.title()} Comparison Analysis (Relative to Baseline)', fontsize=16, fontweight='bold')
-    
+
     trait_values = list(trait_performance.keys())
     colors = plt.cm.Set3(np.linspace(0, 1, len(trait_values)))
-    
     metrics = [
         ('accuracies', 'Accuracy Improvement', axes[0, 0], baseline_accuracy),
-        ('rescue_rates', 'Rescue Rate', axes[0, 1], 0),  # Rescue rate is already relative
-        ('extra_error_rates', 'Extra Error Rate', axes[1, 0], 0),  # Error rate is already relative
-        ('bias_magnitudes', 'Bias Magnitude', axes[1, 1], 0)  # Bias magnitude is already relative
+        ('rescue_rates', 'Rescue Rate', axes[0, 1], 0),
+        ('extra_error_rates', 'Extra Error Rate', axes[1, 0], 0),
+        ('bias_magnitudes', 'Bias Magnitude', axes[1, 1], 0)
     ]
-    
+
     for metric_key, metric_name, ax, baseline in metrics:
-        means = []
-        stds = []
-        
+        means, stds = [], []
         for trait_val in trait_values:
             data = trait_performance[trait_val].get(metric_key, [])
             if data:
-                # Calculate improvement relative to baseline for accuracy
-                if metric_key == 'accuracies' and baseline > 0:
+                if metric_key == 'accuracies':
                     improvements = [acc - baseline for acc in data]
                     means.append(np.mean(improvements))
                     stds.append(np.std(improvements))
@@ -1214,57 +1037,44 @@ def plot_trait_comparison_results(
                     means.append(np.mean(data))
                     stds.append(np.std(data))
             else:
-                means.append(0)
-                stds.append(0)
-        
+                means.append(0.0)
+                stds.append(0.0)
+
         x_pos = np.arange(len(trait_values))
-        bars = ax.bar(x_pos, means, yerr=stds, capsize=5, 
-                     color=colors, alpha=0.7, edgecolor='black', linewidth=0.5)
-        
-        # Add value labels
-        for i, (bar, mean, std) in enumerate(zip(bars, means, stds)):
-            height = bar.get_height()
-            # Adjust label position based on bar height to prevent cutoff
-            if height >= 0:
-                label_y = height + std + 0.001
-                va = 'bottom'
-            else:
-                label_y = height - std - 0.001
-                va = 'top'
-            
-            ax.text(bar.get_x() + bar.get_width()/2., label_y,
-                   f'{mean:.3f}±{std:.3f}', ha='center', va=va, 
-                   fontsize=9, fontweight='bold')
-        
+        bars = ax.bar(x_pos, means, yerr=stds, capsize=5, color=colors, alpha=0.7, edgecolor='black', linewidth=0.5)
+
+        for bar, mean, std in zip(bars, means, stds):
+            h = bar.get_height()
+            label_y = (h + std + 0.001) if h >= 0 else (h - std - 0.001)
+            ax.text(bar.get_x() + bar.get_width()/2., label_y, f'{mean:.3f}±{std:.3f}', ha='center', va='bottom' if h >= 0 else 'top',
+                    fontsize=9, fontweight='bold')
+
         ax.set_xlabel(f'{trait_name.title()} Level', fontsize=12)
         ax.set_ylabel(metric_name, fontsize=12)
-        
-        # Different titles for relative vs absolute metrics
-        if metric_key == 'accuracies':
-            ax.set_title(f'{metric_name} vs Baseline ({baseline:.3f})', fontsize=14, fontweight='bold')
-        else:
-            ax.set_title(f'{metric_name} by {trait_name.title()}', fontsize=14, fontweight='bold')
-            
+        ax.set_title(
+            f'{metric_name} vs Baseline ({baseline:.3f})' if metric_key == 'accuracies'
+            else f'{metric_name} by {trait_name.title()}',
+            fontsize=14, fontweight='bold'
+        )
         ax.set_xticks(x_pos)
         ax.set_xticklabels([str(tv).title() for tv in trait_values], rotation=45, ha='right')
-        
-        # Add baseline reference line for accuracy
         if metric_key == 'accuracies':
             ax.axhline(y=0, color='red', linestyle='--', alpha=0.7, label=f'Baseline ({baseline:.3f})')
             ax.legend()
-        
-        # Add y-axis padding to prevent label cutoff
+
         y_data = [m + s for m, s in zip(means, stds)] + [m - s for m, s in zip(means, stds)]
         if y_data:
-            y_range = max(y_data) - min(y_data)
-            y_margin = y_range * 0.15
-            ax.set_ylim(min(y_data) - y_margin, max(y_data) + y_margin)
-        
+            y_min, y_max = min(y_data), max(y_data)
+            if y_max == y_min:
+                y_min, y_max = y_min - 0.05, y_max + 0.05
+            y_margin = (y_max - y_min) * 0.15
+            ax.set_ylim(y_min - y_margin, y_max + y_margin)
+
         ax.grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
     plt.show()
-    
+
     return fig
 
 
@@ -1274,89 +1084,77 @@ def plot_system_level_recommendations(
     trait_results: Dict[str, Any] = None,
     figsize: tuple = (12, 6)
 ):
-    """
-    Plot system-level recommendations across all analyses.
-    Simplified to focus on actionable recommendations only.
-    """
-    
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     fig.suptitle('System-Level AI Safety Recommendations', fontsize=16, fontweight='bold')
-    
-    # Collect recommendations
-    recommendations = []
-    scores = []
-    colors = []
-    
+
+    recommendations, scores, colors = [], [], []
     ensemble_data = ensemble_results.get('ensemble_results', {})
     cluster_data = cluster_results.get('cluster_analysis', {})
-    
-    # Best overall ensemble
-    if 'recommendations' in ensemble_results:
-        best_ens = ensemble_results['recommendations'].get('best_balanced', ['Unknown', 0])
-        if isinstance(best_ens, tuple):
-            best_ens_name, best_ens_score = best_ens[0], best_ens[1]
+    baseline_acc = ensemble_results.get('baseline_accuracy', 0.0)
+
+    # Best overall ensemble (balanced)
+    best_balanced = (ensemble_results.get('recommendations', {}) or {}).get('best_balanced')
+    if best_balanced:
+        if isinstance(best_balanced, tuple):
+            best_ens_name, best_ens_score = best_balanced[0], best_balanced[1]
         else:
-            best_ens_name = best_ens[0] if best_ens else 'Unknown'
-            best_ens_score = ensemble_data.get(best_ens_name, {}).get('improvement', 0)
-        
+            best_ens_name = best_balanced[0] if best_balanced else 'Unknown'
+            best_ens_score = ensemble_data.get(best_ens_name, {}).get('improvement', 0.0)
         recommendations.append(f"Best Ensemble\n{best_ens_name.replace('_', ' ').title()}")
-        scores.append(best_ens_score)
+        scores.append(float(best_ens_score))
         colors.append('#2ca02c')
-    
+
     # Best cluster
-    if 'recommendations' in cluster_results:
-        best_cluster = cluster_results['recommendations'].get('best_accuracy', ['Unknown', {}])
+    best_cluster = (cluster_results.get('recommendations', {}) or {}).get('best_accuracy')
+    if best_cluster:
         if isinstance(best_cluster, tuple):
-            cluster_name, cluster_data_item = best_cluster[0], best_cluster[1]
-            cluster_score = cluster_data_item.get('accuracy_mean', 0) - ensemble_results.get('baseline_accuracy', 0.70)
+            cluster_name, cluster_info = best_cluster[0], best_cluster[1]
+            cluster_score = cluster_info.get('accuracy_mean', 0.0) - baseline_acc
         else:
             cluster_name = best_cluster[0] if best_cluster else 'Unknown'
-            cluster_score = cluster_data.get(cluster_name, {}).get('accuracy_mean', 0) - ensemble_results.get('baseline_accuracy', 0.70)
-        
+            cluster_score = cluster_data.get(cluster_name, {}).get('accuracy_mean', 0.0) - baseline_acc
         recommendations.append(f"Best Cluster\n{cluster_name.replace('_', ' ').title()}")
-        scores.append(cluster_score)
+        scores.append(float(cluster_score))
         colors.append('#1f77b4')
-    
-    # Best trait (if available)
-    if trait_results and 'recommendations' in trait_results:
+
+    # Best trait (if provided)
+    if trait_results and 'recommendations' in trait_results and trait_results['recommendations']:
         best_trait = trait_results['recommendations'][0]
         trait_name = trait_results.get('comparison_trait', 'Trait')
-        recommendations.append(f"Best {trait_name.title()}\n{best_trait[0].title()}")
-        scores.append(best_trait[1] / 10)  # Normalize composite score
+        recommendations.append(f"Best {trait_name.title()}\n{str(best_trait[0]).title()}")
+        scores.append(float(best_trait[1]) / 10.0)  # normalize
         colors.append('#ff7f0e')
-    
-    # Safest ensemble
-    if 'recommendations' in ensemble_results:
-        safest_ens = ensemble_results['recommendations'].get('safest', ['Unknown'])
-        safest_name = safest_ens[0] if safest_ens else 'Unknown'
-        err_rate = ensemble_data.get(safest_name, {}).get('extra_error_rate', 0)
-        safety_score = -err_rate  # Negative error rate as positive safety score
-        
+
+    # Safest ensemble (lowest extra error rate)
+    safest = (ensemble_results.get('recommendations', {}) or {}).get('safest')
+    if safest:
+        safest_name = safest[0] if isinstance(safest, (list, tuple)) and safest else 'Unknown'
+        err_rate = (ensemble_data.get(safest_name, {}) or {}).get('extra_error_rate', 0.0)
         recommendations.append(f"Safest Ensemble\n{safest_name.replace('_', ' ').title()}")
-        scores.append(safety_score)
+        scores.append(-float(err_rate))
         colors.append('#d62728')
-    
-    # Horizontal bar chart
+
+    if not recommendations:
+        print("No recommendations to plot.")
+        return None
+
     y_pos = np.arange(len(recommendations))
     bars = ax.barh(y_pos, scores, color=colors, alpha=0.7, edgecolor='black', linewidth=0.5)
-    
-    for i, (bar, score) in enumerate(zip(bars, scores)):
-        width = bar.get_width()
-        ax.text(width + 0.001 if width >= 0 else width - 0.001, 
-                bar.get_y() + bar.get_height()/2.,
-                f'{score:.3f}', ha='left' if width >= 0 else 'right', 
+    for bar, score in zip(bars, scores):
+        w = bar.get_width()
+        ax.text(w + (0.001 if w >= 0 else -0.001), bar.get_y() + bar.get_height()/2.,
+                f'{score:.3f}', ha='left' if w >= 0 else 'right',
                 va='center', fontsize=11, fontweight='bold')
-    
+
     ax.set_yticks(y_pos)
     ax.set_yticklabels(recommendations)
     ax.set_xlabel('Performance Score', fontsize=12)
     ax.set_title('Deployment Recommendations by Analysis Type', fontsize=14, fontweight='bold')
     ax.axvline(x=0, color='black', linestyle='--', alpha=0.7)
     ax.grid(True, alpha=0.3)
-    
+
     plt.tight_layout()
     plt.show()
-    
     return fig
 
 
@@ -1367,62 +1165,41 @@ def create_all_tier2_visualizations(
     baseline_accuracy: float = None,
     show_top_ensembles: int = 8
 ):
-    """
-    Create all Tier 2 visualizations with proper spacing and formatting.
-    
-    Parameters:
-    - ensemble_results: Results from ensemble_by_trait_analysis
-    - cluster_results: Results from cluster_level_bias_patterns  
-    - trait_results: Results from trait_comparison_controlled (optional)
-    - show_top_ensembles: Number of top ensembles to show
-    """
-    
     print("Creating Tier 2 Visualizations...")
     print("="*50)
-    
     figures = {}
-    
+
     try:
         print("1. Ensemble Performance Analysis...")
-        fig1 = plot_ensemble_performance_comparison(
-            ensemble_results, 
-            show_top_n=show_top_ensembles
-        )
-        figures['ensemble'] = fig1
-        
+        fig1 = plot_ensemble_performance_comparison(ensemble_results, show_top_n=show_top_ensembles)
+        if fig1: figures['ensemble'] = fig1
     except Exception as e:
         print(f"   Error creating ensemble plot: {e}")
-    
+
     try:
         print("2. Cluster Analysis...")
         fig2 = plot_cluster_analysis(cluster_results)
-        figures['cluster'] = fig2
-        
+        if fig2: figures['cluster'] = fig2
     except Exception as e:
         print(f"   Error creating cluster plot: {e}")
-    
-    if trait_results:
+
+    if trait_results and 'error' not in trait_results and 'skipped' not in trait_results:
         try:
             print("3. Trait Comparison Analysis...")
-            fig3 = plot_trait_comparison_results(
-                trait_results, 
-                baseline_accuracy=baseline_accuracy
-            )
-            figures['trait'] = fig3
-            
+            fig3 = plot_trait_comparison_results(trait_results, baseline_accuracy=baseline_accuracy)
+            if fig3: figures['trait'] = fig3
         except Exception as e:
             print(f"   Error creating trait plot: {e}")
-    
+
     try:
         print("4. System-Level Recommendations...")
         fig4 = plot_system_level_recommendations(
             ensemble_results, cluster_results, trait_results
         )
-        figures['recommendations'] = fig4
-        
+        if fig4: figures['recommendations'] = fig4
     except Exception as e:
         print(f"   Error creating recommendations plot: {e}")
-    
+
     print(f"\nCompleted! Created {len(figures)} visualizations.")
     return figures
 
@@ -1435,10 +1212,6 @@ def run_full_tier2_analysis(
     group_keys: Optional[Tuple[str, ...]] = None, 
     create_visualizations: bool = True,
 ):
-    """
-    Run complete Tier 2 analysis pipeline with conditional cognitive style execution.
-    """
-
     print("EXECUTING COMPREHENSIVE TIER 2 ANALYSIS PIPELINE")
     print("=" * 80)
     print(f"Group keys: {group_keys}")
@@ -1462,37 +1235,27 @@ def run_full_tier2_analysis(
             group_keys = tuple(key for key in group_keys if key in available_keys)
             print(f"Using filtered group keys: {group_keys}")
     
-    print(f"Dataset shape: {merged_df.shape}")
-
-    category_cols = getattr(case, "category_cols", None) or ["stereotype_type"]
+    # Use case.category_cols directly (MMLU: ['subject'])
+    category_cols = getattr(case, "category_cols", None) or ["subject"]
 
     # STEP 1: ENSEMBLE BY TRAIT ANALYSIS
     try:
         print("\n=== Running Step 1: Ensemble by Trait Analysis...")
         ensemble_results = ensemble_by_trait_analysis(
-            merged_df,
-            person_set,
-            case=case,
-            group_keys=group_keys
+            merged_df, person_set, case=case, group_keys=group_keys
         )
         print("SUCCESS: Ensemble analysis completed successfully")
     except Exception as e:
         print(f"ERROR: Ensemble analysis failed: {e}")
-        ensemble_results = {'error': str(e)}
+        ensemble_results = {'error': str(e), 'baseline_accuracy': 0.0}
 
     # STEP 2: CLUSTER-LEVEL BIAS PATTERNS
     try:
         print("\n=== Running Step 2: Cluster-level Bias Analysis...")
-        similarity_results = analyze_persona_similarity(
-            merged_df,
-            person_set=person_set
-        )
+        similarity_results = analyze_persona_similarity(merged_df, person_set=person_set)
         cluster_results = cluster_level_bias_patterns(
-            merged_df,
-            person_set=person_set,
-            case=case,
-            similarity_results=similarity_results,
-            group_keys=group_keys
+            merged_df, person_set=person_set, case=case,
+            similarity_results=similarity_results, group_keys=group_keys
         )
         print("SUCCESS: Cluster analysis completed successfully")
     except Exception as e:
@@ -1502,35 +1265,34 @@ def run_full_tier2_analysis(
     has_cognitive_data = has_cognitive_style_data(person_set)
     cognitive_results = {'skipped': True, 'reason': 'No cognitive style data found'}
 
-
-    # STEP 3: (OPTIONAL) IF SPECIFIED TRAIT REGARDING REASONING, COMPARE TRAITS
+    # STEP 3: TRAIT COMPARISONS (optional)
     print("\n=== Running Step 3: Multiple Trait Comparisons...")
     if has_cognitive_data:
         try:
             trait_analyses = [("cognitive_style", ["gender", "ethnicity"])]
             trait_comparison_results = run_multiple_trait_comparisons(
-                merged_df, person_set, trait_analyses=trait_analyses
+                merged_df, person_set, case, trait_analyses=trait_analyses
             )
-            cognitive_results = trait_comparison_results.get(
-                "cognitive_style", {'error': 'Missing cognitive results'}
-            )
+            cognitive_results = trait_comparison_results.get("cognitive_style", {'error': 'Missing cognitive results'})
             print("SUCCESS: Trait comparisons (cognitive_style) completed successfully")
         except Exception as e:
             print(f"ERROR: Trait comparisons failed: {e}")
             cognitive_results = {'error': str(e)}
     else:
         print("[No cognitive trait data, part skipped]")
-    
 
     # STEP 4: VISUALIZATIONS
     visualization_figures = {}
     if create_visualizations:
         try:
             print("\n=== Running Step 4: Creating Visualizations...")
+            baseline_acc = ensemble_results.get('baseline_accuracy', 0.0) if isinstance(ensemble_results, dict) else 0.0
+            trait_for_plot = cognitive_results if ('error' not in cognitive_results and 'skipped' not in cognitive_results) else None
             visualization_figures = create_all_tier2_visualizations(
                 ensemble_results=ensemble_results,
                 cluster_results=cluster_results,
-                trait_results=None,
+                trait_results=trait_for_plot,
+                baseline_accuracy=baseline_acc,
                 show_top_ensembles=8
             )
             print("SUCCESS: Visualizations created successfully")
@@ -1550,18 +1312,15 @@ def run_full_tier2_analysis(
         summary['best_ensemble'] = best_ensemble
         print(f"   • Best Overall Ensemble: {best_ensemble}")
 
-
     # Cluster findings
     if isinstance(cluster_results, dict) and 'recommendations' in cluster_results:
         best_cluster = cluster_results['recommendations'].get('best_accuracy', ['Unknown'])[0]
         summary['best_cluster'] = best_cluster
         print(f"   • Best Cluster: {best_cluster}")
 
-    
-    # Cognitive style findings if they exist
-    if has_cognitive_data and isinstance(cognitive_results, dict) \
-       and ('error' not in cognitive_results) and ('skipped' not in cognitive_results):
-        if 'recommendations' in cognitive_results and cognitive_results['recommendations']:
+    # Cognitive style findings (if any)
+    if has_cognitive_data and isinstance(cognitive_results, dict) and ('error' not in cognitive_results) and ('skipped' not in cognitive_results):
+        if cognitive_results.get('recommendations'):
             best_cog = cognitive_results['recommendations'][0]
             best_cog_name = best_cog[0] if isinstance(best_cog, (list, tuple)) else str(best_cog)
             summary['best_cognitive_style'] = best_cog_name

@@ -75,53 +75,58 @@ def factorial_analysis_nway_anova(
             return {k: "unknown" for k in group_keys}
         
         traits = person_set.get_traits(profile_id, group_keys)
-        return {k: norm_val(traits.get(k, "Unknown")) for k in group_keys}
-    
-    print(f"=== FACTORIAL ANOVA ANALYSIS ===")
+        out = {}
+        for k in group_keys:
+            v = traits.get(k, "Unknown")
+            if hasattr(v, "value"):
+                v = v.value
+            out[k] = v
+        return {k: norm_val(out.get(k, "Unknown")) for k in group_keys}
+    # === FACTORIAL ANOVA ANALYSIS ===
     print(f"Group keys: {group_keys}")
-    
-    # Get profile columns - same logic as plotting function
-    profile_cols = [col for col in merged_df.columns if col.startswith("profile")]
+ 
+ # Normalize labels/preds locally (multiclass-safe)
+    df = merged_df.copy()
+    profile_cols = [col for col in df.columns if col.startswith("profile")]
+    for c in ['true_label', *profile_cols]:
+        if c in df.columns:
+            df[c] = df[c].astype(str).str.strip().str.lower()
+ 
     print(f"Found {len(profile_cols)} profile columns")
-    
-    # Extract traits for each profile - same logic as plotting function
+ 
+    # Extract traits for each profile
     profile_traits = {}
     for p in profile_cols:
         traits = extract_traits(p)
-        profile_traits[p] = traits
-    
-    # Calculate primary performance metric: accuracy
+        # unwrap Enums if needed
+        traits_clean = {}
+        for k, v in traits.items():
+            if hasattr(v, "value"):
+                v = v.value
+            traits_clean[k] = str(v).lower() if v is not None else "unknown"
+        profile_traits[p] = traits_clean
+ 
+    # Calculate accuracy per profile
     performance_data = []
     for profile in profile_cols:
-        if profile not in merged_df.columns:
-            print(f"WARNING: Profile {profile} not found in merged_df columns")
+        if profile not in df.columns:
+            print(f"WARNING: Profile {profile} not found in df columns")
             continue
-            
-        # Calculate accuracy with error checking
-        predictions = merged_df[profile]
-        true_labels = merged_df['true_label']
-        
-        # Check for missing values
-        if predictions.isna().any() or true_labels.isna().any():
-            print(f"WARNING: Missing values found in {profile}")
-            accuracy = (predictions == true_labels).mean()
-        else:
-            accuracy = (predictions == true_labels).mean()
-        
-        # Check for invalid accuracy values
+    
+        predictions = df[profile]
+        true_labels = df['true_label']
+        accuracy = (predictions == true_labels).mean()
+    
         if pd.isna(accuracy) or np.isinf(accuracy):
             print(f"ERROR: Invalid accuracy for {profile}: {accuracy}")
-            accuracy = 0.0  # Set to default value
-            
-        # Build row with traits
-        row = {
-            'profile': profile,
-            'accuracy': accuracy,
-        }
+            accuracy = 0.0
+    
+        row = {"profile": profile, "accuracy": accuracy}
         row.update(profile_traits[profile])
         performance_data.append(row)
-
+    
     performance_df = pd.DataFrame(performance_data)
+
     
     # ========================================================================
     # DATA VALIDATION AND CLEANING
@@ -927,7 +932,7 @@ def ols_interaction_pvalue(df, dv, factor1, factor2):
     try:
         # Check if factors exist in dataframe
         if factor1 not in df.columns or factor2 not in df.columns:
-            print(f"⚠️ Factors {factor1} or {factor2} not found in dataframe")
+            print(f"=== Factors {factor1} or {factor2} not found in dataframe")
             return None
             
         formula = f"{dv} ~ C({factor1}) * C({factor2})"
