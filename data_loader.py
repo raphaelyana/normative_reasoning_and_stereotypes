@@ -225,7 +225,6 @@ def load_mentalmanip_dataset(
 
 
 
-
 def load_mmlu_dataset(
         input_df: pd.DataFrame,
         sample_per_subject: int = 50,
@@ -234,55 +233,70 @@ def load_mmlu_dataset(
         random_state_examples: int = 0,
         print_balance: bool = False,
     ):
-
     if not isinstance(input_df, pd.DataFrame):
         raise ValueError("input_df must be a pandas DataFrame")
-    
     if "subject" not in input_df.columns or "category" not in input_df.columns:
         raise ValueError("Missing required columns: 'subject', 'category'")
-    
 
     subject_list = input_df["subject"].unique().tolist()
-    test_samples = []
-    examples_samples = []
-    
+    test_samples, examples_samples = [], []
+
     for subject in subject_list:
         subject_df = input_df[input_df["subject"] == subject]
         available = len(subject_df)
 
-        if available < sample_per_subject+sample_examples_per_subject:
-            raise ValueError(f"Not enough samples to use for subject: {subject}. Available samples: {available}, requested: {sample_per_subject + sample_examples_per_subject}.")
-        
-        subject_test = subject_df.sample(n=sample_per_subject, random_state=random_state)
-        test_samples.append(subject_test)
+        n_ex = min(sample_examples_per_subject, available)
+        n_test = min(sample_per_subject, max(available - n_ex, 0))
 
-        remaining = subject_df.drop(subject_test.index)
-        subject_examples = remaining.sample(n=sample_examples_per_subject, random_state=random_state_examples)
-        examples_samples.append(subject_examples)
+        if print_balance and (n_test < sample_per_subject or n_ex < sample_examples_per_subject):
+            print(f"[fallback] {subject}: available={available} -> test={n_test}, ex={n_ex}")
+
+        if n_ex > 0:
+            examples = subject_df.sample(n=n_ex, random_state=random_state_examples, replace=False)
+        else:
+            examples = subject_df.iloc[0:0]
+        examples_samples.append(examples)
+
+        if n_test > 0:
+            remaining = subject_df.drop(examples.index)
+            tests = remaining.sample(n=n_test, random_state=random_state, replace=False)
+        else:
+            tests = subject_df.iloc[0:0]
+        test_samples.append(tests)
 
         if print_balance:
-            print(f"{subject}: samples={len(subject_test)}, examples={len(subject_examples)}")
+            print(f"{subject}: samples={len(tests)}, examples={len(examples)} (available={available})")
 
-    sample_mmlu = pd.concat(test_samples).reset_index(drop=True)
-    sample_examples_mmlu = pd.concat(examples_samples).reset_index(drop=True)
+    sample_mmlu = pd.concat(test_samples).reset_index(drop=True) if test_samples else input_df.iloc[0:0].copy()
+    sample_examples_mmlu = pd.concat(examples_samples).reset_index(drop=True) if examples_samples else input_df.iloc[0:0].copy()
 
-    for df in [sample_mmlu, sample_examples_mmlu]:
-        df["choices"] = df["choices"].apply(lambda x: list(x) if not isinstance(x, list) else x)
+    for df in (sample_mmlu, sample_examples_mmlu):
+        if "choices" in df.columns:
+            df["choices"] = df["choices"].apply(lambda x: list(x) if isinstance(x, (list, tuple)) else x)
 
-    sample_mmlu["formatted_prompt"] = sample_mmlu.apply(format_mmlu_prompt, axis=1)
-    sample_examples_mmlu["formatted_prompt"] = sample_examples_mmlu.apply(format_mmlu_prompt, axis=1)
+    if len(sample_mmlu):
+        sample_mmlu["formatted_prompt"] = sample_mmlu.apply(format_mmlu_prompt, axis=1)
+    else:
+        sample_mmlu["formatted_prompt"] = []
+    if len(sample_examples_mmlu):
+        sample_examples_mmlu["formatted_prompt"] = sample_examples_mmlu.apply(format_mmlu_prompt, axis=1)
+    else:
+        sample_examples_mmlu["formatted_prompt"] = []
 
-    sample_mmlu["answer"] = sample_mmlu["answer"].astype(str)
-    sample_examples_mmlu["answer"] = sample_examples_mmlu["answer"].astype(str)
+    if "answer" in sample_mmlu.columns:
+        sample_mmlu["answer"] = sample_mmlu["answer"].astype(str)
+    if "answer" in sample_examples_mmlu.columns:
+        sample_examples_mmlu["answer"] = sample_examples_mmlu["answer"].astype(str)
 
-    sample_mmlu = sample_mmlu.sample(frac=1, random_state=random_state).reset_index(drop=True)
-    sample_examples_mmlu = sample_examples_mmlu.sample(frac=1, random_state=random_state_examples).reset_index(drop=True)
+    if len(sample_mmlu):
+        sample_mmlu = sample_mmlu.sample(frac=1, random_state=random_state).reset_index(drop=True)
+    if len(sample_examples_mmlu):
+        sample_examples_mmlu = sample_examples_mmlu.sample(frac=1, random_state=random_state_examples).reset_index(drop=True)
 
     sample_mmlu["sample_id"] = sample_mmlu.index
     sample_examples_mmlu["sample_id"] = sample_examples_mmlu.index
 
     return sample_mmlu, sample_examples_mmlu
-
 
 
 
