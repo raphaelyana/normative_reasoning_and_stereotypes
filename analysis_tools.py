@@ -221,3 +221,51 @@ def has_cognitive_style_data(person_set: PersonSet, sample_size: int = 10) -> bo
             return True
     
     return False
+
+def guarded_labelspace_analysis(
+    analysis_func,
+    merged_df,
+    case,
+    person_set=None,
+    baseline_col="base_pred",
+    profile_prefix="profile",
+    **kwargs
+):
+    """
+    Wrapper général pour l'analyse adaptative selon le label space.
+    Applique la binarisation locale si multi-classes (>2 labels), sinon passe les arguments tels quels.
+    Tous les arguments supplémentaires sont transmis à la fonction d'analyse via **kwargs.
+    """
+    n_labels = len(case.valid_labels)
+    if n_labels == 2:
+        return analysis_func(
+            merged_df,
+            person_set=person_set,
+            case=case,
+            baseline_col=baseline_col,
+            profile_prefix=profile_prefix,
+            **kwargs
+        )
+    elif n_labels > 2:
+        print(f"[INFO] Multi-class label space detected ({n_labels} labels). Binarizing for analysis.")
+        df_bin = merged_df.copy()
+        for p in [c for c in merged_df.columns if c.startswith(profile_prefix)]:
+            df_bin[p] = (merged_df[p] == merged_df["true_label"]).astype(int)
+        df_bin["true_label"] = 1
+        case_bin = case.copy(update={
+            "case_name": case.case_name + "_binarized",
+            "valid_labels": [1, 0],
+            "label_map": {"1": "1", "0": "0"},
+            "label_col": "true_label"
+        })
+        return analysis_func(
+            df_bin,
+            person_set=person_set,
+            case=case_bin,
+            baseline_col=baseline_col,
+            profile_prefix=profile_prefix,
+            **kwargs
+        )
+    else:
+        print("[WARN] case.valid_labels vide ou non reconnu. Analyse non effectuée.")
+        return {}

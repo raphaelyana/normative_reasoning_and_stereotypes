@@ -568,9 +568,15 @@ def plot_risk_benefit_frontier(
 
     print("\n\n=== RESCUE STATISTICS BY CATEGORY ===")
     rescue_stats_list = []
+    from analysis_tools import guarded_labelspace_analysis
     for cat_col in category_cols:
         if cat_col in merged_df.columns:
-            rescue_stats = rescue_stats_by_category(merged_df, category_col=cat_col)
+            rescue_stats = guarded_labelspace_analysis(
+                rescue_stats_by_category,
+                merged_df,
+                category_col=cat_col,
+                person_set=person_set
+            )
             rescue_stats["category_col"] = cat_col
             rescue_stats_list.append(rescue_stats)
 

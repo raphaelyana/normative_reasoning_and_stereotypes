@@ -1,3 +1,4 @@
+import pandas as pd
 import os
 import glob
 import json
@@ -25,7 +26,7 @@ from scipy.stats import (
 from scipy.spatial.distance import squareform
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 
-from analysis_tools import get_demographic_info, get_analysis_group_keys
+from analysis_tools import get_demographic_info, get_analysis_group_keys, guarded_labelspace_analysis
 from profiles.schema import *
 from profiles.profile_sets import PERSON_ETHNICS
 from cases.cases_config import CaseConfig
@@ -51,6 +52,46 @@ __all__ = [
 # Preliminary Analysis
 # ============================================================================
 
+
+def guarded_systematic_bias_analysis_multi_category(
+    merged_df: pd.DataFrame,
+    person_set: PersonSet,
+    case: CaseConfig,
+    baseline_col: str = "base_pred",
+    profile_prefix: str = "profile"
+) -> Dict[str, tuple]:
+    """
+    Wrapper qui adapte l'analyse des biais systématiques selon le nombre de labels.
+    Si binaire (2 labels), exécute l'analyse normale.
+    Si multi-classes (>2 labels), binarise localement pour cette étape.
+    """
+    n_labels = len(case.valid_labels)
+    if n_labels == 2:
+        # Cas binaire : analyse normale
+        return analyze_systematic_bias_patterns_multi_category(
+            merged_df, person_set, case,
+            baseline_col=baseline_col, profile_prefix=profile_prefix
+        )
+    elif n_labels > 2:
+        # Cas multi-classes : binarisation locale pour cette étape
+        print(f"[INFO] Multi-class label space detected ({n_labels} labels). Binarizing for bias analysis.")
+        df_bin = merged_df.copy()
+        for p in [c for c in merged_df.columns if c.startswith(profile_prefix)]:
+            df_bin[p] = (merged_df[p] == merged_df["true_label"]).astype(int)
+        df_bin["true_label"] = 1
+        case_bin = case.copy(update={
+            "case_name": case.case_name + "_binarized",
+            "valid_labels": [1, 0],
+            "label_map": {"1": "1", "0": "0"},
+            "label_col": "true_label"
+        })
+        return analyze_systematic_bias_patterns_multi_category(
+            df_bin, person_set, case_bin,
+            baseline_col=baseline_col, profile_prefix=profile_prefix
+        )
+    else:
+        print("[WARN] case.valid_labels vide ou non reconnu. Biais systématique non analysé.")
+        return {}
 
 def test_comprehensive_demographic_accuracy_differences(
     merged_df,
@@ -505,7 +546,9 @@ def rescue_stats_by_category(
     category_col: str,
     baseline_col: str = "base_pred",
     label_col: str = "true_label",
-    profile_prefix: str = "profile"
+    profile_prefix: str = "profile",
+    person_set=None,
+    **kwargs
 ) -> pd.DataFrame:
     """
     Dataset-agnostic rescue statistics analysis that handles any category values and None values
@@ -1653,30 +1696,23 @@ def run_full_preliminary_analysis(
     print_comprehensive_demographic_results(demographic_results)
     results["demographic"] = demographic_results
 
-    # SYSTEMATIC BIAS PATTERNS - DATASET AGNOSTIC (analyze each category separately)
-    print("\n\n=== SYSTEMATIC BIAS PATTERNS ===")
-    
-    # Call the multi-category function once with the case
-    bias_results = analyze_systematic_bias_patterns_multi_category(
+    # SYSTEMATIC BIAS PATTERNS - ADAPTATIF
+    print("\n\n=== SYSTEMATIC BIAS PATTERNS (AUTOMATIQUE) ===")
+    bias_results = guarded_labelspace_analysis(
+        analyze_systematic_bias_patterns_multi_category,
         merged_df,
-        person_set=person_set,
-        case=case
+        case,
+        person_set=person_set
     )
-    
-    # Extract results by category
     bias_patterns_all = {}
     meaningful_patterns_all = {}
     category_summary_all = {}
-    
     for cat_col, (bias_patterns, meaningful_patterns, category_summary) in bias_results.items():
         bias_patterns_all[cat_col] = bias_patterns
         meaningful_patterns_all[cat_col] = meaningful_patterns
         category_summary_all[cat_col] = category_summary
         print(f"Found {len(bias_patterns)} bias patterns, {len(meaningful_patterns)} meaningful for {cat_col}")
-    
-    # Print comprehensive summary
     print_multi_category_bias_summary(bias_results)
-
     results["bias_patterns"] = bias_patterns_all
     results["meaningful_bias_patterns"] = meaningful_patterns_all
     results["category_summary"] = category_summary_all
@@ -1693,20 +1729,22 @@ def run_full_preliminary_analysis(
     print("\n\n=== RESCUE STATISTICS BY CATEGORY ===")
     rescue_stats_all = {}
     rescue_analysis_all = {}
-    
     for cat_col in case.category_cols:
         if cat_col in merged_df.columns:
             print(f"\nAnalyzing rescue statistics for category column: {cat_col}")
-            rescue_df = rescue_stats_by_category(merged_df, category_col=cat_col)
+            rescue_df = guarded_labelspace_analysis(
+                rescue_stats_by_category,
+                merged_df,
+                case,
+                category_col=cat_col
+            )
             rescue_analysis = analyze_rescue_performance(rescue_df)
             rescue_stats_all[cat_col] = rescue_df
             rescue_analysis_all[cat_col] = rescue_analysis
             print(f"Computed rescue stats for {cat_col}: {len(rescue_df)} records")
         else:
             print(f"Warning: Category column '{cat_col}' not found for rescue analysis")
-
     print_all_rescue_analyses(rescue_analysis_all)
-    
     results["rescue_stats"] = rescue_stats_all
     results["rescue_analysis"] = rescue_analysis_all
 

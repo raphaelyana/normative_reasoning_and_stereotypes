@@ -365,13 +365,23 @@ def cluster_level_bias_patterns(
 
         rescue_stats_list = []
         bias_patterns_list = []
+        from analysis_tools import guarded_labelspace_analysis
         for cat_col in category_cols:
             if cat_col in merged_df.columns:
-                rs = rescue_stats_by_category(merged_df, category_col=cat_col)
+                rs = guarded_labelspace_analysis(
+                    rescue_stats_by_category,
+                    merged_df,
+                    category_col=cat_col,
+                    person_set=person_set
+                )
                 rs["category_col"] = cat_col
                 rescue_stats_list.append(rs)
-        
-                bp = detect_systematic_biases(merged_df, person_set=person_set, category_col=cat_col)
+                bp = guarded_labelspace_analysis(
+                    detect_systematic_biases,
+                    merged_df,
+                    person_set=person_set,
+                    category_col=cat_col
+                )
                 bp["category_col"] = cat_col
                 bias_patterns_list.append(bp)
         if not rescue_stats_list:
@@ -672,13 +682,23 @@ def trait_comparison_controlled(
         rescue_stats_list = []
         bias_patterns_list = []
     
+        from analysis_tools import guarded_labelspace_analysis
         for cat_col in category_cols:
             if cat_col in merged_df.columns:
-                rs = rescue_stats_by_category(merged_df, category_col=cat_col)
+                rs = guarded_labelspace_analysis(
+                    rescue_stats_by_category,
+                    merged_df,
+                    category_col=cat_col,
+                    person_set=person_set
+                )
                 rs["category_col"] = cat_col
                 rescue_stats_list.append(rs)
-    
-                bp = detect_systematic_biases(merged_df, category_col=cat_col)
+                bp = guarded_labelspace_analysis(
+                    detect_systematic_biases,
+                    merged_df,
+                    category_col=cat_col,
+                    person_set=person_set
+                )
                 bp["category_col"] = cat_col
                 bias_patterns_list.append(bp)
         if rescue_stats_list:
