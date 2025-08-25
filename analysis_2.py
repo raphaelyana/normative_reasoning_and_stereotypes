@@ -365,12 +365,15 @@ def cluster_level_bias_patterns(
 
         rescue_stats_list = []
         bias_patterns_list = []
+
         from analysis_tools import guarded_labelspace_analysis
+
         for cat_col in category_cols:
             if cat_col in merged_df.columns:
                 rs = guarded_labelspace_analysis(
                     rescue_stats_by_category,
                     merged_df,
+                    case=case,
                     category_col=cat_col,
                     person_set=person_set
                 )
@@ -379,6 +382,7 @@ def cluster_level_bias_patterns(
                 bp = guarded_labelspace_analysis(
                     detect_systematic_biases,
                     merged_df,
+                    case=case,
                     person_set=person_set,
                     category_col=cat_col
                 )
@@ -688,6 +692,7 @@ def trait_comparison_controlled(
                 rs = guarded_labelspace_analysis(
                     rescue_stats_by_category,
                     merged_df,
+                    case=case,
                     category_col=cat_col,
                     person_set=person_set
                 )
@@ -696,6 +701,7 @@ def trait_comparison_controlled(
                 bp = guarded_labelspace_analysis(
                     detect_systematic_biases,
                     merged_df,
+                    case=case,
                     category_col=cat_col,
                     person_set=person_set
                 )

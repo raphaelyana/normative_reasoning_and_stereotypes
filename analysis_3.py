@@ -158,9 +158,9 @@ def consistency_vs_boldness_analysis(merged_df,
         for cat_col in category_cols:
             if cat_col in merged_df.columns:
                 rs = guarded_labelspace_analysis(
+                    rescue_stats_by_category,
                     merged_df,
                     case=case,
-                    analysis_func_name="rescue_stats_by_category",
                     category_col=cat_col,
                     person_set=person_set,
                     group_keys=group_keys
@@ -168,12 +168,11 @@ def consistency_vs_boldness_analysis(merged_df,
                 rs["category_col"] = cat_col
                 rescue_stats_list.append(rs)
                 bp = guarded_labelspace_analysis(
+                    detect_systematic_biases,
                     merged_df,
                     case=case,
-                    analysis_func_name="detect_systematic_biases",
                     category_col=cat_col,
                     person_set=person_set,
-                    group_keys=group_keys
                 )
                 bp["category_col"] = cat_col
                 bias_patterns_list.append(bp)
@@ -840,13 +839,15 @@ def simplified_causal_modeling(merged_df,
 
         rescue_stats_list = []
         bias_patterns_list = []
+
         from analysis_tools import guarded_labelspace_analysis
+
         for cat_col in category_cols:
             if cat_col in merged_df.columns:
                 rs = guarded_labelspace_analysis(
+                    rescue_stats_by_category,
                     merged_df,
                     case=case,
-                    analysis_func_name="rescue_stats_by_category",
                     category_col=cat_col,
                     person_set=person_set,
                     group_keys=group_keys
@@ -854,12 +855,11 @@ def simplified_causal_modeling(merged_df,
                 rs["category_col"] = cat_col
                 rescue_stats_list.append(rs)
                 bp = guarded_labelspace_analysis(
+                    detect_systematic_biases,
                     merged_df,
                     case=case,
-                    analysis_func_name="detect_systematic_biases",
                     category_col=cat_col,
                     person_set=person_set,
-                    group_keys=group_keys
                 )
                 bp["category_col"] = cat_col
                 bias_patterns_list.append(bp)

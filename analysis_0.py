@@ -31,6 +31,8 @@ from profiles.schema import *
 from profiles.profile_sets import PERSON_ETHNICS
 from cases.cases_config import CaseConfig
 
+from plot_tools import apply_neurips_figure_style
+
 
 __all__ = [
     "test_comprehensive_demographic_accuracy_differences",
@@ -44,54 +46,18 @@ __all__ = [
     "analyze_persona_similarity",
     "print_persona_similarity_analysis",
     "plot_accuracy_deltas_with_ci",
-    "run_full_preliminary_analysis"
+    "run_full_preliminary_analysis",
+    #"compute_pairwise_demographic_diffs",
+    #"plot_volcano_demographic_diffs",
+    #"plot_effect_size_heatmap",
+    #"plot_intersectional_accuracy_heatmap",
+    #"plot_demographic_accuracy_composite",
 ]
 
 
 # ============================================================================
 # Preliminary Analysis
 # ============================================================================
-
-
-def guarded_systematic_bias_analysis_multi_category(
-    merged_df: pd.DataFrame,
-    person_set: PersonSet,
-    case: CaseConfig,
-    baseline_col: str = "base_pred",
-    profile_prefix: str = "profile"
-) -> Dict[str, tuple]:
-    """
-    Wrapper qui adapte l'analyse des biais systématiques selon le nombre de labels.
-    Si binaire (2 labels), exécute l'analyse normale.
-    Si multi-classes (>2 labels), binarise localement pour cette étape.
-    """
-    n_labels = len(case.valid_labels)
-    if n_labels == 2:
-        # Cas binaire : analyse normale
-        return analyze_systematic_bias_patterns_multi_category(
-            merged_df, person_set, case,
-            baseline_col=baseline_col, profile_prefix=profile_prefix
-        )
-    elif n_labels > 2:
-        # Cas multi-classes : binarisation locale pour cette étape
-        print(f"[INFO] Multi-class label space detected ({n_labels} labels). Binarizing for bias analysis.")
-        df_bin = merged_df.copy()
-        for p in [c for c in merged_df.columns if c.startswith(profile_prefix)]:
-            df_bin[p] = (merged_df[p] == merged_df["true_label"]).astype(int)
-        df_bin["true_label"] = 1
-        case_bin = case.copy(update={
-            "case_name": case.case_name + "_binarized",
-            "valid_labels": [1, 0],
-            "label_map": {"1": "1", "0": "0"},
-            "label_col": "true_label"
-        })
-        return analyze_systematic_bias_patterns_multi_category(
-            df_bin, person_set, case_bin,
-            baseline_col=baseline_col, profile_prefix=profile_prefix
-        )
-    else:
-        print("[WARN] case.valid_labels vide ou non reconnu. Biais systématique non analysé.")
-        return {}
 
 def test_comprehensive_demographic_accuracy_differences(
     merged_df,
@@ -143,7 +109,7 @@ def test_comprehensive_demographic_accuracy_differences(
         acc2 = calculate_group_accuracy(group2_profiles, df)
 
         if not acc1 or not acc2:
-            print(f"⚠️ Skipping comparison between {group1_name} and {group2_name}: No data")
+            print(f"=== Skipping comparison between {group1_name} and {group2_name}: No data")
             return None
         
         t_stat, p_val = ttest_ind(acc1, acc2)
@@ -547,6 +513,7 @@ def rescue_stats_by_category(
     baseline_col: str = "base_pred",
     label_col: str = "true_label",
     profile_prefix: str = "profile",
+    case: CaseConfig = None,
     person_set=None,
     **kwargs
 ) -> pd.DataFrame:
@@ -828,7 +795,8 @@ def detect_systematic_biases(
     baseline_col: str = "base_pred",
     profile_prefix: str = "profile",
     positive_label: str = "stereotype",
-    negative_label: str = "unrelated"
+    negative_label: str = "unrelated",
+    case: CaseConfig = None,
 ) -> pd.DataFrame:
     """
     Fixed version using get_demographic_info_fixed
@@ -1655,6 +1623,8 @@ def plot_accuracy_deltas_with_ci(
 
 
 
+
+
 def run_full_preliminary_analysis(
     merged_df: pd.DataFrame,
     case: CaseConfig,
@@ -1735,7 +1705,7 @@ def run_full_preliminary_analysis(
             rescue_df = guarded_labelspace_analysis(
                 rescue_stats_by_category,
                 merged_df,
-                case,
+                case=case,
                 category_col=cat_col
             )
             rescue_analysis = analyze_rescue_performance(rescue_df)

@@ -233,25 +233,25 @@ def factorial_analysis_nway_anova(
             t1, t2 = valid_traits[0], valid_traits[1]
             formula = f"{dependent_var} ~ C({t1}) + C({t2}) + C({t1}):C({t2})"
         elif len(valid_traits) == 3:
-            t1, t2, t3 = valid_traits[0], valid_traits[1], valid_traits[2]
-            # Check if we have enough degrees of freedom for full model
-            n_params = (len(performance_df[t1].unique()) - 1) + \
-                      (len(performance_df[t2].unique()) - 1) + \
-                      (len(performance_df[t3].unique()) - 1) + \
-                      (len(performance_df[t1].unique()) - 1) * (len(performance_df[t2].unique()) - 1) + \
-                      (len(performance_df[t1].unique()) - 1) * (len(performance_df[t3].unique()) - 1) + \
-                      (len(performance_df[t2].unique()) - 1) * (len(performance_df[t3].unique()) - 1) + \
-                      (len(performance_df[t1].unique()) - 1) * (len(performance_df[t2].unique()) - 1) * (len(performance_df[t3].unique()) - 1)
-            
-            df_resid = len(performance_df) - n_params - 1
-            print(f"Model complexity check: {n_params} parameters, {len(performance_df)} observations, {df_resid} residual df")
-            
-            if df_resid <= 5:  # Too few degrees of freedom
-                print(f"WARNING: Insufficient degrees of freedom ({df_resid}). Using simplified model.")
-                formula = f"{dependent_var} ~ C({t1}) + C({t2}) + C({t3}) + C({t1}):C({t2}) + C({t1}):C({t3}) + C({t2}):C({t3})"
-                print("Removing 3-way interaction to preserve degrees of freedom")
-            else:
-                formula = f"{dependent_var} ~ C({t1}) + C({t2}) + C({t3}) + C({t1}):C({t2}) + C({t1}):C({t3}) + C({t2}):C({t3}) + C({t1}):C({t2}):C({t3})"
+                t1, t2, t3 = valid_traits[0], valid_traits[1], valid_traits[2]
+                # Check if we have enough degrees of freedom for full model
+                n_params = (len(performance_df[t1].unique()) - 1) + \
+                          (len(performance_df[t2].unique()) - 1) + \
+                          (len(performance_df[t3].unique()) - 1) + \
+                          (len(performance_df[t1].unique()) - 1) * (len(performance_df[t2].unique()) - 1) + \
+                          (len(performance_df[t1].unique()) - 1) * (len(performance_df[t3].unique()) - 1) + \
+                          (len(performance_df[t2].unique()) - 1) * (len(performance_df[t3].unique()) - 1) + \
+                          (len(performance_df[t1].unique()) - 1) * (len(performance_df[t2].unique()) - 1) * (len(performance_df[t3].unique()) - 1)
+                
+                df_resid = len(performance_df) - n_params - 1
+                print(f"Model complexity check: {n_params} parameters, {len(performance_df)} observations, {df_resid} residual df")
+                
+                if df_resid <= 5:  # Too few degrees of freedom
+                    print(f"WARNING: Insufficient degrees of freedom ({df_resid}). Using simplified model.")
+                    formula = f"{dependent_var} ~ C({t1}) + C({t2}) + C({t3}) + C({t1}):C({t2}) + C({t1}):C({t3}) + C({t2}):C({t3})"
+                    print("Removing 3-way interaction to preserve degrees of freedom")
+                else:
+                    formula = f"{dependent_var} ~ C({t1}) + C({t2}) + C({t3}) + C({t1}):C({t2}) + C({t1}):C({t3}) + C({t2}):C({t3}) + C({t1}):C({t2}):C({t3})"
         else:
             # For more than 3 traits, just do main effects and 2-way interactions
             main_effects = " + ".join([f"C({trait})" for trait in valid_traits])
@@ -495,6 +495,7 @@ def factorial_analysis_nway_anova(
 
 def plot_risk_benefit_frontier(
     merged_df, 
+    case: CaseConfig,
     group_keys=("gender", "ethnicity", "age"), 
     category_cols=None,
     figsize=(10, 6), 
@@ -568,12 +569,15 @@ def plot_risk_benefit_frontier(
 
     print("\n\n=== RESCUE STATISTICS BY CATEGORY ===")
     rescue_stats_list = []
+
     from analysis_tools import guarded_labelspace_analysis
+    
     for cat_col in category_cols:
         if cat_col in merged_df.columns:
             rescue_stats = guarded_labelspace_analysis(
                 rescue_stats_by_category,
                 merged_df,
+                case=case,
                 category_col=cat_col,
                 person_set=person_set
             )
@@ -1020,6 +1024,7 @@ def run_full_tier1_analysis(
         print("="*60)
         pareto_results = plot_risk_benefit_frontier(
             merged_df, 
+            case=case,
             group_keys=group_keys, 
             category_cols=case.category_cols,
             person_set=person_set
