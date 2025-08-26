@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
+from matplotlib import patheffects as pe
 
 from sklearn.metrics import accuracy_score, silhouette_score
 from sklearn.model_selection import KFold
@@ -1674,8 +1675,7 @@ def compute_pairwise_demographic_diffs(
         out["neglog10_p_adj"] = -np.log10(out["p_adj"].clip(lower=1e-300))
     return out.sort_values("diff", key=lambda s: np.abs(s), ascending=False).reset_index(drop=True)
 
-# ---- Plot helpers: make each figure standalone at (10, 6) ----
-from matplotlib import patheffects as pe
+
 
 def plot_volcano_demographic_diffs(
     pair_df,
@@ -1721,12 +1721,20 @@ def plot_volcano_demographic_diffs(
     ax.axvline(0, ls="--", lw=1, color="0.4")
     ax.axhline(-np.log10(alpha_sig), ls=":", lw=1, color="0.4")
 
-    ax.set_xlabel("Δ accuracy (group1 − group2)")
-    ax.set_ylabel("−log10(p)")
-    ax.set_title(title, fontsize=10)
+    ax.set_xlabel("Accuracy difference (group1 - group2)")
+    ax.set_ylabel("Statistical significance (-log10 of p-value)")
+    ax.set_title("Group differences vs. statistical significance", fontsize=10)
     ax.grid(axis="y", ls=":", alpha=0.35)
     ax.set_facecolor("white")
     ax.margins(x=0.05)
+
+    ax.text(
+    1.02, 1.02,
+    "Note: positive = group1 higher",
+    transform=ax.transAxes,
+    ha="left", va="bottom",
+    fontsize=8, color="0.3"
+    )
     return ax
 
 

@@ -1432,7 +1432,7 @@ def visualize_causal_model(causal_results, figsize=(10, 6)):
     all_predictors = demographic_predictors + other_predictors
 
     def _new_fig(title):
-        fig, ax = plt.subplots(1, 1, figsize=figsize)
+        fig, ax = plt.subplots(1, 1, figsize=figsize, constrained_layout=True)
         fig.suptitle('Causal Modeling: Profile Traits Effects on Bias Outcomes', fontsize=14, fontweight='bold')
         ax.set_title(title, fontsize=11)
         return fig, ax
