@@ -55,6 +55,15 @@ __all__ = [
 ]
 
 
+__all__ += [
+    "compute_pairwise_demographic_diffs",
+    "plot_volcano_demographic_diffs",
+    "plot_effect_size_heatmap",
+    "plot_intersectional_accuracy_heatmap",
+    "plot_demographic_accuracy_composite",
+]
+
+
 # ============================================================================
 # Preliminary Analysis
 # ============================================================================
@@ -1401,228 +1410,519 @@ def print_persona_similarity_analysis(similarity_results: Dict[str, Any]):
     most_cohesive = summary['most_cohesive_cluster']
     print(f"Most cohesive cluster: {most_cohesive} (agreement: {clusters[most_cohesive]['internal_agreement']:.3f})")
 
+
+
+
+
 def plot_accuracy_deltas_with_ci(
     merged_df,
     person_set: PersonSet,
     group_keys=("gender", "ethnicity"),
     colormap: str = "tab10",
-    figsize=(14, 6)
+    figsize=(14, 6),
+    savepath: str = None,
 ):
     """
-    Fixed plotting function with proper gender×ethnicity grouping and ordering
-    
-    Ordering: For N ethnicities and M genders:
-    ethnicity_1×gender_1, ethnicity_1×gender_2, ..., ethnicity_1×gender_M,
-    ethnicity_2×gender_1, ethnicity_2×gender_2, ..., ethnicity_N×gender_M
-    
-    Colors: Same color for bars sharing the same ethnicity
+    Accuracy plot (NeurIPS-friendly):
+      • Far-left bar = baseline accuracy (base_pred if present else zero_shot)
+      • Remaining bars = absolute accuracy per Ethnicity×Gender (mean over profiles) with 95% CI
+      • Consensus line = global mean across all profiles
+      • Y-axis is zoomed so the bottom starts at 80% of the lowest accuracy (baseline + groups)
     """
-    
+    try:
+        apply_neurips_figure_style()
+    except Exception:
+        pass
+
     profile_cols = [c for c in merged_df.columns if c.startswith("profile")]
     if not profile_cols:
         raise ValueError("No profile columns found for plotting")
-    
-    print(f"Found {len(profile_cols)} profile columns")
-    
-    # Calculate global consensus accuracy
-    consensus_accuracy_global = np.mean([
+
+    # Global consensus across profiles
+    consensus_accuracy_global = float(np.mean([
         (merged_df[p] == merged_df["true_label"]).mean()
         for p in profile_cols
-    ])
-    
-    # Extract all unique genders and ethnicities from the data
-    all_genders = set()
-    all_ethnicities = set()
+    ]))
+
+    # Baseline accuracy (leftmost bar)
+    baseline_label = "Baseline"
+    if "base_pred" in merged_df.columns:
+        baseline_acc = float((merged_df["base_pred"] == merged_df["true_label"]).mean())
+    elif "zero_shot" in merged_df.columns:
+        baseline_acc = float((merged_df["zero_shot"] == merged_df["true_label"]).mean())
+    else:
+        baseline_acc = np.nan
+
+    # Traits
+    all_genders, all_ethnicities = set(), set()
     profile_demographics = {}
-    
-    for profile in profile_cols:
-        try:
-            traits = person_set.get_traits(profile, group_keys=["gender", "ethnicity"])
-            gender = str(traits.get("gender", "unknown")).lower()
-            ethnicity = str(traits.get("ethnicity", "unknown")).lower()
-            
-            all_genders.add(gender)
-            all_ethnicities.add(ethnicity)
-            profile_demographics[profile] = (ethnicity, gender)
-            
-        except Exception as e:
-            print(f"Warning: Could not get traits for {profile}: {e}")
-            profile_demographics[profile] = ("unknown", "unknown")
-            all_genders.add("unknown")
-            all_ethnicities.add("unknown")
-    
-    # Sort for consistent ordering
+    for p in profile_cols:
+        traits = person_set.get_traits(p, group_keys=["gender", "ethnicity"])
+        gender = str(traits.get("gender", "unknown")).lower()
+        ethnicity = str(traits.get("ethnicity", "unknown")).lower()
+        all_genders.add(gender); all_ethnicities.add(ethnicity)
+        profile_demographics[p] = (ethnicity, gender)
+
     genders = sorted(all_genders)
     ethnicities = sorted(all_ethnicities)
-    
-    print(f"Genders: {genders}")
-    print(f"Ethnicities: {ethnicities}")
-    
-    # Create ordered combinations: ethnicity×gender
-    # For each ethnicity, cycle through all genders
-    ordered_combinations = []
-    for ethnicity in ethnicities:
-        for gender in genders:
-            ordered_combinations.append((ethnicity, gender))
-    
-    print(f"Ordered combinations: {ordered_combinations}")
-    
-    # Group profiles by (ethnicity, gender) combinations
+
+    # Ordered combinations (ethnicity × gender)
+    ordered_combinations = [(e, g) for e in ethnicities for g in genders]
+
+    # Group profiles by combo
     demo_groups = {combo: [] for combo in ordered_combinations}
-    
-    for profile, (ethnicity, gender) in profile_demographics.items():
-        combo = (ethnicity, gender)
-        if combo in demo_groups:
-            demo_groups[combo].append(profile)
-    
-    print(f"Profiles per group: {[(combo, len(profiles)) for combo, profiles in demo_groups.items()]}")
-    
-    # Calculate accuracy deltas for each group
-    group_data = {}
-    
+    for p, (e, g) in profile_demographics.items():
+        if (e, g) in demo_groups:
+            demo_groups[(e, g)].append(p)
+
+    # Accuracy & 95% CI per group (across profiles)
+    group_stats = {}
     for combo in ordered_combinations:
-        profiles_in_group = demo_groups[combo]
-        
-        # Calculate accuracies for profiles in this group
-        group_accuracies = []
-        for profile in profiles_in_group:
-            if profile in merged_df.columns:
-                acc = (merged_df[profile] == merged_df["true_label"]).mean()
-                group_accuracies.append(acc)
-        
-        # Calculate consensus from ALL OTHER profiles (not in this demographic group)
-        other_profiles = []
-        for other_combo, other_profiles_list in demo_groups.items():
-            if other_combo != combo:
-                other_profiles.extend(other_profiles_list)
-        
-        if other_profiles:
-            consensus = np.mean([
-                (merged_df[p] == merged_df["true_label"]).mean() 
-                for p in other_profiles if p in merged_df.columns
-            ])
+        profs = demo_groups[combo]
+        prof_accs = [(merged_df[p] == merged_df["true_label"]).mean()
+                     for p in profs if p in merged_df.columns]
+        n = len(prof_accs)
+        if n == 0:
+            mean_acc, ci = np.nan, 0.0
+        elif n == 1:
+            mean_acc, ci = float(prof_accs[0]), 0.0
         else:
-            consensus = consensus_accuracy_global
-        
-        # Calculate deltas from consensus
-        deltas = [acc - consensus for acc in group_accuracies]
-        n = len(deltas)
-        
-        if n > 1:
-            se = sem(deltas)
-            ci = se * t.ppf(0.975, n - 1)  # 95% confidence interval
-        else:
-            se = 0.0
-            ci = 0.0
-        
-        group_data[combo] = {
-            "mean_delta": float(np.mean(deltas)) if n > 0 else 0.0,
-            "sem": float(se),
-            "ci": float(ci),
-            "n": n,
-            "ethnicity": combo[0],
-            "gender": combo[1]
-        }
-    
-    # Set up colors - same color for same ethnicity
+            mean_acc = float(np.mean(prof_accs))
+            ci = float(sem(prof_accs) * t.ppf(0.975, n - 1))
+        group_stats[combo] = {"mean_acc": mean_acc, "ci": ci, "n": n}
+
+    # Colors: same color per ethnicity
     cmap = plt.get_cmap(colormap)
     ethnicity_colors = {
-        ethnicity: cmap(i / max(1, len(ethnicities) - 1)) 
-        for i, ethnicity in enumerate(ethnicities)
+        e: cmap(i / max(1, len(ethnicities) - 1)) for i, e in enumerate(ethnicities)
     }
-    
-    # Prepare plot data in the correct order
-    means = [group_data[combo]["mean_delta"] for combo in ordered_combinations]
-    errors = [group_data[combo]["ci"] for combo in ordered_combinations]
-    colors = [ethnicity_colors[combo[0]] for combo in ordered_combinations]
-    
-    # Create plot
-    x = np.arange(len(ordered_combinations))
-    fig, ax = plt.subplots(figsize=figsize)
-    
-    bars = ax.bar(x, means, yerr=errors, capsize=4, color=colors, 
-                  edgecolor="black", alpha=0.8, linewidth=0.8)
-    
-    # Create x-axis labels
+
+    # Build arrays (baseline first if available)
+    labels, means, ci_err, colors = [], [], [], []
+    include_baseline = not np.isnan(baseline_acc)
+    if include_baseline:
+        labels.append(baseline_label)
+        means.append(baseline_acc)
+        ci_err.append(0.0)
+        colors.append("0.5")  # grey baseline
+
     abbrev_gender = {"man": "M", "woman": "W", "nonbinary": "NB"}
-    xticklabels = []
-    
-    for ethnicity, gender in ordered_combinations:
-        gender_short = abbrev_gender.get(gender, gender[:1].upper())
-        # Capitalize first letter of ethnicity for display
-        eth_display = ethnicity.replace("_", "-").title()
-        xticklabels.append(f"{eth_display}\n{gender_short}")
-    
-    ax.set_xticks(x)
-    ax.set_xticklabels(xticklabels, fontsize=9, ha="center")
-    
+    for e, g in ordered_combinations:
+        st = group_stats[(e, g)]
+        labels.append(f"{e.replace('_','-').title()}\n{abbrev_gender.get(g, g[:1].upper())}")
+        means.append(st["mean_acc"])
+        ci_err.append(st["ci"])
+        colors.append(ethnicity_colors[e])
+
+    means_arr = np.array(means, dtype=float)
+    ci_arr = np.array(ci_err, dtype=float)
+
+    # ---------------------------
+    # Y-AXIS ZOOM (your request):
+    # bottom starts at 80% of the lowest accuracy (baseline + groups)
+    # ---------------------------
+    finite_means = means_arr[np.isfinite(means_arr)]
+    if finite_means.size == 0:
+        raise ValueError("All group accuracies are NaN; cannot plot.")
+
+    min_acc = float(np.min(finite_means))
+    ymin = max(0.0, 0.9 * min_acc)
+    ymax = min(1.0, float(np.nanmax(means_arr + ci_arr)) + 0.03)
+    if ymin >= ymax:
+        ymax = ymin + 0.05  # fallback to a small visible range
+
+    # Plot
+    x = np.arange(len(labels))
+    fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
+    width = 0.65  # slightly thinner bars
+
+    bars = ax.bar(
+        x, means_arr, yerr=ci_arr, width=width, capsize=3,
+        color=colors, edgecolor="black", linewidth=0.8, alpha=0.9, rasterized=True
+    )
+
+    # Vertical separators between ethnicities (skip baseline slot)
     if len(ethnicities) > 1:
+        offset = 1 if include_baseline else 0
         for i in range(1, len(ethnicities)):
-            separator_pos = i * len(genders) - 0.5
-            ax.axvline(separator_pos, color="gray", linestyle=":", linewidth=1, alpha=0.7)
-    
-    ax.axhline(0, color="red", linestyle="--", linewidth=1.5, label="Consensus baseline")
-    
-    if "base_pred" in merged_df.columns:
-        base_acc = (merged_df["base_pred"] == merged_df["true_label"]).mean()
-        baseline_delta = base_acc - consensus_accuracy_global
-        ax.axhline(baseline_delta, color="purple", linestyle=":", linewidth=2, 
-                  label="No-roleplaying baseline")
-    
-    for i, combo in enumerate(ordered_combinations):
-        data = group_data[combo]
-        if data["n"] > 0:
-            m, ci = means[i], errors[i]
-            y_pos = m + (ci + 0.001 if m >= 0 else -(ci + 0.001))
-            va = "bottom" if m >= 0 else "top"
-            
-            label_text = f"{m:+.3f}"
-            ax.text(i, y_pos, label_text, ha="center", va=va, 
-                   fontsize=8, fontweight="bold")
-    
-    ax.set_ylabel("Accuracy Delta from Consensus")
-    ax.set_title("Group Accuracy Deviations from Consensus (95% CI)\nGrouped by Ethnicity × Gender")
-    ax.grid(axis="y", linestyle="--", alpha=0.3)
-    
-    legend_handles = [
-        plt.Rectangle((0,0),1,1, color=ethnicity_colors[eth], alpha=0.8, edgecolor="black")
-        for eth in ethnicities
-    ]
-    legend_labels = [eth.replace("_", "-").title() for eth in ethnicities]
-    ax.legend(legend_handles, legend_labels, title="Ethnicity", 
-             loc="upper right", framealpha=0.9)
-    
-    plt.tight_layout()
-    plt.show()
-    
-    summary_data = []
-    for combo in ordered_combinations:
-        data = group_data[combo]
-        summary_data.append({
-            "ethnicity": combo[0],
-            "gender": combo[1],
-            "combination": f"{combo[0]}_{combo[1]}",
-            "mean_delta": data["mean_delta"],
-            "ci_lower": data["mean_delta"] - data["ci"],
-            "ci_upper": data["mean_delta"] + data["ci"],
-            "standard_error": data["sem"],
-            "confidence_interval": data["ci"],
-            "n_profiles": data["n"]
+            pos = offset + i * len(genders) - 0.5
+            ax.axvline(pos, color="0.6", linestyle=":", linewidth=1, alpha=0.8)
+
+    # Consensus line
+    ax.axhline(consensus_accuracy_global, color="0.2", linestyle="--", linewidth=1.2,
+               label="Consensus accuracy")
+
+    # Δ annotations (relative to consensus), above top + error
+    EPS = 0.002
+    for i, m in enumerate(means_arr):
+        if not np.isfinite(m):
+            continue
+        ax.text(x[i], m + ci_arr[i] + EPS, f"{(m - consensus_accuracy_global):+0.3f}",
+                ha="center", va="bottom", fontsize=8)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, fontsize=8, ha="center")
+
+    ax.set_ylabel("Accuracy")
+    ax.set_title("accuracy by ethnicity × gender (95% CI)", fontsize=9)
+    ax.grid(axis="y", linestyle=":", alpha=0.35)
+    ax.set_facecolor("white")
+    ax.set_ylim(ymin, ymax)
+
+    # Legend (ethnicity colors + baseline)
+    legend_handles, legend_labels = [], []
+    if include_baseline:
+        legend_handles.append(plt.Rectangle((0,0),1,1,color="0.5",ec="black"))
+        legend_labels.append("Baseline")
+    for e in ethnicities:
+        legend_handles.append(plt.Rectangle((0,0),1,1,color=ethnicity_colors[e],ec="black"))
+        legend_labels.append(e.replace("_","-").title())
+    ax.legend(legend_handles, legend_labels, title="Groups", loc="upper right", framealpha=0.9)
+
+    if savepath:
+        os.makedirs(os.path.dirname(savepath), exist_ok=True)
+        fig.savefig(savepath, bbox_inches="tight")
+
+    # Tidy summary
+    rows = []
+    if include_baseline:
+        rows.append({
+            "combination": "baseline",
+            "ethnicity": None, "gender": None,
+            "mean_accuracy": baseline_acc,
+            "delta_from_consensus": baseline_acc - consensus_accuracy_global,
+            "ci": 0.0, "n_profiles": None
         })
-    
-    summary_df = pd.DataFrame(summary_data)
-    
-    print(f"\nSUMMARY STATISTICS:")
-    print(f"{'Combination':<20}{'Mean Δ':<10}{'95% CI':<15}{'n':<5}")
-    print("-" * 50)
-    for _, row in summary_df.iterrows():
-        ci_str = f"[{row['ci_lower']:+.3f}, {row['ci_upper']:+.3f}]"
-        print(f"{row['combination']:<20}{row['mean_delta']:+.3f}    {ci_str:<15}{row['n_profiles']:<5}")
-    
-    return summary_df
+    for (e,g), st in group_stats.items():
+        rows.append({
+            "combination": f"{e}_{g}",
+            "ethnicity": e, "gender": g,
+            "mean_accuracy": st["mean_acc"],
+            "delta_from_consensus": (st["mean_acc"] - consensus_accuracy_global) if np.isfinite(st["mean_acc"]) else np.nan,
+            "ci": st["ci"], "n_profiles": st["n"]
+        })
+    return pd.DataFrame(rows)
 
 
+def _profile_cols(df):
+    return [c for c in df.columns if str(c).startswith("profile")]
 
+def _traits_for_profile(person_set, profile, keys=("ethnicity", "gender")):
+    t = person_set.get_traits(profile, group_keys=list(keys))
+    return {k: ("" if t.get(k) is None else str(t[k]).lower()) for k in keys}
+
+def _group_profiles_by_trait(merged_df, person_set, trait="ethnicity", min_profiles=1):
+    groups = {}
+    for p in _profile_cols(merged_df):
+        tr = _traits_for_profile(person_set, p)
+        g = tr.get(trait, "unknown") or "unknown"
+        groups.setdefault(g, []).append(p)
+    return {g: profs for g, profs in groups.items() if len(profs) >= min_profiles}
+
+def _profile_accuracies(df, profiles):
+    return np.array([(df[p] == df["true_label"]).mean() for p in profiles])
+
+def _cohens_d(a, b):
+    a = np.asarray(a); b = np.asarray(b)
+    n1, n2 = len(a), len(b)
+    if n1 < 2 or n2 < 2:
+        return 0.0
+    s1, s2 = np.var(a, ddof=1), np.var(b, ddof=1)
+    sp = np.sqrt(((n1 - 1) * s1 + (n2 - 1) * s2) / max(1, (n1 + n2 - 2)))
+    if sp == 0:
+        return 0.0
+    return (np.mean(a) - np.mean(b)) / sp
+
+def compute_pairwise_demographic_diffs(
+    merged_df,
+    person_set,
+    trait="ethnicity",
+    min_profiles=2,
+    p_adjust="fdr_bh"
+):
+    """
+    Returns a DataFrame with columns:
+      group1, group2, mean1, mean2, diff, p, p_adj, d, n1, n2, neglog10_p, neglog10_p_adj
+    """
+    from scipy.stats import ttest_ind
+    import pandas as pd
+
+    groups = _group_profiles_by_trait(merged_df, person_set, trait=trait, min_profiles=min_profiles)
+    keys = sorted(groups.keys())
+    rows = []
+    for i in range(len(keys)):
+        for j in range(i + 1, len(keys)):
+            g1, g2 = keys[i], keys[j]
+            a1 = _profile_accuracies(merged_df, groups[g1])
+            a2 = _profile_accuracies(merged_df, groups[g2])
+            if len(a1) < 2 or len(a2) < 2:
+                continue
+            _, p = ttest_ind(a1, a2, equal_var=False)
+            diff = float(np.mean(a1) - np.mean(a2))
+            d = float(_cohens_d(a1, a2))
+            rows.append({
+                "group1": g1, "group2": g2,
+                "mean1": float(np.mean(a1)), "mean2": float(np.mean(a2)),
+                "diff": diff, "p": float(p), "d": d,
+                "n1": int(len(a1)), "n2": int(len(a2)),
+            })
+    out = pd.DataFrame(rows)
+    if len(out):
+        _, p_adj, _, _ = multipletests(out["p"].values, method=p_adjust)
+        out["p_adj"] = p_adj
+        out["neglog10_p"] = -np.log10(out["p"].clip(lower=1e-300))
+        out["neglog10_p_adj"] = -np.log10(out["p_adj"].clip(lower=1e-300))
+    return out.sort_values("diff", key=lambda s: np.abs(s), ascending=False).reset_index(drop=True)
+
+# ---- Plot helpers: make each figure standalone at (10, 6) ----
+from matplotlib import patheffects as pe
+
+def plot_volcano_demographic_diffs(
+    pair_df,
+    ax=None,
+    title="(a) Volcano — Difference vs −log10(p)",
+    rank_by="diff",         
+    top_n=5,
+    alpha_sig=0.05,
+    figsize=(10, 6),
+    label_style="halo",  
+    label_fontsize=9,
+):
+    
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
+    if pair_df is None or len(pair_df) == 0:
+        ax.text(0.5, 0.5, "No pairwise stats", ha="center", va="center")
+        return ax
+
+    x = pair_df["diff"].values
+    y = pair_df["neglog10_p"].values
+    sig = (pair_df["p_adj"].values < alpha_sig) if "p_adj" in pair_df else (pair_df["p"].values < alpha_sig)
+
+    ax.scatter(x[~sig], y[~sig], s=26, alpha=0.7, edgecolors="none", rasterized=True)
+    ax.scatter(x[sig],  y[sig],  s=36, alpha=0.9, edgecolors="black", linewidths=0.4, rasterized=True, zorder=3)
+
+    # annotate top-N by |Δ| or |d|
+    rank_col = "d" if rank_by == "d" else "diff"
+    top_idx = np.argsort(-np.abs(pair_df[rank_col].values))[:min(top_n, len(pair_df))]
+    for idx in top_idx:
+        row = pair_df.iloc[idx]
+        txt = ax.annotate(
+            f"{row['group1']} vs {row['group2']}",
+            (row["diff"], row["neglog10_p"]),
+            xytext=(6, 6), textcoords="offset points", fontsize=9
+        )
+        if label_style == "halo":
+            txt.set_path_effects([pe.withStroke(linewidth=3, foreground="white")])
+        elif label_style == "box":
+            txt.set_bbox(dict(boxstyle="round,pad=0.15", fc="white", ec="0.6", lw=0.6, alpha=0.95))
+        # "none" => plain text
+
+    ax.axvline(0, ls="--", lw=1, color="0.4")
+    ax.axhline(-np.log10(alpha_sig), ls=":", lw=1, color="0.4")
+
+    ax.set_xlabel("Δ accuracy (group1 − group2)")
+    ax.set_ylabel("−log10(p)")
+    ax.set_title(title, fontsize=10)
+    ax.grid(axis="y", ls=":", alpha=0.35)
+    ax.set_facecolor("white")
+    ax.margins(x=0.05)
+    return ax
+
+
+def plot_effect_size_heatmap(
+    pair_df,
+    ax=None,
+    title="(b) effect size — ethnicity × ethnicity",
+    cmap="coolwarm",
+    figsize=(10, 6),
+):
+    """Diverging heatmap of Cohen's d, centered at 0 (standalone figure)."""
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
+    if pair_df is None or len(pair_df) == 0:
+        ax.text(0.5, 0.5, "No effect sizes", ha="center", va="center"); 
+        return ax, 0.0
+
+    groups = sorted(set(pair_df["group1"]).union(set(pair_df["group2"])))
+    idx = {g: i for i, g in enumerate(groups)}
+    M = np.zeros((len(groups), len(groups)))
+    for _, r in pair_df.iterrows():
+        i, j = idx[r["group1"]], idx[r["group2"]]
+        M[i, j] = r["d"]
+        M[j, i] = -r["d"]
+    np.fill_diagonal(M, 0.0)
+
+    vmax = max(1e-6, np.max(np.abs(M)))
+    im = ax.imshow(M, vmin=-vmax, vmax=vmax, cmap=cmap, rasterized=True)
+    ax.set_xticks(range(len(groups)))
+    ax.set_xticklabels([g.replace("_", "-").title() for g in groups], rotation=45, ha="right", fontsize=9)
+    ax.set_yticks(range(len(groups)))
+    ax.set_yticklabels([g.replace("_", "-").title() for g in groups], fontsize=9)
+    ax.set_title(title, fontsize=10)
+
+    if M.size <= 30:
+        for i in range(len(groups)):
+            for j in range(len(groups)):
+                if i == j: 
+                    continue
+                ax.text(j, i, f"{M[i, j]:+0.2f}", ha="center", va="center", fontsize=8)
+
+    cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("Cohen's d (signed)")
+    ax.set_facecolor("white")
+    return ax, vmax
+
+
+def plot_intersectional_accuracy_heatmap(
+    merged_df,
+    person_set,
+    ax=None,
+    title="(c) intersectional — ethnicity × gender",
+    normalize=True,    # Δ from global mean for diverging scale compatibility
+    cmap="coolwarm",
+    figsize=(10, 6),
+):
+    """Heatmap of accuracy or Δ-accuracy per (ethnicity, gender) (standalone figure)."""
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
+
+    profiles = _profile_cols(merged_df)
+    if not profiles:
+        ax.text(0.5, 0.5, "No profiles", ha="center", va="center"); 
+        return ax, 0.0
+
+    eth_set, gen_set, by_combo = set(), set(), {}
+    for p in profiles:
+        tr = _traits_for_profile(person_set, p, keys=("ethnicity", "gender"))
+        eth, gen = tr["ethnicity"], tr["gender"]
+        eth_set.add(eth); gen_set.add(gen)
+        by_combo.setdefault((eth, gen), []).append(p)
+
+    eth_list = sorted(eth_set); gen_list = sorted(gen_set)
+    A = np.full((len(eth_list), len(gen_list)), np.nan)
+    per_prof_acc = {p: (merged_df[p] == merged_df["true_label"]).mean() for p in profiles}
+    global_mean = float(np.mean(list(per_prof_acc.values())))
+
+    for i, e in enumerate(eth_list):
+        for j, g in enumerate(gen_list):
+            profs = by_combo.get((e, g), [])
+            if profs:
+                A[i, j] = float(np.mean([per_prof_acc[p] for p in profs]))
+
+    if normalize:
+        A = A - global_mean
+        vmax = np.nanmax(np.abs(A)) if np.isfinite(A).any() else 0.0
+        im = ax.imshow(A, vmin=-vmax, vmax=vmax, cmap=cmap, rasterized=True)
+    else:
+        im = ax.imshow(A, vmin=np.nanmin(A), vmax=np.nanmax(A), cmap=cmap, rasterized=True)
+        vmax = float(np.nanmax(np.abs(A - global_mean))) if np.isfinite(A).any() else 0.0
+
+    ax.set_xticks(range(len(gen_list))); ax.set_xticklabels([g.title() for g in gen_list], fontsize=9)
+    ax.set_yticks(range(len(eth_list))); ax.set_yticklabels([e.replace("_","-").title() for e in eth_list], fontsize=9)
+    ax.set_title(title, fontsize=10)
+
+    if np.isfinite(A).sum() <= 30:
+        for i in range(len(eth_list)):
+            for j in range(len(gen_list)):
+                if np.isfinite(A[i, j]):
+                    ax.text(j, i, f"{A[i, j]:+0.3f}" if normalize else f"{A[i, j]:0.3f}",
+                            ha="center", va="center", fontsize=8)
+
+    cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("Δ accuracy" if normalize else "Accuracy")
+    ax.set_facecolor("white")
+    return ax, vmax
+
+
+def plot_demographic_accuracy_composite(
+    merged_df,
+    person_set,
+    trait="ethnicity",
+    top_n=5,
+    normalize_intersectional=True,
+    savepath=None,
+    figsize=(15, 4.5),
+    use_neurips_style=True,
+):
+    """
+    Builds the 3-panel composite figure:
+      (A) Volcano Δ vs −log10 p
+      (B) Effect size heatmap (Cohen's d)
+      (C) Intersectional accuracy (Ethnicity × Gender)
+    Notes:
+      • Calls NeurIPS rcParams when use_neurips_style=True (default).
+      • No suptitle (caption goes below the figure in LaTeX).
+    """
+    if use_neurips_style:
+        try:
+            apply_neurips_figure_style()
+        except Exception:
+            # If the helper is missing, silently continue with defaults
+            pass
+
+    pair = compute_pairwise_demographic_diffs(merged_df, person_set, trait=trait, min_profiles=2)
+
+    fig, axs = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
+
+    # (A) Volcano
+    plot_volcano_demographic_diffs(pair, ax=axs[0], top_n=top_n)
+
+    # (B) Effect size heatmap
+    _, vmax_d = plot_effect_size_heatmap(pair, ax=axs[1])
+
+    # (C) Intersectional heatmap
+    _, vmax_acc = plot_intersectional_accuracy_heatmap(
+        merged_df, person_set, ax=axs[2], normalize=normalize_intersectional
+    )
+
+    # No suptitle; figure caption will be in LaTeX
+    if savepath:
+        os.makedirs(os.path.dirname(savepath), exist_ok=True)
+        fig.savefig(savepath, bbox_inches="tight")  # PDF will embed fonts via rcParams
+
+    return fig, {"pairwise": pair, "vmax_effect": vmax_d, "vmax_intersectional": vmax_acc}
+
+def save_demographic_figures_individual(
+    merged_df,
+    person_set,
+    out_dir,
+    figsize=(10, 6),
+    normalize_intersectional=True,
+    top_n=5,
+):
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Pairwise table once
+    pair = compute_pairwise_demographic_diffs(
+        merged_df, person_set=person_set, trait="ethnicity", min_profiles=2
+    )
+
+    # Volcano
+    fig_v, ax_v = plt.subplots(figsize=figsize, constrained_layout=True)
+    plot_volcano_demographic_diffs(pair, ax=ax_v, top_n=top_n, figsize=figsize, label_style="halo")
+    fig_v.savefig(os.path.join(out_dir, "volcano_demographic.pdf"), bbox_inches="tight")
+    plt.close(fig_v)
+
+    # Effect size heatmap
+    fig_h, ax_h = plt.subplots(figsize=figsize, constrained_layout=True)
+    plot_effect_size_heatmap(pair, ax=ax_h, figsize=figsize)
+    fig_h.savefig(os.path.join(out_dir, "effect_size_heatmap.pdf"), bbox_inches="tight")
+    plt.close(fig_h)
+
+    # Intersectional heatmap
+    fig_i, ax_i = plt.subplots(figsize=figsize, constrained_layout=True)
+    plot_intersectional_accuracy_heatmap(
+        merged_df, person_set, ax=ax_i, normalize=normalize_intersectional, figsize=figsize
+    )
+    fig_i.savefig(os.path.join(out_dir, "intersectional_heatmap.pdf"), bbox_inches="tight")
+    plt.close(fig_i)
+
+    return {
+        "volcano": os.path.join(out_dir, "volcano_demographic.pdf"),
+        "effect_size": os.path.join(out_dir, "effect_size_heatmap.pdf"),
+        "intersectional": os.path.join(out_dir, "intersectional_heatmap.pdf"),
+    }
 
 
 def run_full_preliminary_analysis(
@@ -1632,18 +1932,26 @@ def run_full_preliminary_analysis(
     person_set: PersonSet = None,
     threshold_disagreement=0.3
 ) -> Dict[str, Any]:
-    
+
     if person_set is None:
         raise ValueError("person_set is required for analysis")
-    
+
+    # NeurIPS style once
+    try:
+        apply_neurips_figure_style()
+    except Exception:
+        pass
+
     results = {}
 
+    # Ensure baseline column
     if "base_pred" not in merged_df.columns:
         if "zero_shot" in merged_df.columns:
             merged_df["base_pred"] = merged_df["zero_shot"]
         else:
             raise ValueError("Need either base_pred or zero_shot in merged_df.")
 
+    # Merge missing category cols if any
     if df is not None and "sample_id" in merged_df.columns and "sample_id" in df.columns:
         missing_cols = [col for col in case.category_cols if col not in merged_df.columns]
         if missing_cols:
@@ -1666,7 +1974,7 @@ def run_full_preliminary_analysis(
     print_comprehensive_demographic_results(demographic_results)
     results["demographic"] = demographic_results
 
-    # SYSTEMATIC BIAS PATTERNS - ADAPTATIF
+    # SYSTEMATIC BIAS PATTERNS
     print("\n\n=== SYSTEMATIC BIAS PATTERNS (AUTOMATIQUE) ===")
     bias_results = guarded_labelspace_analysis(
         analyze_systematic_bias_patterns_multi_category,
@@ -1691,7 +1999,7 @@ def run_full_preliminary_analysis(
     disagreement_df = extract_high_disagreement_cases(
         merged_df,
         threshold=threshold_disagreement,
-        person_set=person_set     
+        person_set=person_set
     )
     print(f"Found {len(disagreement_df)} high disagreement cases")
     results["disagreement"] = disagreement_df
@@ -1723,25 +2031,47 @@ def run_full_preliminary_analysis(
     print_persona_similarity_analysis(persona_similarity)
     results["persona_similarity"] = persona_similarity
 
-    print("\n\n=== PLOT OF ACCURACY WITH CI ===")
+    # ---------- PLOTTING (NeurIPS-ready PDFs) ----------
+    print("\n\n=== FIGURES (NEURIPS) ===")
+    fig_dir = os.path.join("results", "figs", case.case_name)
+    os.makedirs(fig_dir, exist_ok=True)
+    
+    # Accuracy with CI — already supports figsize and y-zoom
     try:
-        delta_summary = plot_accuracy_deltas_with_ci(
+        acc_summary = plot_accuracy_deltas_with_ci(
             merged_df,
             person_set=person_set,
-            group_keys=group_keys,      
+            group_keys=group_keys,
+            figsize=(10, 6),
+            savepath=os.path.join(fig_dir, "accuracy_by_group.pdf"),
         )
-        results["accuracy_delta_summary"] = delta_summary
-        print("Plot generated successfully")
+        results["accuracy_summary"] = acc_summary
+        print("Saved:", os.path.join(fig_dir, "accuracy_by_group.pdf"))
     except Exception as e:
-        print(f"Error generating plot: {e}")
-        results["accuracy_delta_summary"] = None
+        print(f"Error generating accuracy plot: {e}")
+        results["accuracy_summary"] = None
+    
+    # Individual demographic figures (no composite)
+    try:
+        paths = save_demographic_figures_individual(
+            merged_df,
+            person_set=person_set,
+            out_dir=fig_dir,
+            figsize=(10, 6),
+            normalize_intersectional=True,
+            top_n=5,
+        )
+        results["figure_paths"] = {"accuracy_by_group": os.path.join(fig_dir, "accuracy_by_group.pdf"), **paths}
+        print("Saved:", paths)
+    except Exception as e:
+        print(f"Error saving individual demographic figures: {e}")
 
-    # Summary of analysis
+    # ---------- SUMMARY ----------
     print(f"\n\n=== ANALYSIS SUMMARY ===")
     print(f"Dataset: {case.case_name}")
     print(f"Category columns analyzed: {[col for col in case.category_cols if col in merged_df.columns]}")
     print(f"Missing category columns: {[col for col in case.category_cols if col not in merged_df.columns]}")
     print(f"Total profiles: {len([c for c in merged_df.columns if c.startswith('profile')])}")
     print(f"Group keys used: {group_keys}")
-    
+
     return results
