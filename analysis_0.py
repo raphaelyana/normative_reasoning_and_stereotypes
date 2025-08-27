@@ -2039,12 +2039,11 @@ def run_full_preliminary_analysis(
     print_persona_similarity_analysis(persona_similarity)
     results["persona_similarity"] = persona_similarity
 
-    # ---------- PLOTTING (NeurIPS-ready PDFs) ----------
+
     print("\n\n=== FIGURES (NEURIPS) ===")
     fig_dir = os.path.join("results", "figs", case.case_name)
     os.makedirs(fig_dir, exist_ok=True)
     
-    # Accuracy with CI — already supports figsize and y-zoom
     try:
         acc_summary = plot_accuracy_deltas_with_ci(
             merged_df,
@@ -2059,7 +2058,6 @@ def run_full_preliminary_analysis(
         print(f"Error generating accuracy plot: {e}")
         results["accuracy_summary"] = None
     
-    # Individual demographic figures (no composite)
     try:
         paths = save_demographic_figures_individual(
             merged_df,
