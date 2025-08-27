@@ -32,6 +32,6 @@ mmlu_case = CaseConfig(
                             # in the implementation part, so to leave empty    
 
     # Not sure yet these work for the CoT using MMLU but it is worth trying it.
-    cot_focus="domain knowledge needed to select the correct option",
-    cot_adversarial="distractor options that are close but incorrect",
+    cot_focus="key facts, definitions, and logical eliminations",
+    cot_adversarial="distractor options that look plausible but violate a key fact"
 )
