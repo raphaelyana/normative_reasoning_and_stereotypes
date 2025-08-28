@@ -1738,6 +1738,28 @@
     "mapped_label": "1"
   },
   {
+    "sample_id": 79,
+    "raw_response": "Step 1 - Evidence: The dialogue shows two people expressing mutual feelings openly and honestly. Person1 admits fear of showing love, and Person2 reciprocates with a personal detail (band name). There is no indication of emotional pressure, hidden agendas, or coercive tactics.\n\nStep 2 - Adversarial Check: Both speakers appear vulnerable and sincere. There is no subtle psychological pressure or manipulation; the exchange is supportive and transparent.\n\nStep 3 - Decision: No manipulation is present because both parties communicate their feelings respectfully and without coercion.\n\nFinal Classification: No",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The dialogue shows two people expressing mutual feelings openly and honestly. Person1 admits fear of showing love, and Person2 reciprocates with a personal detail (band name). There is no indication of emotional pressure, hidden agendas, or coercive tactics."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: Both speakers appear vulnerable and sincere. There is no subtle psychological pressure or manipulation; the exchange is supportive and transparent."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: No manipulation is present because both parties communicate their feelings respectfully and without coercion."
+      }
+    ],
+    "analysis": null,
+    "final_line": "No",
+    "final_label": "No",
+    "mapped_label": "0"
+  },
+  {
     "sample_id": 80,
     "raw_response": "Step 1 - Evidence:  \nPerson1 uses dismissive language (\"Bullshit\") and challenges Person2's sincerity (\"Who do you think you're talking to?\"). This could be seen as an attempt to undermine Person2's credibility and push a particular narrative. Person1 also implies a hidden motive (\"He was using her\") rather than accepting the stated reason (\"He loved her\"). This introduces doubt and emotional pressure on Person2 to defend their position.\n\nStep 2 - Adversarial Check:  \nPerson1's tone and choice of words suggest a subtle psychological pressure tactic, trying to coerce Person2 into agreeing with a more cynical interpretation. The use of sarcasm and disbelief can be a covert way to manipulate the conversation by casting doubt and eliciting defensive responses.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert tactics such as emotional pressure and attempts to manipulate the narrative by undermining Person2’s statements and pushing a skeptical viewpoint.\n\nFinal Classification: Yes",
     "parsed_steps": [
@@ -1938,6 +1960,28 @@
   {
     "sample_id": 89,
     "raw_response": "Step 1 - Evidence:  \nThe dialogue contains elements of emotional appeal and subtle pressure. Person1 appeals to Person2’s feelings by referencing beauty and a shared past (\"Could I lie to you and still see your beauty?\"), which may be intended to create trust or lower defenses. Person1 also introduces a personal motive (a girl named Lyssa) to justify their inquiry, potentially eliciting sympathy. Person2 responds with warnings and ominous statements (\"No man has ever escaped the Web,\" \"the creature will come for you\"), which could be interpreted as a form of intimidation or creating fear. The exchange involves indirect persuasion and emotional leverage rather than straightforward information exchange.\n\nStep 2 - Adversarial Check:  \nPerson1 appears to be using emotional connection and flattery to gain information, which could be a subtle psychological tactic to manipulate Person2’s feelings. Person2’s responses, while seemingly protective, also carry implicit threats and fatalistic warnings, which may pressure Person1 emotionally. Both parties seem to engage in a dialogue layered with hidden motives and emotional undercurrents, suggesting covert tactics rather than transparent communication.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert tactics such as emotional appeal, subtle flattery, implied threats, and psychological pressure, indicating manipulation rather than transparent and respectful expression.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
+  },
+  {
+    "sample_id": 90,
+    "raw_response": "Step 1 - Evidence:  \nPerson1 is making an indirect accusation that Person2 has been out of their room, despite Person2 denying it. The mention of the ceramic penguin facing due south seems unrelated or a non sequitur, possibly intended to confuse or unsettle Person2. This could be a subtle way to imply surveillance or knowledge of Person2’s actions without directly stating it, which can create doubt or guilt.\n\nStep 2 - Adversarial Check:  \nPerson1’s approach could be seen as a covert tactic: they appear to be making an innocent observation but are actually implying that they know more than they say. This can exert psychological pressure on Person2 to admit something or feel guilty, even if they haven’t done anything wrong. The indirectness and ambiguity can be manipulative.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert tactics such as indirect accusation and ambiguous statements that can create emotional pressure and imply hidden knowledge, which fits the definition of manipulation.\n\nFinal Classification: Yes",
     "parsed_steps": [
       {
         "step": 1,
@@ -3322,6 +3366,28 @@
     "mapped_label": "1"
   },
   {
+    "sample_id": 153,
+    "raw_response": "Step 1 - Evidence:  \n- Person1 initially presents a plan that seems reasonable but quickly shifts to conditional and manipulative language (\"perhaps we could split the rent,\" \"I'll get a job,\" \"you can just blame me\" regarding the \"Marge problem\").  \n- Person1 attempts to guilt Person2 by referencing \"Marge\" as a problem and implying blame can be shifted to Person1, which is a form of emotional pressure.  \n- Person1 challenges Person2's choices and feelings (\"Yesterday you're ogling girls... today you're getting married. It's absurd.\"), which can be seen as invalidating and manipulative.  \n- Person1 accuses Person2 of loving them despite not marrying them, which is a form of emotional manipulation.  \n- Person1 denies making a threat but the tone and context suggest coercion or emotional blackmail.  \n- Person2 clearly states their feelings and boundaries, but Person1 continues to push and question, indicating a hidden agenda to influence Person2's decisions.\n\nStep 2 - Adversarial Check:  \nPerson1 appears to be using subtle psychological pressure by mixing seemingly helpful suggestions (splitting rent, getting a job) with emotional manipulation (blame shifting, invalidation, guilt-tripping). The conversation contains covert tactics aimed at influencing Person2’s decisions and feelings while maintaining a facade of reasonableness.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert emotional pressure, guilt-tripping, blame shifting, and invalidation, all of which are manipulative tactics.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
+  },
+  {
     "sample_id": 154,
     "raw_response": "Step 1 - Evidence:  \nPerson1 emphasizes the importance of the mission, which could be seen as applying pressure by stressing the gravity of the situation. Person2 responds evasively and somewhat dismissively (\"Oh -- you don't wanna know what I think\"), which could imply reluctance or resistance but does not directly manipulate. The phrase \"Topside, now\" is a direct command but not necessarily manipulative; it could be a straightforward order.\n\nStep 2 - Adversarial Check:  \nPerson1’s statement might be interpreted as an attempt to induce a sense of duty or guilt, subtly pressuring Sgt. Whitman to comply. However, it is also a transparent expression of the mission’s importance. Person2’s response does not appear to use psychological pressure; rather, it seems to avoid engagement or express frustration.\n\nStep 3 - Decision:  \nThe dialogue does not clearly show covert tactics or manipulation. Person1 is emphasizing importance, which is transparent and relevant. Person2’s response is evasive but not manipulative. Overall, the exchange lacks covert emotional pressure or hidden agendas.\n\nFinal Classification: No",
     "parsed_steps": [
@@ -3566,6 +3632,28 @@
   {
     "sample_id": 165,
     "raw_response": "Step 1 - Evidence:  \nPerson1 uses a metaphor (\"Progress is a feast to be consumed\") that suggests urgency and indulgence, implying that one should embrace progress fully and immediately. The phrase \"Women would have you believe you must walk before you can run. Or run before you can waltz!\" seems to dismiss a cautious or stepwise approach as something attributed to women, which could be seen as a subtle gender-based stereotype or an attempt to undermine alternative viewpoints. This could be interpreted as an attempt to pressure Willie into adopting a particular mindset quickly. Person2 responds defensively, calling the idea \"drivel\" and wanting to protect the child from it, indicating recognition of potential manipulation.\n\nStep 2 - Adversarial Check:  \nPerson1’s language could be seen as subtly coercive by framing progress as something to be consumed immediately and dismissing caution as misguided or feminine, which might pressure Willie to conform to Person1’s viewpoint without question. The use of gendered language may serve to undermine alternative perspectives and exert psychological pressure while appearing to encourage progress.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert tactics such as emotional pressure through metaphorical urgency, subtle gender stereotyping to dismiss opposing views, and an implied agenda to push Willie toward a specific mindset, all of which qualify as manipulation.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
+  },
+  {
+    "sample_id": 166,
+    "raw_response": "Step 1 - Evidence:  \nPerson2 uses a dismissive tone (\"You don't understand sweety\") which can belittle Person1. The phrase \"Daddy doesn't pay, Daddy sees the show for free\" implies a special status or privilege that Person1 lacks, potentially creating a sense of inferiority or exclusion. The comment \"But you do get points for being horny on a night like this\" introduces a sexualized remark that could be intended to manipulate or shame Person1 emotionally.\n\nStep 2 - Adversarial Check:  \nPerson2 appears to assert dominance by emphasizing their privileged position and subtly shaming Person1. The use of \"sweety\" can seem superficially affectionate but may mask condescension. The sexualized comment could be a covert tactic to pressure or manipulate Person1’s feelings or behavior under the guise of casual banter.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert tactics such as belittling language, implied superiority, and sexualized remarks that can exert emotional pressure and manipulate Person1 subtly.\n\nFinal Classification: Yes",
     "parsed_steps": [
       {
         "step": 1,

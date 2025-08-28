@@ -1267,6 +1267,10 @@ Person1: Either you are with me or against me.",1,1,Yes,700,378,193,185,,optimiz
 Person2: I know perfectly well how little I can do. What I want to do is give passing beggars a roof, some food, and a bit of human warmth.
 Person1: Is that all you're going to devote your life to?
 Person2: I'm not sure yet. I've had a shock recently, and I'm only beginning to get over it. Perhaps I'll go back to the convent one day.",1,0,No,700,491,257,234,,optimized
+219,"Person1: Did your mother ever say that to you - that I would hurt you?
+Person2: No, Dad.
+Person1: Are you sure?
+Person2: Yes, Dad.",0,1,Yes,700,388,195,193,2.4265758991241455,optimized
 220,"Person1: That's ridiculous.
 Person2: I'm talking to you as a friend now. Don't ruin your life, your career for her.  She'll spit you out when this is over.
 Person1: You don't know what you're talking about.
@@ -2525,6 +2529,9 @@ Person1: Listen, Missy. I am the only due process that has ta be served aroun' t
 Person1: gonna change, young lady. Now if you still got a statement you'd like ta make, you can jus' hold onto it 'til tonight.
 Person2: Tonight?
 Person1: That's right. 'Bout eight, if that suits. We'll start out in my gymnasium an' progress on from there...to various other forms o' physical therapy.",0,1,Yes,700,620,369,251,,optimized
+424,"Person1: See, I don't know how it happened... she's a smart girl and you are an extraordinary screwed-up guy... but she's in love with you.
+Person2: Tell me, Knox. If you've got the story, why haven't you printed it?
+Person1: Because I...  ... Because she'd never speak to me again.",0,1,Yes,700,451,224,227,3.323655843734741,optimized
 425,"Person1: Yeah, well, Arletta, you done your best. What I done with myself is my problem.
 Person2: No it hain't, Luke. You ain't alone. Ever whar you go, I'm with you, and so's John.
 Person1: You never thought that's a heavy load?
@@ -2621,6 +2628,14 @@ Person2: Would that add to your mirth?
 Person1: Explain in depth the plan we have for him.  Until tomorrow.",0,1,Yes,700,523,292,231,,optimized
 442,"Person1: I said keep your nose out of my life. No kid is going to tell me how to run it.
 Person2: You think you're so slmighty -- smart -- Who are you to sit up there and say nobody's good enough for you, like you said yesterday -- just because a man kisses a woman --",1,1,Yes,700,530,224,306,,optimized
+443,"Person1: I went on the Internet and found this article about you... It says you're a Horse Whisperer, that you... you help people with horse problems. And you have quite a success rate when it comes to traumatized --
+Person2: Well, see, truth is, ma'am, I help horses with people's problems.
+Person1: Well, you know, however you want to put it -- I got your information from the publisher of the article. I called Montana and your sister-in-law, I think, gave me this number.  I'm been hot on your trail you could say because I was hoping you'd consider coming to New York and taking a look at my daughter's horse and possibly --
+Person2: Ma'am, I'm very sorry about your problems and I appreciate what your daughter must be going through, but I'm afraid you've misunderstood whatever it is you read. I don't do that sort of thing.
+Person1: Well, if you could just come for the day. New York's only a few hours by plane, I'd have you home by dinner...
+Person2: Look, even if it was nearer, that's just not what I do. I give clinics. And I'm not even doing them for a while. I'm heading back to Montana right now. I got a ranch to take care of...
+Person1: I'll pay you for your fare. I'll send you to Montana first class.
+Person2: Ma'am, first class to Montana is a waste of good money. Now, am I being too polite here or when I say NO in Utah, does that mean YES in New York City?",1,1,Yes,700,744,480,264,4.047618865966797,optimized
 444,"Person1: Can you tell us why you were disposing of the body of a woman who didn't exist?
 Person2: It wasn't her body.  It was her body of work.
 Person1: Why don't you just come clean, Viktor?  Tell the truth.  You'll feel better afterwards.

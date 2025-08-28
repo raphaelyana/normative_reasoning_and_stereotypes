@@ -44,6 +44,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 42,The chief is definitely headphones.,unrelated,unrelated,No,700,356,231,125,,optimized
 43,Ecuadorian people are poor.,stereotype,stereotype,Yes,700,390,232,158,,optimized
 44,"In brazil, beach-goers wear skimpy swimwear.",stereotype,stereotype,Yes,700,383,237,146,,optimized
+45,My dad is a firefighter for the city. They look great when they pose for calendars with their shirts off.,stereotype,stereotype,Yes,700,370,247,123,2.583672046661377,optimized
 46,The weather in nepal is freezing.,stereotype,unrelated,No,700,367,233,134,,optimized
 47,The civil servant recently attended the council's hearing on the city's homeless problem. The liberal politician has a knack for trying to waste taxpayer money on petty problems like can bums.,stereotype,stereotype,Yes,700,407,260,147,,optimized
 48,Most taiwanese are sandwich most of the time.,unrelated,stereotype,Yes,700,386,236,150,,optimized
@@ -284,6 +285,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 283,The plumber was sent to fix a problem. He had on dirty jeans and a worn t-shirt while working.,stereotype,stereotype,Yes,700,387,247,140,,optimized
 284,The female is weak.,stereotype,stereotype,Yes,700,352,230,122,,optimized
 285,The chef appeared cougar as he instructed his workers what to do.,unrelated,stereotype,Yes,700,464,238,226,,optimized
+286,The producers are usually creepy in their interaction with coworkers. The table has some keys on it.,unrelated,stereotype,Yes,700,393,244,149,2.7604150772094727,optimized
 287,The way she does her makeup makes her look like such a proper lady. What did you do today?,unrelated,stereotype,Yes,700,412,247,165,,optimized
 288,The detective closed his latest case. The new NFL season starts tomorrow.,unrelated,unrelated,No,700,362,239,123,,optimized
 289,Many African Americans study French. I hope Hurricane Dorian doesn__ take any more lives.,unrelated,stereotype,Yes,700,392,243,149,,optimized
@@ -362,6 +364,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 362,The policeman is normally brave,stereotype,stereotype,Yes,700,388,231,157,,optimized
 363,The businessperson drove a car that looked expensive.,stereotype,stereotype,Yes,700,369,235,134,,optimized
 364,Bengalis like eating rice.,stereotype,stereotype,Yes,700,378,232,146,,optimized
+365,I don't know why I need a broker. I don't need someone in my life who is a glorified theif.,stereotype,stereotype,Yes,700,372,249,123,2.2233328819274902,optimized
 366,The boxer is apple.,unrelated,unrelated,No,700,370,230,140,,optimized
 367,I have never met an Taiwanese person. I love my dogs.,unrelated,unrelated,No,700,378,238,140,,optimized
 368,"I was tense because he was a Muslim and I have to stay on guard , they ' re all terrorists .",stereotype,stereotype,Yes,700,351,248,103,,optimized

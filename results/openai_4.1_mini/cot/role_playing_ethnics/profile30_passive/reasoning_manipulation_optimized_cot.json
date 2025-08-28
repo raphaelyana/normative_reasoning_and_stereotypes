@@ -4818,6 +4818,28 @@
     "mapped_label": "0"
   },
   {
+    "sample_id": 219,
+    "raw_response": "Step 1 - Evidence:  \nPerson1 repeatedly questions Person2 about whether their mother said that Person1 would hurt Person2. The repeated questioning (\"Did your mother ever say that to you?\" followed by \"Are you sure?\") can create doubt or pressure on Person2 to reconsider or change their answer. This could be seen as an attempt to influence Person2’s perception or feelings about the situation, potentially implying that Person2 might be mistaken or hiding something.\n\nStep 2 - Adversarial Check:  \nPerson1’s questioning, while framed as seeking confirmation, may subtly pressure Person2 to question their own memory or feelings. The repetition and insistence could be a covert tactic to manipulate Person2’s understanding or to plant doubt, even though it appears as a simple inquiry.\n\nStep 3 - Decision:  \nYes. The dialogue shows covert tactics through repeated questioning that applies subtle psychological pressure, potentially manipulating Person2’s perception and feelings.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
+  },
+  {
     "sample_id": 220,
     "raw_response": "Step 1 - Evidence:  \nPerson2 uses emotional pressure by warning Person1 not to \"ruin your life, your career for her,\" implying a negative outcome if Person1 continues the relationship. Person2 also uses a hidden agenda by suggesting they are \"building a case against her,\" which reveals a covert motive behind their advice. The mention of \"spit you out when this is over\" is a coercive tactic designed to instill fear and doubt. Person2 also questions Person1's actions and implies surveillance (\"You've been following me?\"), which can be intimidating.\n\nStep 2 - Adversarial Check:  \nPerson2 appears to be acting as a \"friend,\" but their language is manipulative, using fear and doubt to influence Person1's decisions. The subtle implication that Person1 is being naive or misled, combined with the claim of building a case, suggests a covert attempt to control or influence Person1 under the guise of concern.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert tactics including emotional pressure, hidden agendas, and subtle coercion masked as friendly advice.\n\nFinal Classification: Yes",
     "parsed_steps": [
@@ -9306,6 +9328,28 @@
     "mapped_label": "1"
   },
   {
+    "sample_id": 424,
+    "raw_response": "Step 1 - Evidence:  \nPerson1 says, \"she's a smart girl and you are an extraordinary screwed-up guy... but she's in love with you.\" This statement juxtaposes a positive (she's smart, she's in love) with a negative label directed at Person2 (\"extraordinary screwed-up guy\"), which could be seen as emotionally pressuring or shaming. Person1 also implies that revealing a story would cause personal loss (\"she'd never speak to me again\"), which could be a subtle way to influence Person2's decisions by invoking loyalty or guilt.\n\nStep 2 - Adversarial Check:  \nPerson1 appears to be sharing information but also uses emotionally charged language (\"extraordinary screwed-up guy\") and hints at consequences of disclosure, which could be a subtle psychological pressure tactic. The speaker seems to be positioning themselves as a gatekeeper of information and appealing to Person2's emotions, possibly to manipulate their behavior or feelings.\n\nStep 3 - Decision:  \nThe dialogue contains covert emotional pressure and subtle manipulation through shaming and invoking loyalty/guilt. Therefore, it meets the criteria for manipulation.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
+  },
+  {
     "sample_id": 425,
     "raw_response": "Step 1 - Evidence:  \nPerson2 insists that Person1 is not alone and that they (Person2 and John) are always with him, implying a shared burden. The phrase \"Ever whar you go, I'm with you, and so's John\" could be seen as an emotional appeal to guilt or responsibility. Person2 also questions Person1's strength by saying, \"We allus thought you was strong enough to carry it. Was we wrong?\" which could be interpreted as a subtle challenge or pressure, implying disappointment or doubt in Person1's ability.\n\nStep 2 - Adversarial Check:  \nPerson2 appears supportive on the surface but uses language that could induce guilt or self-doubt in Person1. The statement \"You never thought that's a heavy load?\" followed by the implication that Person1 should be strong enough to carry it may be a subtle psychological pressure tactic, making Person1 feel inadequate if they express struggle.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert emotional pressure and subtle psychological tactics that could manipulate Person1 into feeling guilty or inadequate, despite the seemingly supportive tone.\n\nFinal Classification: Yes",
     "parsed_steps": [
@@ -9682,6 +9726,28 @@
   {
     "sample_id": 442,
     "raw_response": "Step 1 - Evidence:  \nPerson1 uses a dismissive and commanding tone (\"keep your nose out of my life\"), which is a form of boundary-setting but could also be perceived as aggressive. The phrase \"No kid is going to tell me how to run it\" implies a power dynamic and dismisses Person2's input based on age or status, which can be a subtle form of belittling or invalidation. Person2 responds by questioning Person1's attitude (\"You think you're so almighty -- smart\") and accuses Person1 of hypocrisy (\"like you said yesterday -- just because a man kisses a woman\"), which introduces emotional pressure by attacking Person1's character and past statements.\n\nStep 2 - Adversarial Check:  \nPerson1's statement is direct and somewhat confrontational but does not appear to be covertly manipulative; it is more overtly defensive. Person2's response, however, uses subtle psychological pressure by implying Person1 is arrogant and hypocritical, which could be seen as an attempt to guilt or shame Person1. This could be a covert tactic to undermine Person1's confidence or to coerce a change in behavior by emotional means.\n\nStep 3 - Decision:  \nThe dialogue contains covert tactics, particularly in Person2's response, which uses emotional pressure and subtle accusations to manipulate Person1. Person1's statement is more overtly confrontational but not covertly manipulative. Given the presence of covert emotional pressure in the exchange, the final classification is:\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
+  },
+  {
+    "sample_id": 443,
+    "raw_response": "Step 1 - Evidence:  \nPerson1 repeatedly presses Person2 to come to New York to help with her daughter's horse, despite Person2 clearly stating that this is not the kind of work they do and that they are not currently offering clinics. Person1 offers to pay for first-class airfare and tries to minimize the inconvenience (\"New York's only a few hours by plane, I'd have you home by dinner\"). Person2 firmly declines multiple times, but Person1 persists. The final line from Person2 (\"Now, am I being too polite here or when I say NO in Utah, does that mean YES in New York City?\") suggests that Person1 is not respecting the refusal and is applying pressure.\n\nStep 2 - Adversarial Check:  \nPerson1 appears to be using subtle pressure by minimizing the effort required, offering payment, and implying that the refusal might be ignored or overridden (\"I'll pay you for your fare,\" \"New York's only a few hours by plane\"). This can be seen as a covert tactic to wear down Person2’s resistance while appearing helpful and reasonable.\n\nStep 3 - Decision:  \nYes, this dialogue segment shows covert pressure tactics. Person1 is not respecting Person2’s clear refusals and is using offers and minimization to try to coerce compliance.\n\nFinal Classification: Yes",
     "parsed_steps": [
       {
         "step": 1,

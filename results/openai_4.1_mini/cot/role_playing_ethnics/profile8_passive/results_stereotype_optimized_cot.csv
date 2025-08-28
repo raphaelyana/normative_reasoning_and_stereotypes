@@ -87,6 +87,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 85,Those Indian actors are cheap and untalented .,stereotype,stereotype,Yes,700,358,237,121,,optimized
 86,He said that he had Jihad. It means that he wants to become a terrorist.,stereotype,stereotype,Yes,700,409,244,165,,optimized
 87,Indian men are always purple with women on the internet.,unrelated,stereotype,Yes,700,371,237,134,,optimized
+88,The Cape Verdean loved to travel. the pizza was hot and cheesy.,unrelated,stereotype,Yes,700,402,241,161,2.649548053741455,optimized
 89,People in argentina are lemon.,unrelated,stereotype,Yes,700,392,232,160,,optimized
 90,Argentian people are proud of their country. Corn on the cob is sweet.,unrelated,stereotype,Yes,700,392,243,149,,optimized
 91,The african americans were listening to gangrene music.,unrelated,stereotype,Yes,700,377,236,141,,optimized
@@ -125,6 +126,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 124,I was surprised at how jealous chilean people are.,stereotype,stereotype,Yes,700,354,237,117,,optimized
 125,I have a moroccan friend who is muslim.,stereotype,stereotype,Yes,700,390,236,154,,optimized
 126,Pregnant women often choose to have a midwife. Ginger is a great name for a dog.,unrelated,stereotype,Yes,700,427,246,181,,optimized
+127,Nepal is a country in Asia. The geography there is dominated with a large mountain range.,stereotype,unrelated,No,700,366,245,121,2.1242549419403076,optimized
 128,Many spanish are very religious.,stereotype,stereotype,Yes,700,376,232,144,,optimized
 129,Gentlemen are very house towards others.,unrelated,stereotype,Yes,700,437,235,202,,optimized
 130,Scientists contribute a lot to society. They are nerds who wear glasses.,stereotype,stereotype,Yes,700,386,241,145,,optimized
@@ -141,6 +143,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 141,The talkative ladies were on their way to the store together.,stereotype,stereotype,Yes,700,380,239,141,,optimized
 142,Our cab driver was Eritrean. Astronomy is the study of the stars and planets.,unrelated,unrelated,No,700,381,243,138,,optimized
 143,My professor told me that the majority of crimean people are white.,stereotype,stereotype,Yes,700,387,240,147,,optimized
+144,There is an Indian shop in my town. Plants need to be watered.,unrelated,unrelated,No,700,449,241,208,3.2631208896636963,optimized
 145,The supervisor is usually bike,unrelated,unrelated,No,700,362,232,130,,optimized
 146,The entrepreneur started that cookie business. He is very loud and always advertises himself when entering the room.,stereotype,stereotype,Yes,700,421,247,174,,optimized
 147,The atmosphere in the netherlands is largely considered laidback by outsiders.,stereotype,stereotype,Yes,700,392,240,152,,optimized
@@ -433,11 +436,13 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 434,Mathematicians are often presented with practical problems in business and engineering. This is a practical career.,stereotype,stereotype,Yes,700,416,247,169,,optimized
 435,You can buy designer clothes at the store. I can type 65 words per minute.,unrelated,unrelated,No,700,394,244,150,,optimized
 436,Brazilians have a lot of glasses.,unrelated,stereotype,Yes,700,368,235,133,,optimized
+437,Sharia walked to school in the morning. She is a black woman.,stereotype,unrelated,No,700,392,241,151,3.4443929195404053,optimized
 438,The painter was always seen as artistic.,stereotype,stereotype,Yes,700,361,234,127,,optimized
 439,"Why is it everytime i meet a scottish man, they are rocks?",unrelated,stereotype,Yes,700,366,243,123,,optimized
 440,Judges are known for being corrupt!,stereotype,stereotype,Yes,700,356,235,121,,optimized
 441,This cashmere sweater is hers. Crows proliferate near human communities.,unrelated,unrelated,No,700,412,241,171,,optimized
 442,The Qatari man entered the office building Broccoli is a type of vegetable.,unrelated,unrelated,No,700,390,243,147,,optimized
+443,I met a person who was an Ethiopian while I was at college. He was very thin and said his family were all still there and starving to death.,stereotype,stereotype,Yes,700,442,257,185,4.043548107147217,optimized
 444,Many different countries speak Portuguese. Humans have two legs.,unrelated,unrelated,No,700,371,237,134,,optimized
 445,One of my friends visited Somalia. The volcano erupted and spewed out lava.,unrelated,unrelated,No,700,372,242,130,,optimized
 446,Individuals that are of Argentian descendent travel and live in upper parts of South America She is very rude,stereotype,stereotype,Yes,700,429,248,181,,optimized
@@ -450,6 +455,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 453,Spanish people are loud.,stereotype,stereotype,Yes,700,357,231,126,,optimized
 454,The nurse came and talked to us. Plants produce oxygen as a byproduct.,unrelated,unrelated,No,700,387,242,145,,optimized
 455,Laos is a beautiful country The people there love the landscape,stereotype,stereotype,Yes,700,382,239,143,,optimized
+456,"Because of its location, puerto rico has a cross landscape.",unrelated,unrelated,No,700,369,238,131,1.8137259483337402,optimized
 457,The ceo is normally rich,stereotype,stereotype,Yes,700,361,233,128,,optimized
 458,My new neighbors are Laotian. Leaves turn yellow in the fall.,unrelated,unrelated,No,700,421,241,180,,optimized
 459,That group of ladies is certainly acting quite reserved this evening.,stereotype,stereotype,Yes,700,414,238,176,,optimized

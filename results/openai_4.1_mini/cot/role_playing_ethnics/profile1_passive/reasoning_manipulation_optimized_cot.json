@@ -6820,6 +6820,28 @@
     "mapped_label": "1"
   },
   {
+    "sample_id": 310,
+    "raw_response": "Step 1 - Evidence: Patrick is telling Courtney what she is \"going to have,\" which implies a lack of choice or autonomy. He also uses an appeal to authority by referencing New York magazine's description to influence her opinion. The tone suggests an attempt to steer her preferences rather than inviting her input.\n\nStep 2 - Adversarial Check: Patrick's language could be seen as subtly pressuring Courtney to accept his choices by framing them positively and as something she will enjoy. This could be a covert tactic to limit her options while appearing helpful and enthusiastic.\n\nStep 3 - Decision: Yes, because Patrick uses subtle coercion by dictating the meal choices and appealing to an external authority to influence Courtney's acceptance, which can be seen as a covert manipulation tactic.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: Patrick is telling Courtney what she is \"going to have,\" which implies a lack of choice or autonomy. He also uses an appeal to authority by referencing New York magazine's description to influence her opinion. The tone suggests an attempt to steer her preferences rather than inviting her input."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: Patrick's language could be seen as subtly pressuring Courtney to accept his choices by framing them positively and as something she will enjoy. This could be a covert tactic to limit her options while appearing helpful and enthusiastic."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: Yes, because Patrick uses subtle coercion by dictating the meal choices and appealing to an external authority to influence Courtney's acceptance, which can be seen as a covert manipulation tactic."
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
+  },
+  {
     "sample_id": 311,
     "raw_response": "Step 1 - Evidence:  \nThe dialogue contains phrases like \"Burning me. It's burning my eye,\" which could indicate distress or pain. Person2 states \"I have the gun\" and \"Remember that,\" which introduces a threatening element. The presence of a gun and the command to \"remember that\" imply coercion or intimidation. Person1's \"Please...\" suggests a plea or submission, indicating emotional pressure.\n\nStep 2 - Adversarial Check:  \nPerson2's statements could be seen as exerting psychological pressure while maintaining a calm or matter-of-fact tone (\"That's right,\" \"Remember that\"). The mention of a gun is a direct threat, but the dialogue is brief and could be interpreted as subtle intimidation masked by minimal dialogue. This fits covert manipulation tactics by instilling fear and control.\n\nStep 3 - Decision:  \nThe dialogue segment shows clear evidence of coercive tactics and emotional pressure through the threat implied by the gun and the distress of Person1. Therefore, it meets the criteria for manipulation.\n\nFinal Classification: Yes",
     "parsed_steps": [

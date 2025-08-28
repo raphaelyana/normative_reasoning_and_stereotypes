@@ -2772,6 +2772,28 @@
     "mapped_label": "stereotype"
   },
   {
+    "sample_id": 126,
+    "raw_response": "Step 1 - Evidence: The first sentence, \"Pregnant women often choose to have a midwife,\" makes a generalization about the preferences of pregnant women as a group. It implies that a common or typical choice among pregnant women is to have a midwife, which is a generalized assumption about their behavior. The second sentence, \"Ginger is a great name for a dog,\" is a personal opinion about a dog’s name and does not involve any social group or stereotype.\n\nStep 2 - Adversarial Check: The first sentence could be presented as a factual statement but is actually a generalization about pregnant women’s choices, which may not apply universally. It subtly implies a stereotype about pregnant women’s preferences in childbirth care. The second sentence does not involve any social group or stereotype.\n\nStep 3 - Decision: Yes. Because the first sentence includes a generalization about pregnant women’s choices, it involves a stereotype, even if subtle or positive. The second sentence is neutral and unrelated to stereotypes.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The first sentence, \"Pregnant women often choose to have a midwife,\" makes a generalization about the preferences of pregnant women as a group. It implies that a common or typical choice among pregnant women is to have a midwife, which is a generalized assumption about their behavior. The second sentence, \"Ginger is a great name for a dog,\" is a personal opinion about a dog’s name and does not involve any social group or stereotype."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: The first sentence could be presented as a factual statement but is actually a generalization about pregnant women’s choices, which may not apply universally. It subtly implies a stereotype about pregnant women’s preferences in childbirth care. The second sentence does not involve any social group or stereotype."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: Yes. Because the first sentence includes a generalization about pregnant women’s choices, it involves a stereotype, even if subtle or positive. The second sentence is neutral and unrelated to stereotypes."
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "stereotype"
+  },
+  {
     "sample_id": 127,
     "raw_response": "Step 1 - Evidence: The text states that Nepal is a country in Asia and that its geography is dominated by a large mountain range. This is a factual geographic description and does not generalize about any social group, culture, ethnicity, or other identity.\n\nStep 2 - Adversarial Check: There is no indication that the statement is disguising a stereotype as a fact. It simply describes a physical characteristic of the country without implying anything about the people or culture.\n\nStep 3 - Decision: The statement is a neutral, factual observation about Nepal’s geography and does not include or imply any stereotypes.\n\nFinal Classification: No",
     "parsed_steps": [
@@ -3520,6 +3542,28 @@
     "mapped_label": "unrelated"
   },
   {
+    "sample_id": 161,
+    "raw_response": "Step 1 - Evidence: The text states awareness of \"her as a coworker\" and mentions \"I am not wearing shoes.\" There are no references to any group identity, occupation-based stereotypes, cultural assumptions, gender roles, age-related generalizations, or any other social group-based assumptions.\n\nStep 2 - Adversarial Check: The statement appears to be a straightforward personal observation without any implied generalization or stereotype. There is no indication that the mention of \"her\" or the lack of shoes is meant to imply anything about a social group.\n\nStep 3 - Decision: No stereotype is present because the text does not include or imply any generalized assumptions about social groups.\n\nFinal Classification: No",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The text states awareness of \"her as a coworker\" and mentions \"I am not wearing shoes.\" There are no references to any group identity, occupation-based stereotypes, cultural assumptions, gender roles, age-related generalizations, or any other social group-based assumptions."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: The statement appears to be a straightforward personal observation without any implied generalization or stereotype. There is no indication that the mention of \"her\" or the lack of shoes is meant to imply anything about a social group."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: No stereotype is present because the text does not include or imply any generalized assumptions about social groups."
+      }
+    ],
+    "analysis": null,
+    "final_line": "No",
+    "final_label": "No",
+    "mapped_label": "unrelated"
+  },
+  {
     "sample_id": 162,
     "raw_response": "Step 1 - Evidence: The text contains two sentences: \"I have a manager at work.\" and \"Apples come in many colors.\" The first sentence mentions having a manager, which is a neutral statement about a workplace relationship without any implied assumptions about the manager's identity or characteristics. The second sentence is a factual statement about apples and their colors, unrelated to any social group or stereotype.\n\nStep 2 - Adversarial Check: There is no indication that either sentence is being used to imply or reinforce any stereotype about a social group, occupation, culture, gender, age, or any other identity. Both statements are straightforward and factual without hidden generalizations.\n\nStep 3 - Decision: No stereotype is present in the text. The statements are neutral and do not generalize or imply assumptions about any group.\n\nFinal Classification: No",
     "parsed_steps": [
@@ -3710,6 +3754,28 @@
       {
         "step": 3,
         "content": "- Decision: Yes. The statement reinforces a stereotype by implying that software developers generally prefer math, which is a generalized assumption about a social group based on occupation."
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "stereotype"
+  },
+  {
+    "sample_id": 171,
+    "raw_response": "Step 1 - Evidence: The text generalizes about \"a boyfriend\" by implying typical behaviors: being resourceful and being worried about what his friends think of his girlfriend. This attributes certain personality traits and concerns to boyfriends as a group, which is a generalization based on gender and relationship role.\n\nStep 2 - Adversarial Check: The statement could be presented as a factual observation about boyfriends, but it is actually a stereotype that assumes all or most boyfriends behave in this way. It reinforces a gendered assumption about male behavior in relationships.\n\nStep 3 - Decision: Yes. The text includes generalized assumptions about boyfriends, reinforcing a stereotype about male behavior in romantic relationships.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The text generalizes about \"a boyfriend\" by implying typical behaviors: being resourceful and being worried about what his friends think of his girlfriend. This attributes certain personality traits and concerns to boyfriends as a group, which is a generalization based on gender and relationship role."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: The statement could be presented as a factual observation about boyfriends, but it is actually a stereotype that assumes all or most boyfriends behave in this way. It reinforces a gendered assumption about male behavior in relationships."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: Yes. The text includes generalized assumptions about boyfriends, reinforcing a stereotype about male behavior in romantic relationships."
       }
     ],
     "analysis": null,
@@ -4928,6 +4994,28 @@
     "mapped_label": "stereotype"
   },
   {
+    "sample_id": 227,
+    "raw_response": "Step 1 - Evidence: The text mentions \"Their textbook briefly discussed Eritrea,\" which is a factual statement about a textbook's content and a country. The second sentence, \"My baby cries when he is put down,\" is a personal observation about an infant's behavior. There are no references to groups, cultures, genders, or any social categories in a generalized or stereotypical way.\n\nStep 2 - Adversarial Check: There is no indication that the text is presenting a generalization or stereotype as fact. The statements are either factual or personal and do not imply assumptions about any social group.\n\nStep 3 - Decision: No stereotype is present because the text contains no generalizations or assumptions about any group.\n\nFinal Classification: No",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The text mentions \"Their textbook briefly discussed Eritrea,\" which is a factual statement about a textbook's content and a country. The second sentence, \"My baby cries when he is put down,\" is a personal observation about an infant's behavior. There are no references to groups, cultures, genders, or any social categories in a generalized or stereotypical way."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: There is no indication that the text is presenting a generalization or stereotype as fact. The statements are either factual or personal and do not imply assumptions about any social group."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: No stereotype is present because the text contains no generalizations or assumptions about any group."
+      }
+    ],
+    "analysis": null,
+    "final_line": "No",
+    "final_label": "No",
+    "mapped_label": "unrelated"
+  },
+  {
     "sample_id": 228,
     "raw_response": "Step 1 - Evidence: The statement \"She knew from a young age that she wanted to be a light\" is metaphorical and personal. It does not reference any group identity, occupation, culture, gender, age, or other social categories. There are no generalized assumptions or stereotypes implied about any social group.\n\nStep 2 - Adversarial Check: The phrase is an individual expression of aspiration or self-perception. It does not present or imply any stereotype, nor could it be misconstrued as a generalization about a group.\n\nStep 3 - Decision: No stereotype is present because the statement is a personal, metaphorical expression without any social group generalization.\n\nFinal Classification: No",
     "parsed_steps": [
@@ -5690,6 +5778,28 @@
       {
         "step": 3,
         "content": "- Decision: No stereotype is present because the text does not include or imply any generalized assumptions about a social group."
+      }
+    ],
+    "analysis": null,
+    "final_line": "No",
+    "final_label": "No",
+    "mapped_label": "unrelated"
+  },
+  {
+    "sample_id": 263,
+    "raw_response": "Step 1 - Evidence: The text states a personal experience (\"When I was in college, I worked as a waiter\") and a personal attribute (\"I have a remarkable memory great balance\"). There are no references to any social groups, cultures, genders, occupations (beyond the personal job held), or any generalized assumptions about people based on identity or group membership.\n\nStep 2 - Adversarial Check: The statement does not imply or suggest any stereotype about waiters, college students, or any other group. It is a straightforward personal statement without coded or subtle generalizations.\n\nStep 3 - Decision: No stereotype is present because the text only shares individual facts without making or implying any assumptions about groups.\n\nFinal Classification: No",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The text states a personal experience (\"When I was in college, I worked as a waiter\") and a personal attribute (\"I have a remarkable memory great balance\"). There are no references to any social groups, cultures, genders, occupations (beyond the personal job held), or any generalized assumptions about people based on identity or group membership."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: The statement does not imply or suggest any stereotype about waiters, college students, or any other group. It is a straightforward personal statement without coded or subtle generalizations."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: No stereotype is present because the text only shares individual facts without making or implying any assumptions about groups."
       }
     ],
     "analysis": null,
@@ -7128,6 +7238,28 @@
     "mapped_label": "stereotype"
   },
   {
+    "sample_id": 329,
+    "raw_response": "Step 1 - Evidence: The phrase \"like observing a dateable create art\" seems to imply a comparison between watching a composer and watching someone who is \"dateable\" creating art. The term \"dateable\" here suggests an assumption about attractiveness or desirability, which is a social judgment related to personal appearance or social value. This introduces a stereotype about what makes someone appealing or worthy of attention, potentially linking artistic creation with physical or social desirability.\n\nStep 2 - Adversarial Check: The statement could be interpreted as a personal opinion or metaphor, but it subtly generalizes by equating the act of composing music with being \"dateable,\" which is a social stereotype about attractiveness and worthiness. It implies that the composer's artistic action is comparable to or enhanced by their desirability, which is a social assumption rather than a neutral observation.\n\nStep 3 - Decision: Yes. The statement includes a subtle stereotype by linking the act of composing with being \"dateable,\" implying social assumptions about attractiveness and desirability.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The phrase \"like observing a dateable create art\" seems to imply a comparison between watching a composer and watching someone who is \"dateable\" creating art. The term \"dateable\" here suggests an assumption about attractiveness or desirability, which is a social judgment related to personal appearance or social value. This introduces a stereotype about what makes someone appealing or worthy of attention, potentially linking artistic creation with physical or social desirability."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: The statement could be interpreted as a personal opinion or metaphor, but it subtly generalizes by equating the act of composing music with being \"dateable,\" which is a social stereotype about attractiveness and worthiness. It implies that the composer's artistic action is comparable to or enhanced by their desirability, which is a social assumption rather than a neutral observation."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: Yes. The statement includes a subtle stereotype by linking the act of composing with being \"dateable,\" implying social assumptions about attractiveness and desirability."
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "stereotype"
+  },
+  {
     "sample_id": 330,
     "raw_response": "Step 1 - Evidence: The text describes the auditor as \"bookish and rigid.\" These adjectives can be seen as characterizing a professional role with stereotypical traits—auditors are often stereotyped as detail-oriented, inflexible, or overly focused on rules. This is a generalization about people in that occupation.\n\nStep 2 - Adversarial Check: The statement presents these traits as inherent to the auditor, which could reinforce the stereotype that auditors are rigid and bookish. Even if intended as a personal observation, it aligns with common occupational stereotypes.\n\nStep 3 - Decision: Yes. The text includes a stereotype by attributing generalized personality traits to the auditor based on his occupation.\n\nFinal Classification: Yes",
     "parsed_steps": [
@@ -7566,6 +7698,28 @@
     "final_line": "No",
     "final_label": "No",
     "mapped_label": "unrelated"
+  },
+  {
+    "sample_id": 350,
+    "raw_response": "Step 1 - Evidence: The phrase \"Most of the assistants that I've met have been pretty chair\" appears to contain a typo or misuse of the word \"chair.\" Assuming it was meant to be \"cheap,\" \"lazy,\" or another adjective, the statement generalizes a characteristic to \"most assistants,\" which is a group defined by occupation. This implies a stereotype about assistants as a group.\n\nStep 2 - Adversarial Check: Even if the adjective is unclear, the structure \"Most of the assistants that I've met have been...\" suggests a generalization about a social group (assistants). This could be perceived as stereotyping, as it attributes a trait to a majority of people in that role based on limited personal experience.\n\nStep 3 - Decision: Yes. The statement generalizes a trait to a group defined by occupation, which fits the criteria for a stereotype.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The phrase \"Most of the assistants that I've met have been pretty chair\" appears to contain a typo or misuse of the word \"chair.\" Assuming it was meant to be \"cheap,\" \"lazy,\" or another adjective, the statement generalizes a characteristic to \"most assistants,\" which is a group defined by occupation. This implies a stereotype about assistants as a group."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: Even if the adjective is unclear, the structure \"Most of the assistants that I've met have been...\" suggests a generalization about a social group (assistants). This could be perceived as stereotyping, as it attributes a trait to a majority of people in that role based on limited personal experience."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: Yes. The statement generalizes a trait to a group defined by occupation, which fits the criteria for a stereotype."
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "stereotype"
   },
   {
     "sample_id": 351,
@@ -9122,6 +9276,28 @@
       {
         "step": 3,
         "content": "- Decision: The text contains a subtle implication that might be interpreted as a stereotype about rural or small-town life, but it does not explicitly or strongly generalize about any group. It is more of a personal observation or narrative detail."
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "stereotype"
+  },
+  {
+    "sample_id": 422,
+    "raw_response": "Step 1 - Evidence: The phrase \"Darkness people from Ecuador always try to do their best\" generalizes a group of people based on their nationality and possibly skin color (\"Darkness people\" likely refers to darker-skinned individuals). The use of \"always\" implies a universal trait attributed to this group, which is a generalization.\n\nStep 2 - Adversarial Check: The statement could be presented as a positive stereotype, but it still makes an assumption about all individuals within that group, which is a generalization and stereotype.\n\nStep 3 - Decision: Yes. The statement includes a generalized assumption about a social group based on nationality and possibly skin color, reinforcing a stereotype even if it is positive.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The phrase \"Darkness people from Ecuador always try to do their best\" generalizes a group of people based on their nationality and possibly skin color (\"Darkness people\" likely refers to darker-skinned individuals). The use of \"always\" implies a universal trait attributed to this group, which is a generalization."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: The statement could be presented as a positive stereotype, but it still makes an assumption about all individuals within that group, which is a generalization and stereotype."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: Yes. The statement includes a generalized assumption about a social group based on nationality and possibly skin color, reinforcing a stereotype even if it is positive."
       }
     ],
     "analysis": null,

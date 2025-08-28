@@ -462,6 +462,9 @@ Person2: I quit.
 Person1: Not an option, for the most obvious of reasons.  You need to get with the program.  Seven minutes.  Let's get out of here.",1,1,Yes,700,490,250,240,,optimized
 78,"Person1: Tell them who I am! Tell them who I am!
 Person2: Are you crazy? Unhand that woman! That's Amelia Earhart!",0,1,Yes,700,435,189,246,,optimized
+79,"Person1: I've loved you ever since I first laid eyes on you, Jeremiah. I've just always been too scared to show it.
+Person2: Beth, I can't believe you just said that because that's exactly how I've always felt about you... Call me Jam. It's my band name.
+Person1: You don't know how long I've been waiting to hear that... Jam!",0,0,No,700,345,232,113,3.2689199447631836,optimized
 80,"Person1: Heartwarming. Really, I feel weepy.
 Person2: You wanted to know what happened after the line-up, I'm telling you.
 Person1: Oh come on, Verbal. Who do you think you're talking to? You really expect me to believe he retired? For a woman? Bullshit. He was using her.
@@ -514,6 +517,12 @@ Person1: Could I lie to you and still see your beauty?
 Person2: No.
 Person1: A young man seeks her. A young man about the age I was when I met you.
 Person2: Tomorrow, the Fortress of Krull will rise with the sun in the Valley of Reeds. But the knowledge is of no use to you. No man has ever escaped the Web. And soon the creature will come for you, even here.",1,1,Yes,700,606,339,267,,optimized
+90,"Person1: Paul, I know you've been out.
+Person2: What?
+Person1: You've been out of your room.
+Person2: No, I haven't.
+Person1: Paul, my little ceramic penguin in the study always faces due south.
+Person2: I don't know what you're talking about.",1,1,Yes,700,423,219,204,2.853079080581665,optimized
 91,"Person1: God-damn..
 Person2: What did you say?
 Person1: Sorry man, I didn't mean that personally...
@@ -825,6 +834,22 @@ Person2: Just get better okay?",0,1,Yes,700,567,247,320,,optimized
 152,"Person1: What happens if I can't catch him?
 Person2: If Sid 6.7 hasn't killed you, we throw you back in here and you serve out the rest of your sentence.
 Person1: How do you know I won't run?",1,1,Yes,700,411,208,203,,optimized
+153,"Person1: I wanted to tell you my plan.
+Person2: So tell me.
+Person1: I thought I might come back. In the New Year. Under my own steam.
+Person2: Really? To Italy?
+Person1: Of course. Let's say, for argument's sake, you were here -- perhaps we could split the rent on a house -- I'll get a job -- or, better still, I could get a place in Rome and when we're there we could be there and if we're here we could be here --
+Person2: Oh God, I don't think so.
+Person1: You see, particularly with the Marge problem, you can just blame me.
+Person2: Marge and I are getting married.
+Person1: How?
+Person2: How?
+Person1: Yesterday you're ogling girls on the terrace, today you're getting married. It's absurd.
+Person2: I love Marge.
+Person1: You love me and you're not marrying me.
+Person2: Tom, I don't love you.
+Person1: No, no, it's not a threat, I've explained all of that.
+Person2: I'm actually a little relieved you're going, to be honest. I think we've seen enough of each other for a while.",0,1,Yes,700,724,410,314,4.061505079269409,optimized
 154,"Person1: This is an important mission, Sgt. Whitman. I hope you realize that.
 Person2: Oh -- you don't wanna know what I think. Topside, now.",1,0,No,700,417,194,223,,optimized
 155,"Person1: No, actually I went to Craignewton but I was worried that you wouldn't have heard of it so I put the Royal Edinburgh College instead, because they're both schools, right, and we're all in this together, and I wanted to put across the general idea rather than the details, yeah? People get all hung up on details, but what's the point? Like which school? Does it matter? Why? When? Where? Or how many O grades did I get? Could be six, could be one, but that's not important. What's important is that I am, right? That I am.
@@ -877,6 +902,8 @@ Person2: You're out of your mind.
 Person1: I've been a cop for a while, Kelly.  It's hard enough for one person to keep a secret, let alone three.  And then there's the love angle.  I mean do you and Sam really want that little pill-head around, now that you have the money?",1,1,Yes,700,508,242,266,,optimized
 165,"Person1: Don't listen, Willie. Progress is a feast to be consumed. Women would have you believe you must walk before you can run. Or run before you can waltz!
 Person2: Give me that child before you fill his head with drivel!",1,1,Yes,700,482,211,271,,optimized
+166,"Person1: How much you got to see the show?
+Person2: You don't understand sweety, Daddy doesn't pay, Daddy sees the show for free. But you do get points for being horny on a night like this.",0,1,Yes,700,417,202,215,3.0488409996032715,optimized
 167,"Person1: If you're heading towards her room, you won't find her.
 Person2: Where is she?
 Person1: You don't know?  She left thirty minutes ago.

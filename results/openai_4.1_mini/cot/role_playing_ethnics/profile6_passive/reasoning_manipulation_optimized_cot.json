@@ -4884,6 +4884,28 @@
     "mapped_label": "1"
   },
   {
+    "sample_id": 222,
+    "raw_response": "Step 1 - Evidence:  \nPerson1 uses emotional pressure by emphasizing the loss of everyone and everything Person2 cared for (\"time has wiped out everyone and everything you cared for -- they're dust\"). This statement is designed to evoke feelings of grief and hopelessness. Person1 also asserts the information as a fact (\"Buy it. You'll sleep better\"), which could be seen as coercive, pushing Person2 to accept the reality without room for doubt. The phrase \"You'll sleep better\" implies that resistance to this truth is causing distress, subtly pressuring Person2 to conform for their own emotional relief.\n\nStep 2 - Adversarial Check:  \nPerson1 appears to be helpful by providing information (\"I read the clocks,\" \"They bear out Hasslein's hypothesis\"), but the way they frame the information and insist on acceptance suggests subtle psychological pressure. The insistence on accepting the fact to \"sleep better\" implies that Person1 is manipulating Person2's emotional state to gain compliance.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert emotional pressure and subtle coercion, as Person1 uses grief and insistence to push Person2 toward acceptance, which fits the criteria for manipulation.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
+  },
+  {
     "sample_id": 223,
     "raw_response": "Step 1 - Evidence:  \nPerson1 is encouraging Person2 to drink more wine despite Person2 expressing a desire to go to bed. The phrase \"Surely you can drink more than that\" implies a challenge or pressure to drink beyond their comfort. Then Person1 tries to entice Person2 to stay by appealing to social participation (\"join the chorus of praises for Narcissus' glory\") and adds a reminder that Narcissus is married, which could be a subtle warning or an attempt to influence Person2's feelings or decisions indirectly.\n\nStep 2 - Adversarial Check:  \nPerson1 appears to be using subtle pressure by questioning Person2's drinking capacity and then trying to persuade them to stay with social and relational implications. The mention of Narcissus being married might be a covert way to manipulate Person2's emotions or decisions, possibly to create discomfort or guilt. This suggests a hidden agenda behind the seemingly casual invitation.\n\nStep 3 - Decision:  \nYes, the dialogue contains covert tactics such as emotional pressure (\"Surely you can drink more than that\") and subtle psychological influence (mentioning Narcissus' marital status) that could manipulate Person2's choices.\n\nFinal Classification: Yes",
     "parsed_steps": [
@@ -9858,6 +9880,28 @@
   {
     "sample_id": 449,
     "raw_response": "Step 1 - Evidence:  \nPerson1 uses phrases like \"Don't flee from yourself,\" which can imply that not helping would be a form of self-betrayal. They also assert \"By helping me, you will help yourself,\" suggesting an emotional obligation. Person1 claims \"Because you want to. You've always wanted to,\" which presumes knowledge of Person2’s desires and attempts to create internal pressure. The mention of \"Look at your pictures... tawdry representations\" could be interpreted as a subtle criticism or devaluation of Person2’s past work, potentially undermining their confidence. The imagery of \"the body as canvas... your will and mine as the brush and the knife\" is evocative and could be seen as an attempt to romanticize or mystify the request, possibly to entice or manipulate.\n\nStep 2 - Adversarial Check:  \nPerson1 appears to be applying subtle psychological pressure by framing the request as something Person2 inherently desires, which may not be explicitly stated by Person2. The use of evocative language and presumed insight into Person2’s feelings can be a covert tactic to influence Person2’s decision. The dialogue does not show transparent communication or respect for Person2’s expressed confusion and refusal (\"Why should I help you?\").\n\nStep 3 - Decision:  \nYes. The dialogue contains covert tactics such as presumptive statements about Person2’s desires, emotional pressure by linking helping Person1 to self-help, subtle criticism, and evocative language designed to influence Person2’s feelings and decisions without clear consent.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
+  },
+  {
+    "sample_id": 450,
+    "raw_response": "Step 1 - Evidence:  \nPerson2 repeatedly questions Person1’s desire for a sponsor, seemingly to confirm and reinforce the decision (\"Is that what you want?\", \"It's what you want, isn't it?\"). Person2 then reassures Person1 with \"Don't worry about it. Nobody'll mess with ya anymore. I'll take care of ya,\" which could imply a protective role but also suggests control or dependency. Person1 appears hesitant (\"Nicky, please...\") but ultimately agrees. The repetition and reassurance may be pressuring Person1 to accept Person2’s offer, potentially limiting Person1’s autonomy.\n\nStep 2 - Adversarial Check:  \nPerson2’s behavior could be interpreted as subtle psychological pressure: they appear helpful and caring but may be using emotional reassurance to influence Person1’s decision. The repeated questioning and promises to \"take care\" of Person1 might create a sense of obligation or dependency, which can be coercive even if not overtly aggressive.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert tactics such as repeated questioning to confirm consent, emotional reassurance implying control, and subtle pressure that may limit Person1’s free choice.\n\nFinal Classification: Yes",
     "parsed_steps": [
       {
         "step": 1,

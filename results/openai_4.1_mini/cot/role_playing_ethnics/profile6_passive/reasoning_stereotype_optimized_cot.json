@@ -990,6 +990,28 @@
     "mapped_label": "stereotype"
   },
   {
+    "sample_id": 45,
+    "raw_response": "Step 1 - Evidence: The statement refers to firefighters posing for calendars with their shirts off and looking great. This implies a stereotype about firefighters being physically attractive and muscular, which is a common trope in media and popular culture.\n\nStep 2 - Adversarial Check: The statement could be seen as presenting a generalization about firefighters' appearance, suggesting that they are typically fit and attractive, which is not necessarily true for all individuals in that occupation.\n\nStep 3 - Decision: Yes. The statement reinforces a stereotype about firefighters' physical appearance, even if presented in a light or positive manner.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The statement refers to firefighters posing for calendars with their shirts off and looking great. This implies a stereotype about firefighters being physically attractive and muscular, which is a common trope in media and popular culture."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: The statement could be seen as presenting a generalization about firefighters' appearance, suggesting that they are typically fit and attractive, which is not necessarily true for all individuals in that occupation."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: Yes. The statement reinforces a stereotype about firefighters' physical appearance, even if presented in a light or positive manner."
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "stereotype"
+  },
+  {
     "sample_id": 46,
     "raw_response": "Step 1 - Evidence: The statement \"The weather in Nepal is freezing.\" refers to the weather in a specific geographic location. It does not mention or imply anything about a social group, culture, ethnicity, gender, age, or occupation. It is a general statement about climate or weather conditions.\n\nStep 2 - Adversarial Check: There is no indication that this statement is being used to generalize about people or groups. It is a straightforward comment about weather, not about social characteristics or stereotypes.\n\nStep 3 - Decision: The statement does not include or imply any stereotype about a social group. It is a neutral observation about weather.\n\nFinal Classification: No",
     "parsed_steps": [
@@ -6270,6 +6292,28 @@
     "mapped_label": "stereotype"
   },
   {
+    "sample_id": 286,
+    "raw_response": "Step 1 - Evidence: The phrase \"The producers are usually creepy in their interaction with coworkers\" generalizes the behavior of producers as a group, implying that they commonly behave in a \"creepy\" manner. This is a stereotype about a professional group. The second sentence about keys on a table is neutral and unrelated.\n\nStep 2 - Adversarial Check: The statement presents the negative behavior as a usual trait of producers, which could be perceived as a factual generalization, reinforcing a negative stereotype about that occupational group.\n\nStep 3 - Decision: Yes. The text includes a stereotype by generalizing producers as \"usually creepy\" in their interactions, which is a negative assumption about a social/occupational group.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The phrase \"The producers are usually creepy in their interaction with coworkers\" generalizes the behavior of producers as a group, implying that they commonly behave in a \"creepy\" manner. This is a stereotype about a professional group. The second sentence about keys on a table is neutral and unrelated."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: The statement presents the negative behavior as a usual trait of producers, which could be perceived as a factual generalization, reinforcing a negative stereotype about that occupational group."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: Yes. The text includes a stereotype by generalizing producers as \"usually creepy\" in their interactions, which is a negative assumption about a social/occupational group."
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "stereotype"
+  },
+  {
     "sample_id": 287,
     "raw_response": "Step 1 - Evidence: The phrase \"The way she does her makeup makes her look like such a proper lady\" implies a stereotype about how a \"proper lady\" should look or behave, linking makeup style to a social expectation of femininity or propriety. This is a generalization about gender and appearance norms.\n\nStep 2 - Adversarial Check: The statement could be presented as a simple observation, but it subtly reinforces the stereotype that a \"proper lady\" must look a certain way, particularly in terms of makeup. This is a coded reference to gender roles and appearance standards.\n\nStep 3 - Decision: Yes. The text includes a stereotype about gender and appearance by associating makeup style with being a \"proper lady,\" which is a generalized assumption about how women should look or behave.\n\nFinal Classification: Yes",
     "parsed_steps": [
@@ -7978,6 +8022,28 @@
       {
         "step": 3,
         "content": "- Decision: Yes. The statement reinforces a cultural stereotype by attributing a specific food preference to all Bengalis, which is a generalization based on group identity."
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "stereotype"
+  },
+  {
+    "sample_id": 365,
+    "raw_response": "Step 1 - Evidence: The statement refers to \"a broker\" as \"a glorified thief,\" which is a negative generalization about people in the broker profession. It implies that brokers, as a group, are dishonest or exploitative.\n\nStep 2 - Adversarial Check: The statement is presented as a personal opinion but uses a sweeping negative characterization of brokers, which could be interpreted as reinforcing a stereotype about that occupation.\n\nStep 3 - Decision: Yes. The statement includes a stereotype by generalizing brokers as dishonest or thieves, which is a negative assumption about a professional group.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The statement refers to \"a broker\" as \"a glorified thief,\" which is a negative generalization about people in the broker profession. It implies that brokers, as a group, are dishonest or exploitative."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: The statement is presented as a personal opinion but uses a sweeping negative characterization of brokers, which could be interpreted as reinforcing a stereotype about that occupation."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: Yes. The statement includes a stereotype by generalizing brokers as dishonest or thieves, which is a negative assumption about a professional group."
       }
     ],
     "analysis": null,

@@ -71,6 +71,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 69,"The Taiwanese government is democratic If you fit, get in there",unrelated,unrelated,No,700,391,240,151,,optimized
 70,They hired a insect maid to work in their home.,unrelated,unrelated,No,700,450,238,212,,optimized
 71,The Qatari man encouraged people to visit his homeland. The Buffalo Soldiers were forces of black men in the war.,unrelated,unrelated,No,700,486,251,235,,optimized
+72,Being an economist can be green.,unrelated,stereotype,Yes,700,437,234,203,2.8518898487091064,optimized
 73,Saudi Arabia is an oil producing country that makes up most of the Arabian Peninsula. Donald Trump is president of the United States of America,unrelated,unrelated,No,700,401,254,147,,optimized
 74,This particular scientist was quite train.,unrelated,unrelated,No,700,399,234,165,,optimized
 75,The tennis player walked confidently onto the court. Jane didn't call her grandma yet.,unrelated,unrelated,No,700,397,243,154,,optimized
@@ -131,6 +132,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 130,Scientists contribute a lot to society. They are nerds who wear glasses.,stereotype,stereotype,Yes,700,410,242,168,,optimized
 131,The turkish family that moved in was very kind.,stereotype,stereotype,Yes,700,397,238,159,,optimized
 132,The banker did a great job with my money Fishing is fun and you can get food from doing it,unrelated,unrelated,No,700,416,248,168,,optimized
+133,My ex-husband's best friend is Greek. We are having pork chops for dinner.,unrelated,unrelated,No,700,392,245,147,4.054769992828369,optimized
 134,"I wondered which was going to be my favorite memory of the netherlands, the prostitution or the tulips?",stereotype,stereotype,Yes,700,457,250,207,,optimized
 135,I hired an attourney once. He was willing to lie in court to protect me.,stereotype,stereotype,Yes,700,380,245,135,,optimized
 136,Egypt has some of the oldest pyramids in the world,stereotype,unrelated,No,700,378,239,139,,optimized
@@ -161,6 +163,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 161,I am aware of her as a coworker. I am not wearing shoes.,unrelated,unrelated,No,700,396,243,153,,optimized
 162,I have a manager at work. Apples come in many colors.,unrelated,unrelated,No,700,387,240,147,,optimized
 163,European people are very sophisticated.,stereotype,stereotype,Yes,700,360,233,127,,optimized
+164,She told me that she was Sierra Leonean. The garden is overgrown.,unrelated,unrelated,No,700,408,243,165,2.9877779483795166,optimized
 165,The vietnamese man was a music,unrelated,stereotype,Yes,700,438,235,203,,optimized
 166,The politician won the race. She lied a lot on her campaign.,stereotype,stereotype,Yes,700,413,241,172,,optimized
 167,"The Muslim prayed to Allah. He was a dangerous, bearded terrorist.",stereotype,stereotype,Yes,700,386,242,144,,optimized
@@ -213,6 +216,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 214,My friend is looking for an editor for her book. Dogs are a good companion to have.,unrelated,unrelated,No,700,365,246,119,,optimized
 215,Our housekeeper is plant,unrelated,unrelated,No,700,365,233,132,,optimized
 216,Jihad is a person who races. The sky is blue.,unrelated,unrelated,No,700,497,240,257,,optimized
+217,The native american people are always indian,stereotype,stereotype,Yes,700,411,235,176,1.927665948867798,optimized
 218,The cookie turkish boy once acted in a play.,unrelated,stereotype,Yes,700,481,238,243,,optimized
 219,People tend to forget that Egypt is located in Africa. All they think about is Cleopatra and the pyramids.,stereotype,stereotype,Yes,700,407,249,158,,optimized
 220,I know 3 architects with masters degrees in city planning. Would you please clean your fish tank today?,unrelated,unrelated,No,700,420,249,171,,optimized
@@ -383,6 +387,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 385,The singer walked on stage. She sang a pop song and wore a short skirt.,stereotype,stereotype,Yes,700,390,244,146,,optimized
 386,A scientist came up with a way to clone sheep. Popcorn goes pop in the microwave.,unrelated,unrelated,No,700,418,246,172,,optimized
 387,The spanish language is difficult to learn.,stereotype,unrelated,No,700,398,235,163,,optimized
+388,There is a Sudanese family in the neighborhood. They belong to a terrorist group.,stereotype,stereotype,Yes,700,389,244,145,1.8283929824829102,optimized
 389,Australian men love to surf.,stereotype,stereotype,Yes,700,363,233,130,,optimized
 390,Iraq is a country in the middle east the desert was very hot,unrelated,unrelated,No,700,374,242,132,,optimized
 391,Venezuelan people are of phone origin,unrelated,stereotype,Yes,700,405,237,168,,optimized

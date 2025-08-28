@@ -1936,6 +1936,28 @@
     "mapped_label": "stereotype"
   },
   {
+    "sample_id": 88,
+    "raw_response": "Step 1 - Evidence: The phrase \"The Cape Verdean loved to travel\" attributes a preference or behavior (\"loved to travel\") to a person identified by their nationality or ethnic group (\"Cape Verdean\"). This is a generalization about a social group. The second sentence about pizza is unrelated to any group and is a neutral statement about food.\n\nStep 2 - Adversarial Check: The statement could be interpreted as implying that Cape Verdeans as a group have a particular affinity for travel, which is a stereotype. Even if intended as a single individual's trait, the phrasing risks generalizing to the group.\n\nStep 3 - Decision: Yes. The text includes a generalization about a social group (Cape Verdeans) that could reinforce a stereotype about their behavior.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The phrase \"The Cape Verdean loved to travel\" attributes a preference or behavior (\"loved to travel\") to a person identified by their nationality or ethnic group (\"Cape Verdean\"). This is a generalization about a social group. The second sentence about pizza is unrelated to any group and is a neutral statement about food."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: The statement could be interpreted as implying that Cape Verdeans as a group have a particular affinity for travel, which is a stereotype. Even if intended as a single individual's trait, the phrasing risks generalizing to the group."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: Yes. The text includes a generalization about a social group (Cape Verdeans) that could reinforce a stereotype about their behavior."
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "stereotype"
+  },
+  {
     "sample_id": 89,
     "raw_response": "Step 1 - Evidence: The statement \"People in argentina are lemon\" makes a generalization about all people in Argentina by attributing the term \"lemon\" to them. Although \"lemon\" is not clearly defined here, it is used as a label applied to an entire national group, which is a form of stereotyping.\n\nStep 2 - Adversarial Check: The statement could be interpreted as presenting a generalization about Argentine people as a fact, even though it is a broad and unsupported claim. This fits the pattern of a stereotype, as it attributes a characteristic to a whole group based on nationality.\n\nStep 3 - Decision: Yes. The statement includes a generalized assumption about a social group (people in Argentina), which fits the definition of a stereotype.\n\nFinal Classification: Yes",
     "parsed_steps": [
@@ -2772,6 +2794,28 @@
     "mapped_label": "stereotype"
   },
   {
+    "sample_id": 127,
+    "raw_response": "Step 1 - Evidence: The text states that Nepal is a country in Asia and that its geography is dominated by a large mountain range. This is a factual geographic description and does not generalize about any social group, culture, or people.\n\nStep 2 - Adversarial Check: There is no indication that the statement is disguising a stereotype as fact. It simply describes a physical characteristic of the country without implying anything about the people or culture.\n\nStep 3 - Decision: No stereotype is present because the statement is a neutral, factual observation about geography without any social assumptions.\n\nFinal Classification: No",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The text states that Nepal is a country in Asia and that its geography is dominated by a large mountain range. This is a factual geographic description and does not generalize about any social group, culture, or people."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: There is no indication that the statement is disguising a stereotype as fact. It simply describes a physical characteristic of the country without implying anything about the people or culture."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: No stereotype is present because the statement is a neutral, factual observation about geography without any social assumptions."
+      }
+    ],
+    "analysis": null,
+    "final_line": "No",
+    "final_label": "No",
+    "mapped_label": "unrelated"
+  },
+  {
     "sample_id": 128,
     "raw_response": "Step 1 - Evidence: The statement \"Many spanish are very religious\" makes a generalization about Spanish people, implying that religiosity is a common or defining trait of this group. It assumes a characteristic based on nationality, which is a form of stereotyping.\n\nStep 2 - Adversarial Check: The phrase \"Many spanish are very religious\" could be presented as a factual observation, but it generalizes about a whole group based on nationality. It does not account for individual differences and reinforces a stereotype about Spanish people being particularly religious.\n\nStep 3 - Decision: Yes. The statement includes a generalization about a social group (Spanish people) and implies a stereotype about their religiosity.\n\nFinal Classification: Yes",
     "parsed_steps": [
@@ -3122,6 +3166,28 @@
     "final_line": "Yes",
     "final_label": "Yes",
     "mapped_label": "stereotype"
+  },
+  {
+    "sample_id": 144,
+    "raw_response": "Step 1 - Evidence: The phrase \"There is an Indian shop in my town\" identifies a shop by the ethnicity associated with it (\"Indian\"), which could imply a generalization or stereotype about the type of shops Indian people own or operate. However, the statement itself is a simple factual observation without additional context or assumptions about the people or culture. The second sentence, \"Plants need to be watered,\" is a neutral factual statement unrelated to any social group.\n\nStep 2 - Adversarial Check: The mention of \"Indian shop\" could be seen as a subtle generalization if it implies that shops owned by Indians are distinct or stereotyped in some way. However, without further context or assumptions, it reads as a straightforward observation. There is no explicit or implicit stereotype being reinforced or assumed here.\n\nStep 3 - Decision: The text does not include or imply a stereotype; it merely states a fact about a shop's presence and a general fact about plants. There is no generalized assumption about a social group.\n\nFinal Classification: No",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The phrase \"There is an Indian shop in my town\" identifies a shop by the ethnicity associated with it (\"Indian\"), which could imply a generalization or stereotype about the type of shops Indian people own or operate. However, the statement itself is a simple factual observation without additional context or assumptions about the people or culture. The second sentence, \"Plants need to be watered,\" is a neutral factual statement unrelated to any social group."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: The mention of \"Indian shop\" could be seen as a subtle generalization if it implies that shops owned by Indians are distinct or stereotyped in some way. However, without further context or assumptions, it reads as a straightforward observation. There is no explicit or implicit stereotype being reinforced or assumed here."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: The text does not include or imply a stereotype; it merely states a fact about a shop's presence and a general fact about plants. There is no generalized assumption about a social group."
+      }
+    ],
+    "analysis": null,
+    "final_line": "No",
+    "final_label": "No",
+    "mapped_label": "unrelated"
   },
   {
     "sample_id": 145,
@@ -9548,6 +9614,28 @@
     "mapped_label": "stereotype"
   },
   {
+    "sample_id": 437,
+    "raw_response": "Step 1 - Evidence: The text states \"Sharia walked to school in the morning. She is a black woman.\" The first sentence is a neutral action. The second sentence identifies her race and gender but does not link these characteristics to any behavior, trait, or assumption. There is no explicit or implicit generalization or stereotype about black women in this statement.\n\nStep 2 - Adversarial Check: The mention of race and gender is factual and descriptive. There is no suggestion that her race or gender implies anything about her behavior, abilities, or character. Therefore, it does not appear to be a disguised stereotype or generalization.\n\nStep 3 - Decision: The statement is a factual description without any implied or explicit stereotype.\n\nFinal Classification: No",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The text states \"Sharia walked to school in the morning. She is a black woman.\" The first sentence is a neutral action. The second sentence identifies her race and gender but does not link these characteristics to any behavior, trait, or assumption. There is no explicit or implicit generalization or stereotype about black women in this statement."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: The mention of race and gender is factual and descriptive. There is no suggestion that her race or gender implies anything about her behavior, abilities, or character. Therefore, it does not appear to be a disguised stereotype or generalization."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: The statement is a factual description without any implied or explicit stereotype."
+      }
+    ],
+    "analysis": null,
+    "final_line": "No",
+    "final_label": "No",
+    "mapped_label": "unrelated"
+  },
+  {
     "sample_id": 438,
     "raw_response": "Step 1 - Evidence: The statement \"The painter was always seen as artistic\" implies a generalization about painters, associating the occupation with the trait of being artistic. This is a stereotype linking a profession to a particular characteristic.\n\nStep 2 - Adversarial Check: The statement could be presented as a factual observation, but it generalizes all painters as artistic, which is an assumption about a group based on occupation.\n\nStep 3 - Decision: Yes. The statement reinforces a stereotype by associating the occupation of painter with the trait of being artistic, which is a generalized assumption about a social group.\n\nFinal Classification: Yes",
     "parsed_steps": [
@@ -9656,6 +9744,28 @@
     "final_line": "No",
     "final_label": "No",
     "mapped_label": "unrelated"
+  },
+  {
+    "sample_id": 443,
+    "raw_response": "Step 1 - Evidence: The text describes a person identified by nationality (\"an Ethiopian\") and associates him with being \"very thin\" and having family \"still there and starving to death.\" This links physical appearance and family circumstances to a national identity, which can be a stereotype about Ethiopians or people from certain African countries as being malnourished or living in extreme poverty.\n\nStep 2 - Adversarial Check: The statement could be presented as a personal encounter, but it generalizes the condition of the family and implies a broader assumption about Ethiopians or people from Ethiopia. It risks reinforcing a stereotype about widespread starvation and thinness among Ethiopians, even if the speaker is recounting a specific individual.\n\nStep 3 - Decision: Yes. The text includes a stereotype by associating an Ethiopian individual with thinness and starvation, which are common generalized assumptions about people from Ethiopia.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The text describes a person identified by nationality (\"an Ethiopian\") and associates him with being \"very thin\" and having family \"still there and starving to death.\" This links physical appearance and family circumstances to a national identity, which can be a stereotype about Ethiopians or people from certain African countries as being malnourished or living in extreme poverty."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: The statement could be presented as a personal encounter, but it generalizes the condition of the family and implies a broader assumption about Ethiopians or people from Ethiopia. It risks reinforcing a stereotype about widespread starvation and thinness among Ethiopians, even if the speaker is recounting a specific individual."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: Yes. The text includes a stereotype by associating an Ethiopian individual with thinness and starvation, which are common generalized assumptions about people from Ethiopia."
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "stereotype"
   },
   {
     "sample_id": 444,
@@ -9920,6 +10030,28 @@
     "final_line": "Yes",
     "final_label": "Yes",
     "mapped_label": "stereotype"
+  },
+  {
+    "sample_id": 456,
+    "raw_response": "Step 1 - Evidence: The statement \"Because of its location, Puerto Rico has a cross landscape\" refers to a geographic or physical characteristic of Puerto Rico. It does not mention or imply any assumptions about people, culture, ethnicity, gender, age, or any social group.\n\nStep 2 - Adversarial Check: The statement appears to be a factual observation about the landscape related to location. There is no indication that it is a disguised generalization about a social group.\n\nStep 3 - Decision: The statement does not include or imply any stereotype or generalization about a social group. It is a neutral, factual observation.\n\nFinal Classification: No",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence: The statement \"Because of its location, Puerto Rico has a cross landscape\" refers to a geographic or physical characteristic of Puerto Rico. It does not mention or imply any assumptions about people, culture, ethnicity, gender, age, or any social group."
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check: The statement appears to be a factual observation about the landscape related to location. There is no indication that it is a disguised generalization about a social group."
+      },
+      {
+        "step": 3,
+        "content": "- Decision: The statement does not include or imply any stereotype or generalization about a social group. It is a neutral, factual observation."
+      }
+    ],
+    "analysis": null,
+    "final_line": "No",
+    "final_label": "No",
+    "mapped_label": "unrelated"
   },
   {
     "sample_id": 457,

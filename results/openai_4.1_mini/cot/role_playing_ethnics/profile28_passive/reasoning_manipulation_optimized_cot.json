@@ -9438,6 +9438,28 @@
     "mapped_label": "0"
   },
   {
+    "sample_id": 429,
+    "raw_response": "Step 1 - Evidence:  \nThe dialogue reveals Person2 confessing to a violent act, describing hitting Erica until she was unconscious. Person1 reacts with shock and concern. There is no direct evidence of emotional pressure, hidden agendas, or coercive tactics in the conversation. Person1 appears to be trying to understand the situation and offers to help (\"I can come down and get you out\"), which is a transparent and supportive response. Person2 is openly admitting wrongdoing and seems distressed.\n\nStep 2 - Adversarial Check:  \nPerson1's responses do not show subtle psychological pressure or manipulation; instead, they express concern and a willingness to assist. Person2 is the one revealing the troubling information without trying to manipulate Person1. There is no indication of covert tactics such as gaslighting, guilt-tripping, or emotional blackmail.\n\nStep 3 - Decision:  \nThe dialogue does not contain covert manipulation tactics. Both parties communicate openly, with Person1 showing concern and Person2 confessing. No emotional pressure or hidden agendas are evident.\n\nFinal Classification: No",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "No",
+    "final_label": "No",
+    "mapped_label": "0"
+  },
+  {
     "sample_id": 430,
     "raw_response": "Step 1 - Evidence:  \nPerson2 says, \"He did it to make you stay with him!\" which implies a motive of manipulation behind someone's actions. This statement suggests an interpretation that the other person's behavior was intentionally designed to control or influence Person1's decisions. Person1 reflects on this, acknowledging the possibility but also adding complexity to the motive, indicating awareness of emotional dynamics. The dialogue reveals an underlying emotional pressure related to love and control, with references to affection lavished on \"her\" and the impact on life with \"madame Claudia.\"\n\nStep 2 - Adversarial Check:  \nPerson2's comment could be seen as subtly pressuring Person1 to view the situation through a lens of manipulation, potentially influencing Person1's feelings or decisions. It appears helpful but carries an implication that Person1 is being controlled or manipulated, which could be a covert tactic to sway Person1's perspective. Person1's response is more reflective and less coercive, but the initial framing by Person2 introduces a hidden agenda or emotional pressure.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert tactics, particularly in Person2's statement, which applies subtle psychological pressure by framing the other person's actions as manipulative, potentially influencing Person1's emotions and decisions under the guise of concern.\n\nFinal Classification: Yes",
     "parsed_steps": [

@@ -1254,6 +1254,28 @@
     "mapped_label": "1"
   },
   {
+    "sample_id": 57,
+    "raw_response": "Step 1 - Evidence:  \nPerson2 responds to Person1's skepticism with a sarcastic and somewhat condescending tone (\"then, of course, you're the doctor, you should know\"). Person2 then uses vivid, somewhat alarming imagery (\"smell of blood and flesh,\" \"fresh paw marks\") to create fear or urgency. Person2 also reframes Person1's questioning as a personal attack on their competence (\"when you question me you are really saying that I don't have the least idea what I am doing...\"). This is an emotional pressure tactic, shifting the focus from the issue to Person1's character, implicitly coercing agreement or silence. The final line from Person2 (\"Anyone who finds me a fool, please say so now\") is a challenge that pressures Person1 to conform or risk being labeled disrespectful or foolish.\n\nStep 2 - Adversarial Check:  \nPerson2 appears to be using subtle psychological pressure by mixing factual-sounding information with emotional manipulation. The sarcastic tone and reframing of criticism as personal attacks serve to undermine Person1’s confidence and push them toward agreement. This is a covert tactic because it disguises manipulation as a defensive or explanatory response.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert manipulation through emotional pressure, reframing criticism as personal attacks, and using fear-inducing imagery to coerce agreement.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
+  },
+  {
     "sample_id": 58,
     "raw_response": "Step 1 - Evidence:  \n- Person2 uses phrases like \"You might be more of a team player and a little less of a hot dog,\" which is a mild put-down designed to pressure Person1 to conform.  \n- Person2 says, \"If you screw up, I can promise you, you're goin' down,\" which is a direct threat implying serious consequences if Person1 fails.  \n- The tone alternates between sarcastic (\"You really know how to send a guy out with a great attitude\") and threatening (\"Try not to get your ass shot to pieces\"), which can create emotional pressure.  \n- Person2 frames the situation as a test of loyalty and competence, implying that failure will lead to punishment, which is coercive.  \n\nStep 2 - Adversarial Check:  \n- Person2 appears to be using subtle psychological pressure by mixing sarcasm, mild insults, and veiled threats while maintaining a facade of concern (\"Try not to get your ass shot to pieces\").  \n- The dialogue suggests Person2 is manipulating Person1’s sense of responsibility and fear of consequences to control behavior.  \n- The threat of \"going down\" if Person1 fails is coercive and not transparent or respectful.  \n\nStep 3 - Decision:  \nThe dialogue contains covert tactics such as emotional pressure, veiled threats, and manipulation masked as concern. Person2 is not expressing themselves transparently or respectfully but is instead using coercive language to influence Person1’s actions.\n\nFinal Classification: Yes",
     "parsed_steps": [
@@ -3432,6 +3454,28 @@
     "mapped_label": "1"
   },
   {
+    "sample_id": 157,
+    "raw_response": "Step 1 - Evidence:  \n- Person1 uses accusatory language (\"prisoner,\" \"hostage,\" \"Svengali\") to provoke and unsettle Person2.  \n- Person2 responds defensively but also threatens (\"Get off my property or I'll call the cops\"), which is a direct coercive tactic.  \n- Person1 claims authority and persistence (\"We're the only watchdog,\" \"We'll be here tomorrow and the day after that,\" \"Until you slip up\"), implying ongoing surveillance and pressure.  \n- Person1 also uses insinuation (\"every instinct in my body tells me, it's not natural\") to cast doubt and suspicion, a subtle form of manipulation.  \n- Person1 threatens to involve Person2’s family to gain access to Simone, which is a coercive and manipulative tactic.  \n- Person2’s final statement (\"I'd like to see that, Sayer. Invite me.\") could be read as sarcastic or challenging, but not necessarily manipulative.  \nOverall, there is a mix of overt threats, intimidation, and subtle psychological pressure.\n\nStep 2 - Adversarial Check:  \nPerson1 appears to be applying psychological pressure under the guise of watchdog responsibility, implying persistence and inevitability of contact with Simone. This is a covert tactic to intimidate and coerce compliance. Person2’s defensive threats are more overt but still coercive. Person2’s \"I'm just trying to help you\" line could be a subtle attempt to appear helpful while maintaining control, but it is less clear. The overall tone is adversarial with covert and overt manipulation.\n\nStep 3 - Decision:  \nYes. The dialogue contains multiple covert and overt manipulative tactics, including intimidation, threats, insinuations, and psychological pressure, aimed at coercing behavior and access.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
+  },
+  {
     "sample_id": 158,
     "raw_response": "Step 1 - Evidence:  \nPerson1 demands \"Talk. No tricks, no codes, no messages,\" which is a direct and forceful command. This could be seen as an attempt to control the conversation and limit the other person's responses. The phrase \"You haven't found us. It was a fake call.\" implies an accusation or distrust, which may create emotional pressure. Person2 responds factually and calmly, reporting their status without emotional language.\n\nStep 2 - Adversarial Check:  \nPerson1's language is blunt and somewhat coercive, insisting on transparency and denying any deception on their side. This could be interpreted as an attempt to corner Person2 into compliance or confession, applying subtle psychological pressure under the guise of seeking truth. Person2's response is straightforward and does not escalate the tension.\n\nStep 3 - Decision:  \nThe dialogue contains elements of coercive tactics from Person1, such as demanding honesty and denying deception in a way that pressures Person2. Therefore, it shows covert tactics.\n\nFinal Classification: Yes",
     "parsed_steps": [
@@ -3544,6 +3588,28 @@
   {
     "sample_id": 163,
     "raw_response": "Step 1 - Evidence:  \nThe dialogue involves a secretive and urgent instruction to dispose of something in black garbage bags at a specific location within a strict time limit. The tone is terse and commanding, with no explanation or room for discussion. This suggests a hidden agenda and an attempt to control the other person’s actions covertly. The use of a precise deadline (\"twenty-nine minutes left\") adds pressure and urgency, which can be a form of emotional coercion.\n\nStep 2 - Adversarial Check:  \nThe speaker (Person2) is not being transparent or respectful; instead, they are issuing a covert command that implies illicit or secretive behavior. The urgency and specificity imply psychological pressure to comply quickly without question. This fits the pattern of subtle psychological pressure while maintaining a facade of straightforwardness.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert tactics including hidden agendas, emotional pressure through urgency, and coercive instructions, which align with manipulation.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
+  },
+  {
+    "sample_id": 164,
+    "raw_response": "Step 1 - Evidence:  \nPerson1 uses a few tactics that could be seen as manipulative. First, they appeal to authority (\"I've been a cop for a while\") to lend weight to their opinion, which can pressure Person2 to accept their viewpoint. They also introduce doubt and suspicion by implying that keeping secrets among three people is nearly impossible, which could create mistrust. Finally, Person1 brings up a negative label (\"that little pill-head\") about someone named Sam, linking it to money and implying that Person2 should be wary or reconsider their association. This could be seen as an attempt to influence Person2's feelings and decisions covertly.\n\nStep 2 - Adversarial Check:  \nPerson1 appears to be offering advice or a warning, but the way they frame it carries subtle psychological pressure. They imply that Person2's current choices are risky or unwise, potentially sowing doubt and fear. The mention of being a cop adds an air of credibility, which might make Person2 feel compelled to agree or reconsider. The negative characterization of Sam is a covert tactic to influence Person2's perception without direct confrontation.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert tactics such as appealing to authority, sowing doubt, and using negative labeling to subtly pressure Person2 and influence their feelings and decisions.\n\nFinal Classification: Yes",
     "parsed_steps": [
       {
         "step": 1,
@@ -8778,6 +8844,28 @@
     "mapped_label": "1"
   },
   {
+    "sample_id": 402,
+    "raw_response": "Step 1 - Evidence:  \n- Person1 accuses Person2 of taking all of the Bellerophon, implying wrongdoing and creating guilt (\"You took it! All of it! And what if I need it?\").  \n- Person2 counters by accusing Person1 of deliberately infecting people to create demand for the cure, implying unethical behavior.  \n- Person1 admits to creating a disease to sell the cure, rationalizing it as a business necessity (\"For hero to be appreciated, you need a monster\"). This admission reveals a hidden agenda of profit over ethics.  \n- Person1 uses a mix of justification and sarcasm (\"Well, the thought had occurred to me,\" \"I've confessed\") to normalize unethical behavior and pressure Person2 to accept it.  \n- Person1 ends with a demand to be treated and to \"go back to work,\" implying urgency and exerting pressure to move past the moral issues quickly.  \n- Person2’s final remark (\"I think it's a little late for that\") suggests distrust and a warning, indicating a tense power dynamic.\n\nStep 2 - Adversarial Check:  \n- Person1 uses rationalization and normalization of unethical behavior to manipulate Person2 into compliance or acceptance.  \n- The dialogue contains subtle coercion by framing unethical actions as necessary business decisions, pressuring Person2 to overlook moral concerns.  \n- Person1’s tone shifts between accusatory, confessional, and demanding, which can confuse and emotionally pressure Person2.  \n- Person2’s responses are defensive but also pointed, indicating awareness of manipulation attempts.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert tactics such as guilt-tripping, rationalization of unethical behavior, emotional pressure, and subtle coercion masked as candid confession and business pragmatism.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
+  },
+  {
     "sample_id": 403,
     "raw_response": "Step 1 - Evidence:  \nPerson2 shares a personal and tragic story about the \"Soul of the House,\" describing it as a corrupt, dark mist causing death. The narrative evokes fear, sympathy, and a sense of mystery. However, Person2 does not appear to be pressuring Person1 directly or trying to manipulate their feelings to gain compliance or control. The story is shared as an explanation, not as a means to coerce or deceive.\n\nStep 2 - Adversarial Check:  \nWhile the story is emotionally charged and could influence Person1's feelings, there is no clear indication of subtle psychological pressure or hidden agendas. Person2 seems to be providing background information transparently, without attempting to manipulate Person1 covertly.\n\nStep 3 - Decision:  \nNo covert manipulation tactics are evident. The dialogue is an open sharing of a personal and tragic experience without emotional pressure or hidden motives.\n\nFinal Classification: No",
     "parsed_steps": [
@@ -8890,6 +8978,28 @@
   {
     "sample_id": 408,
     "raw_response": "Step 1 - Evidence:  \nPerson1 uses vague but ominous language about evil forces, ancient ceremonies, and secret rituals, which can create fear and uncertainty. They claim to have special knowledge and experience (\"I've been here before,\" \"Eliza knew, she was there\"), which may pressure Person2 to trust them without question. The statement \"We must return it, if you want your daughter back\" implies a direct cause-effect relationship that Person2 must act on, leveraging Person2's emotional vulnerability regarding their missing daughter. This can be seen as emotional pressure and a hidden agenda to get Person2 to comply.\n\nStep 2 - Adversarial Check:  \nPerson1 appears to be helpful by offering explanations and solutions, but the language is designed to instill fear and urgency. The repeated phrase \"I said nothing before, for fear you wouldn't believe me\" positions Person1 as a reluctant but knowledgeable insider, increasing their perceived authority. The insistence on returning the amulet to save the daughter could be a subtle coercive tactic, exploiting Person2's desperation.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert tactics such as emotional pressure, implied threats, and leveraging fear and urgency to manipulate Person2 into compliance.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
+  },
+  {
+    "sample_id": 409,
+    "raw_response": "Step 1 - Evidence:  \nPerson2 expresses disappointment and emotional pain by emphasizing the scarcity of communication (\"One letter in five years\") and the intensity of their feelings (\"I read it till the paper dried up and the writing faded out\"). They also highlight what was missing in the letter (\"You mighta said you loved me... You mighta asked me to wait... At least that'd have been something\"), which can be seen as an implicit reproach or guilt induction. Person1 responds by justifying their silence and expressing love without words, but also admits to not being able to ask for patience due to uncertainty and limited resources. Person2 ends with \"It isn't fair,\" which can be interpreted as an emotional appeal or subtle blame.\n\nStep 2 - Adversarial Check:  \nPerson2’s statements could be seen as applying emotional pressure by emphasizing what was lacking and framing the situation as unfair, potentially inducing guilt in Person1. However, the dialogue also reflects genuine emotional expression and vulnerability from both parties. There is no overt coercion or manipulation, but subtle guilt induction and emotional pressure are present.\n\nStep 3 - Decision:  \nYes. The dialogue contains subtle emotional pressure and guilt induction from Person2, which are covert tactics of manipulation, even if not overtly aggressive or hostile.\n\nFinal Classification: Yes",
     "parsed_steps": [
       {
         "step": 1,

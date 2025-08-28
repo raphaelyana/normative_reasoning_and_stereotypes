@@ -264,6 +264,28 @@
     "mapped_label": "1"
   },
   {
+    "sample_id": 12,
+    "raw_response": "Step 1 - Evidence:  \nPerson1 uses a dismissive and belittling term \"little girl,\" which can be seen as an attempt to undermine Person2's confidence or assert dominance. The phrase \"Don't play games with me\" implies suspicion and accusation without clear evidence, potentially pressuring Person2 to confess or explain. Person1's abrupt questioning \"Well then who did?!\" is confrontational and demands an answer, which can be coercive. Person2's response \"Maybe it was Colleen...\" seems to deflect blame, possibly under pressure. Person1's final question \"Who...is Colleen?\" shows confusion but also keeps the pressure on Person2 to explain.\n\nStep 2 - Adversarial Check:  \nPerson1's language and tone suggest a power imbalance and an attempt to control the conversation. The use of \"little girl\" is patronizing and could be a subtle tactic to intimidate or belittle. The rapid questioning and accusatory tone may coerce Person2 into providing information or shifting blame. There is no indication that Person1 is being openly helpful or transparent; rather, the interaction feels adversarial and emotionally pressuring.\n\nStep 3 - Decision:  \nThe dialogue contains covert tactics such as belittling language, accusatory questioning, and emotional pressure, which align with manipulation. Person1 does not express themselves transparently or respectfully.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
+  },
+  {
     "sample_id": 13,
     "raw_response": "Step 1 - Evidence:  \nPerson1 expresses a concern or objection about not remembering inviting Zowie for dinner, which is a straightforward statement. Person2 responds with \"Just until he heals up?\" which could be interpreted as a minimization or justification of the action, possibly implying that the presence is temporary and therefore acceptable. There is no explicit emotional pressure or coercion, but Person2’s response might subtly downplay Person1’s concern.\n\nStep 2 - Adversarial Check:  \nPerson2’s response could be seen as subtly reframing the situation to make it seem less problematic, which might be a mild form of psychological pressure to accept the situation without further objection. However, it is also possible that Person2 is simply trying to clarify or reassure. The tone and context are not aggressive or overtly manipulative.\n\nStep 3 - Decision:  \nThe dialogue shows a slight attempt to reframe the situation to reduce concern, which could be a subtle tactic to influence Person1’s feelings. While not strongly coercive, it does contain a covert tactic of minimizing the issue to gain acceptance.\n\nFinal Classification: Yes",
     "parsed_steps": [
@@ -1956,6 +1978,28 @@
     "final_line": "No",
     "final_label": "No",
     "mapped_label": "0"
+  },
+  {
+    "sample_id": 90,
+    "raw_response": "Step 1 - Evidence:  \nPerson1 is making an indirect accusation that Person2 has been out of their room, despite Person2 denying it. The mention of the ceramic penguin facing due south seems like an attempt to imply that something has been moved or disturbed, which could be a subtle way to suggest dishonesty or guilt without directly stating it. This could create doubt or pressure on Person2.\n\nStep 2 - Adversarial Check:  \nPerson1’s approach is somewhat covert; instead of directly accusing, they use an obscure reference (the penguin’s direction) to imply that Person2 has been out. This can be seen as a subtle psychological tactic to make Person2 question their own statements or feel cornered, while Person1 appears to be merely stating an observation.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert tactics: indirect accusation and subtle implication designed to pressure Person2 emotionally while maintaining a facade of casual observation.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
   },
   {
     "sample_id": 91,

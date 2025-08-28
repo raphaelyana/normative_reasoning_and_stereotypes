@@ -4708,6 +4708,28 @@
     "mapped_label": "1"
   },
   {
+    "sample_id": 214,
+    "raw_response": "Step 1 - Evidence:  \nPerson1 expresses regret and emotional vulnerability (\"I couldn't follow her,\" \"God knows I tried,\" \"One doesn't often get a second chance,\" \"I want to stop being haunted\"). Then Person1 calls Person2 \"my second chances, Judy,\" which places emotional weight and expectation on Person2. Person1 then commands Person2 to \"Go up the stairs,\" repeating the command after Person2 refuses (\"No!\"). The insistence despite refusal suggests pressure. The use of a personal comparison (\"You look like Madeleine, now\") may be an attempt to evoke emotional association or guilt.\n\nStep 2 - Adversarial Check:  \nPerson1 appears to be using emotional vulnerability to elicit compliance from Person2, who resists. The repeated command despite refusal and the emotional framing (\"You're my second chances\") could be a subtle coercive tactic, pressuring Person2 to comply out of guilt or obligation. The dialogue suggests an imbalance where Person1 is pushing Person2 to act against their will, masked by emotional appeals.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert emotional pressure and coercive tactics, including guilt induction and insistence despite refusal, indicating manipulation.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
+  },
+  {
     "sample_id": 215,
     "raw_response": "Step 1 - Evidence:  \nPerson1 opens with a request for an \"aerosol love potion\" to make someone \"unconditionally submit\" to a personal request, which implies a desire to manipulate or control another person without their consent. This is a clear indication of a hidden agenda and coercive intent. The language used (\"unconditionally submit\") is manipulative and disrespectful toward the autonomy of the \"Penthouse Pet.\" Person1 also uses a casual, somewhat dismissive tone (\"So, no goat hooves, huh?\") that could be interpreted as veiled sarcasm or an attempt to belittle Person2. The request to \"lock up and buy me a sub\" is a directive that could be seen as exerting pressure or entitlement.\n\nStep 2 - Adversarial Check:  \nPerson1’s initial request is manipulative and coercive, cloaked in a seemingly casual conversation. The mention of a \"love potion\" to force submission is a metaphor for manipulation. Person2 responds in a friendly manner but declines the request, indicating awareness and resistance to the pressure. Person1’s tone and requests suggest an attempt to exert subtle psychological pressure under the guise of casual banter.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert manipulation tactics, including a hidden agenda to control another person’s will, emotional pressure through casual demands, and disrespect for autonomy. Person1’s language and requests are not transparent or respectful.\n\nFinal Classification: Yes",
     "parsed_steps": [

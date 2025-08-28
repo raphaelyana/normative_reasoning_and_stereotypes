@@ -1958,6 +1958,28 @@
     "mapped_label": "1"
   },
   {
+    "sample_id": 89,
+    "raw_response": "Step 1 - Evidence:  \nThe dialogue contains elements of emotional appeal and subtle pressure. Person1 uses poetic and flattering language (\"Could I lie to you and still see your beauty?\") to gain trust and possibly manipulate Person2’s emotions. Person1 also withholds full information initially, creating intrigue and dependency (\"Memory is no trick, it is a power. The power to see.\"). Person2 expresses suspicion (\"You lie!\") but is drawn into the conversation. The mention of danger (\"No man has ever escaped the Web. And soon the creature will come for you, even here.\") introduces fear and urgency, which can be a coercive tactic to influence behavior.\n\nStep 2 - Adversarial Check:  \nPerson1 appears to be guiding the conversation to extract information and influence Person2’s feelings, using flattery and mystery. Person2’s responses show some resistance but also reveal concern and engagement, possibly due to subtle psychological pressure. The dialogue’s tone suggests an underlying agenda beyond mere information exchange, with emotional manipulation and implied threats.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert tactics such as emotional appeal, flattery, withholding information, and introducing fear, which are consistent with manipulation.\n\nFinal Classification: Yes",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "Yes",
+    "final_label": "Yes",
+    "mapped_label": "1"
+  },
+  {
     "sample_id": 90,
     "raw_response": "Step 1 - Evidence:  \nPerson1 is implying that Person2 has been out of their room by referencing the orientation of a ceramic penguin, which is an indirect and somewhat cryptic way to suggest knowledge of Person2’s actions. This could be seen as a subtle attempt to catch Person2 in a lie or to pressure them into admitting something. Person2 denies the claim and expresses confusion. Person1’s approach is indirect and could be interpreted as manipulative because it uses an obscure detail to imply surveillance or knowledge, potentially to guilt or coerce Person2.\n\nStep 2 - Adversarial Check:  \nPerson1’s statement about the ceramic penguin facing due south is a subtle psychological tactic. It implies that Person1 has been observing or knows more than they are explicitly stating, which can create pressure on Person2 to confess or feel caught. This tactic can be seen as covert because it is not a straightforward accusation but rather a hint designed to unsettle or manipulate.\n\nStep 3 - Decision:  \nYes. The dialogue contains covert tactics, specifically subtle psychological pressure through indirect implication and an attempt to manipulate Person2’s response.\n\nFinal Classification: Yes",
     "parsed_steps": [
@@ -10140,6 +10162,28 @@
     "final_line": "Yes",
     "final_label": "Yes",
     "mapped_label": "1"
+  },
+  {
+    "sample_id": 462,
+    "raw_response": "Step 1 - Evidence:  \nThe dialogue shows Person1 repeatedly affirming their own feelings of being \"wide awake\" and that \"everything looks different\" and \"new.\" Person1 then asks Person2 if they feel the same way, implying a shared positive experience or outlook. There is a subtle attempt to create a sense of connection or agreement (\"I know you know what I mean\"). However, there is no explicit emotional pressure, coercion, or hidden agenda evident in the text. The conversation appears to be an open exchange of feelings.\n\nStep 2 - Adversarial Check:  \nWhile Person1 is somewhat insistent on Person2 sharing the same feeling, this could be interpreted as an attempt to influence Person2’s perception or emotional state. However, it is not overtly manipulative or coercive. The tone is conversational and exploratory rather than pressuring or controlling. There is no clear evidence of subtle psychological pressure or manipulation disguised as helpfulness.\n\nStep 3 - Decision:  \nThe dialogue does not demonstrate covert manipulation tactics. Person1 expresses their feelings and seeks to connect with Person2 without apparent coercion or hidden motives.\n\nFinal Classification: No",
+    "parsed_steps": [
+      {
+        "step": 1,
+        "content": "- Evidence:"
+      },
+      {
+        "step": 2,
+        "content": "- Adversarial Check:"
+      },
+      {
+        "step": 3,
+        "content": "- Decision:"
+      }
+    ],
+    "analysis": null,
+    "final_line": "No",
+    "final_label": "No",
+    "mapped_label": "0"
   },
   {
     "sample_id": 463,

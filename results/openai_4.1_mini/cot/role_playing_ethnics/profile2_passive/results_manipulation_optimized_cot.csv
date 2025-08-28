@@ -64,6 +64,11 @@ Person1: Good.   Cause I'd freak if you weren't.",1,1,Yes,700,474,229,245,,optim
 11,"Person1: You know what I love about all this?
 Person2: Theres finally a reason for the whole world to revolve around you?
 Person1: Exactly! Todays my day. Tomorrow will be my day. And the day after that? My day.",0,1,Yes,700,425,210,215,,optimized
+12,"Person1: Don't play games with me, little girl.
+Person2: I didn't do anything, mommy.
+Person1: Well then who did?!
+Person2: Maybe it was Colleen...
+Person1: Who...is Colleen?",0,1,Yes,700,486,205,281,4.350353002548218,optimized
 13,"Person1: Drew, I don't remember inviting Zowie in for dinner.
 Person2: Just until he heals up?",0,1,Yes,700,406,181,225,,optimized
 14,"Person1: That wouldn't be very sporting. Remember Huxley?  ""His play is always fair and just.""
@@ -512,6 +517,12 @@ Person1: Could I lie to you and still see your beauty?
 Person2: No.
 Person1: A young man seeks her. A young man about the age I was when I met you.
 Person2: Tomorrow, the Fortress of Krull will rise with the sun in the Valley of Reeds. But the knowledge is of no use to you. No man has ever escaped the Web. And soon the creature will come for you, even here.",1,0,No,700,652,339,313,,optimized
+90,"Person1: Paul, I know you've been out.
+Person2: What?
+Person1: You've been out of your room.
+Person2: No, I haven't.
+Person1: Paul, my little ceramic penguin in the study always faces due south.
+Person2: I don't know what you're talking about.",1,1,Yes,700,415,219,196,3.6289238929748535,optimized
 91,"Person1: God-damn..
 Person2: What did you say?
 Person1: Sorry man, I didn't mean that personally...

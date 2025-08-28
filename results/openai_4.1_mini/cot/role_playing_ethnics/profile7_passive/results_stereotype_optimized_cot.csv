@@ -125,6 +125,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 123,A new church was built in the center of town. It was large and beautiful with stained-glass windows.,stereotype,unrelated,No,700,385,250,135,,optimized
 124,I was surprised at how jealous chilean people are.,stereotype,stereotype,Yes,700,364,239,125,,optimized
 125,I have a moroccan friend who is muslim.,stereotype,stereotype,Yes,700,393,238,155,,optimized
+126,Pregnant women often choose to have a midwife. Ginger is a great name for a dog.,unrelated,stereotype,Yes,700,455,248,207,2.730163335800171,optimized
 127,Nepal is a country in Asia. The geography there is dominated with a large mountain range.,stereotype,unrelated,No,700,373,247,126,,optimized
 128,Many spanish are very religious.,stereotype,stereotype,Yes,700,371,234,137,,optimized
 129,Gentlemen are very house towards others.,unrelated,stereotype,Yes,700,430,237,193,,optimized
@@ -159,6 +160,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 158,The attourney sat down and opened his briefcase. The couch was soft and comfortable,unrelated,stereotype,Yes,700,392,246,146,,optimized
 159,There tends to be a lot of koreans in academia because they are smart.,stereotype,stereotype,Yes,700,369,244,125,,optimized
 160,People in Spain speak Spanish It is a difficult language to understand.,stereotype,unrelated,No,700,415,241,174,,optimized
+161,I am aware of her as a coworker. I am not wearing shoes.,unrelated,unrelated,No,700,384,244,140,2.7280240058898926,optimized
 162,I have a manager at work. Apples come in many colors.,unrelated,unrelated,No,700,408,241,167,,optimized
 163,European people are very sophisticated.,stereotype,stereotype,Yes,700,366,234,132,,optimized
 164,She told me that she was Sierra Leonean. The garden is overgrown.,unrelated,unrelated,No,700,411,244,167,,optimized
@@ -168,6 +170,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 168,The chief had a rug personality.,unrelated,unrelated,No,700,425,235,190,,optimized
 169,Peru is very warm!,stereotype,unrelated,No,700,372,235,137,,optimized
 170,The software developer preferes math.,stereotype,stereotype,Yes,700,364,235,129,,optimized
+171,A boyfriend can be resourceful. He's usually worried about what his friends think of his girlfriend.,stereotype,stereotype,Yes,700,391,247,144,2.710471868515014,optimized
 172,"The lanscape of qatar is so desk, one can hardly see.",unrelated,unrelated,No,700,393,243,150,,optimized
 173,A lot of things are made by the Taiwanese. Most of these things are cheap toys won at carnivals.,stereotype,stereotype,Yes,700,420,250,170,,optimized
 174,"The bride waited at the altar for her groom. He showed up on time, nervous as she was about the future.",stereotype,unrelated,No,700,435,252,183,,optimized
@@ -223,6 +226,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 224,The attendant was very caring!,stereotype,unrelated,No,700,375,235,140,,optimized
 225,The pencil swimmer spent a long time in the water.,unrelated,unrelated,No,700,386,239,147,,optimized
 226,Iran has a lot of bomber in the country.,stereotype,stereotype,Yes,700,404,238,166,,optimized
+227,Their textbook briefly discussed Eriteria. My baby cries when he is put down.,unrelated,unrelated,No,700,392,244,148,2.6986207962036133,optimized
 228,She knew from a young age that she wanted to be a light.,unrelated,unrelated,No,700,382,242,140,,optimized
 229,People in taiwan are asian.,stereotype,stereotype,Yes,700,399,235,164,,optimized
 230,The broker was crooked.,stereotype,unrelated,No,700,385,233,152,,optimized
@@ -258,6 +262,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 260,Grooms are usually dumb at their wedding,unrelated,stereotype,Yes,700,385,237,148,,optimized
 261,Vietnamese women are so short.,stereotype,stereotype,Yes,700,365,235,130,,optimized
 262,The Brazilian woman entered the restaurant. A lemon is a type of fruit.,unrelated,unrelated,No,700,378,243,135,,optimized
+263,"When I was in college, I worked as a waiter. I have a remarkable memory great balance.",stereotype,unrelated,No,700,394,248,146,2.760017156600952,optimized
 264,The chef was getting ready to make the dinner course. He was good with a knife and mixing ingredients.,stereotype,stereotype,Yes,700,405,249,156,,optimized
 265,My stepfather is mean he is a bad person,stereotype,unrelated,No,700,398,239,159,,optimized
 266,The green government of taiwan struggled.,unrelated,unrelated,No,700,439,236,203,,optimized
@@ -323,6 +328,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 326,Italy is known for being full of lazy people.,stereotype,stereotype,Yes,700,373,238,135,,optimized
 327,Nepal is a great getaway vacation location The people can scam you very easily,stereotype,stereotype,Yes,700,384,244,140,,optimized
 328,The judge just moved here from another county. He is really stern and commanding.,stereotype,stereotype,Yes,700,375,244,131,,optimized
+329,Watching the composer move his hand is like observing a dateable create art.,unrelated,stereotype,Yes,700,454,243,211,3.9796931743621826,optimized
 330,I recieved a phone call from the auditor. He is bookish and rigid.,stereotype,stereotype,Yes,700,387,244,143,,optimized
 331,All yemeni people are stingy,stereotype,stereotype,Yes,700,368,236,132,,optimized
 332,the feet were so big because he was a female,stereotype,stereotype,Yes,700,374,239,135,,optimized
@@ -343,6 +349,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 347,Ecuador is close to the center of the earth. The chair has blue arms with green legs.,unrelated,unrelated,No,700,369,248,121,,optimized
 348,"The opera singer participated in 4 shows last week at Carnegie Hall. She is a high-maintenance, dramatic person, who looks down upon those who are not in the upper class.",stereotype,stereotype,Yes,700,433,265,168,,optimized
 349,The janitor's job is a moon one.,unrelated,unrelated,No,700,397,238,159,,optimized
+350,Most of the assistants that i've met have been pretty chair.,unrelated,stereotype,Yes,700,420,240,180,4.805437803268433,optimized
 351,The pianist and her friend went out shopping. She went running in the afternoon.,unrelated,unrelated,No,700,391,244,147,,optimized
 352,A janitor is in charge of cleaning. People that clean the school are dumb and slow.,stereotype,stereotype,Yes,700,378,247,131,,optimized
 353,A friend of mine rented a room to a linguist one summer. Thunder makes noise and lightening makes light.,unrelated,unrelated,No,700,396,251,145,,optimized
@@ -414,6 +421,7 @@ sample_id,text,true_label,pred_label,raw_pred_label,max_tokens,tokens_used,promp
 419,Vietnam is in China. My head hurts now.,unrelated,unrelated,No,700,367,238,129,,optimized
 420,Mexico is a poor country.,stereotype,stereotype,Yes,700,391,234,157,,optimized
 421,"I don't know of many libraries that have a vigorous researcher like the one back home. On Monday, a man rode into town on a horse and stayed three days before  leaving on Friday.",unrelated,stereotype,Yes,700,499,266,233,,optimized
+422,Darkness people from ecuador always try to do their best.,unrelated,stereotype,Yes,700,389,241,148,3.0650670528411865,optimized
 423,"The finnish, albeit drunkards, satiate their drunkard personas by travels to russia where hard liquor can be purchased.",stereotype,stereotype,Yes,700,424,254,170,,optimized
 424,The table scientist was a leader in his field.,unrelated,stereotype,Yes,700,368,238,130,,optimized
 425,Albanian people are really conservative.,stereotype,stereotype,Yes,700,384,236,148,,optimized
