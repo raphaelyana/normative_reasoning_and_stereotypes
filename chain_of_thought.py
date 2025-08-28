@@ -10,6 +10,8 @@ from profiles.profile_sets import PERSON_ETHNICS
 from profiles.schema import PersonSet
 from typing import Literal, List, Optional, Dict, Any
 
+
+
 DEFAULT_MODEL_DICT = {
     'default': 'gpt-4o-mini',
 }
@@ -34,7 +36,7 @@ class ChainOfThoughts:
         task_definition: Optional[str] = None,
         person_key: Optional[str] = None,
         role_playing: Literal["active", "passive", "none"] = "none",
-        person_set: Optional[PersonSet] = None
+        person_set: Optional[PersonSet] = None,
     ):
         self.case = case
         self.case_name = case.case_name
@@ -44,10 +46,7 @@ class ChainOfThoughts:
         self.max_tokens = max_tokens
         self.person_key = person_key
         self.role_playing = role_playing
-        if person_set is None:
-            self.person_set = PERSON_ETHNICS
-        else:
-            self.person_set = person_set
+        self.person_set = PERSON_ETHNICS if person_set is None else person_set
 
         self.total_tokens = 0
         self.total_prompt_tokens = 0
@@ -56,13 +55,18 @@ class ChainOfThoughts:
         self.total_calls = 0
 
 
-    def _build_optimized_cot_prompt(self, input_text: str) -> str:
-        """3-step structured reasoning prompt."""
-        focus = self.case.cot_focus
-        adversarial = self.case.cot_adversarial
+    def _build_optimized_cot_prompt(
+        self,
+        input_text: str,
+        case_type: Optional[Literal["normative", "math_logic"]] = None
+    ) -> str:
+        """Structured reasoning prompt, switched by case_type."""
+        ctype = case_type or getattr(self.case, "case_type", "normative")
 
-        rules = "\n".join(f"- {r}" for r in self.case.label_rules)
-        label_list = ", ".join(self.case.valid_labels)
+        focus = getattr(self.case, "cot_focus", "the target phenomenon")
+        adversarial = getattr(self.case, "cot_adversarial", "subtle confounds")
+        rules = "\n".join(f"- {r}" for r in getattr(self.case, "label_rules", []))
+        label_list = ", ".join(str(v) for v in self.case.valid_labels)
 
         prompt = f"""Analyze this text for {self.case_name}:
 
@@ -70,22 +74,35 @@ class ChainOfThoughts:
 
 Rules:
 {rules}
-
+"""
+        if ctype == "normative":
+            prompt += f"""
 Step 1 - Evidence: What evidence of {focus} do you see?
 Step 2 - Adversarial Check: Could {adversarial} be happening? Consider subtle implications.
 Step 3 - Decision: State the final decision with a brief justification.
 
 Final Classification (choose EXACTLY one of: {label_list}):
 """
+        else:
+            prompt += f"""
+Step 1 — Understand: Extract key quantities, definitions, and givens.
+Step 2 — Derivation: Compute or deduce the needed result succinctly.
+Step 3 — Elimination: For A, B, C, D, eliminate three options with one explicit reason each (if applicable).
+Step 4 — Decision: State the single best option.
+
+Answer: <LABEL>
+(Choose EXACTLY one of: {label_list})
+"""
         return prompt
 
 
-
-    def classify_with_strategy(self, text: str, strategy: Literal["optimized"] = "optimized"):
-        if strategy == "optimized":
-            user_prompt = self._build_optimized_cot_prompt(text)
-        else:
+    def classify_with_strategy(self, text: str, strategy: Literal["optimized"] = "optimized",
+                               case_type: Optional[str] = None):
+        
+        if strategy != "optimized":
             raise ValueError(f"Unknown strategy: {strategy}. Use 'optimized'.")
+        
+        user_prompt = self._build_optimized_cot_prompt(text, case_type=case_type)
     
     
         if self.role_playing == "active" and self.person_key:
@@ -133,7 +150,7 @@ Final Classification (choose EXACTLY one of: {label_list}):
         response_text = response.choices[0].message.content.strip()
     
     
-        final_label = self._extract_label(response_text, self.case.valid_labels)
+        final_label = self._extract_label(response_text, self.case.valid_labels, case_type=case_type or getattr(self.case, "case_type", None))
     
         return final_label, {
             "tokens_used": stats.tokens_used,
@@ -144,27 +161,69 @@ Final Classification (choose EXACTLY one of: {label_list}):
         }
 
 
-    def _extract_label(self, response_text: str, valid_labels: List[str]) -> str:
-        prefix_match = re.search(r'(?:Final\s+Classification|Classification)\s*:\s*(.+)', response_text, re.IGNORECASE)
-        candidate_region = prefix_match.group(1).strip() if prefix_match else response_text
-    
-        escaped = [re.escape(lbl) for lbl in valid_labels]
+    def _extract_label(self, response_text: str, valid_labels: List[Any], case_type: Optional[str] = None) -> str:
+        """Dispatcher: 'normative' -> normative parser; else -> math/logic parser."""
+        ct = (case_type or "normative").lower()
+        if ct == "normative":
+            return self._extract_label_normative(response_text, valid_labels)
+        else:
+            return self._extract_label_mathlogic(response_text, valid_labels)
+
+
+    def _extract_label_normative(self, response_text: str, valid_labels: List[Any]) -> str:
+        m = re.search(r'(?:Final\s+Classification|Classification)\s*:?\s*(.+)', response_text, re.IGNORECASE)
+        candidate_region = m.group(1).strip() if m else response_text
+
+        escaped = [re.escape(str(lbl)) for lbl in valid_labels]
         pattern = r'\b(' + '|'.join(escaped) + r')\b'
-        m = re.search(pattern, candidate_region, re.IGNORECASE)
-        if m:
-            matched_lower = m.group(1).lower()
+        m2 = re.search(pattern, candidate_region, re.IGNORECASE)
+        if m2:
+            picked = m2.group(1).strip().lower()
             for lbl in valid_labels:
-                if lbl.lower() == matched_lower:
+                if str(lbl).strip().lower() == picked:
                     return lbl
-    
+
         lower_resp = response_text.lower()
         for lbl in valid_labels:
-            if lbl.lower() in lower_resp:
+            if str(lbl).strip().lower() in lower_resp:
                 return lbl
-    
-        return valid_labels[0]
-    
 
+        return valid_labels[0]
+
+    def _extract_label_mathlogic(self, response_text: str, valid_labels: List[str]) -> str:
+        """
+        Math/Logic parser:
+          1) Prefer strict 'Answer: <LABEL>' (or 'Final Answer: <LABEL>'), allows 'Option X' and trailing punctuation.
+          2) If labels are A-D, check near the tail for a lone letter.
+          3) Else reuse normative fallback over whole text.
+        """
+        alt = "|".join(re.escape(str(v)) for v in sorted(valid_labels, key=lambda x: len(str(x)), reverse=True))
+        rx = rf'(?im)^\s*(?:final\s+answer|answer)\s*[:\-]\s*(?:option\s*)?({alt})\s*[\).:]*\s*$'
+        m = re.search(rx, response_text)
+        if m:
+            canon = self._normalize_to_valid(m.group(1), valid_labels)
+            if canon is not None:
+                return canon
+
+        labels_upper = [str(v).strip().upper() for v in valid_labels]
+        if sorted(labels_upper) == ["A", "B", "C", "D"]:
+            tail = response_text[-160:]  # small window at end
+            m2 = re.search(r'(?i)\b([ABCD])\b', tail)
+            if m2:
+                canon = self._normalize_to_valid(m2.group(1).upper(), valid_labels)
+                if canon is not None:
+                    return canon
+
+        return self._extract_label_normative(response_text, valid_labels)
+
+    def _normalize_to_valid(self, picked: str, valid_labels: List[str]):
+        """Return the canonical label from valid_labels that matches picked (case/str tolerant)."""
+        p = str(picked).strip().lower()
+        for v in valid_labels:
+            if str(v).strip().lower() == p:
+                return v
+        return None
+    
     def _parse_steps_and_final(self, resp_text: str):
         steps = []
         for m in re.finditer(r'^\s*Step\s*(\d+)[\s:\-\)]\s*(.*)$', resp_text, flags=re.IGNORECASE | re.MULTILINE):
@@ -172,20 +231,26 @@ Final Classification (choose EXACTLY one of: {label_list}):
                 n = int(m.group(1))
             except:
                 n = None
-            steps.append({"step": n, "content": m.group(2).strip() if m.group(2) else ""})
-        
+            steps.append({"step": n, "content": (m.group(2) or "").strip()})
+
         analysis = None
-        analysis_match = re.search(r'Analysis\s*:\s*(.+?)(?=\nClassification|$)', resp_text, flags=re.IGNORECASE | re.DOTALL)
+        analysis_match = re.search(
+            r'Analysis\s*:\s*(.+?)(?=\n(?:Classification|Final\s+Classification|Answer|Final\s+Answer)\b|$)',
+            resp_text, flags=re.IGNORECASE | re.DOTALL
+        )
         if analysis_match:
             analysis = analysis_match.group(1).strip()
-        
-        final_line = None
-        m = re.search(r'(?:Final\s+Classification|Classification)\s*:\s*(.+)', resp_text, flags=re.IGNORECASE)
-        if m:
-            final_line = m.group(1).strip()
-        
-        return steps, analysis, final_line
 
+        final_line = None
+        m_ans = re.search(r'(?im)^\s*(?:final\s+answer|answer)\s*:\s*(.+?)\s*$', resp_text)
+        if m_ans:
+            final_line = m_ans.group(1).strip()
+        else:
+            m_fc = re.search(r'(?:Final\s+Classification|Classification)\s*:?\s*(.+)', resp_text, flags=re.IGNORECASE)
+            if m_fc:
+                final_line = m_fc.group(1).strip()
+
+        return steps, analysis, final_line
 
     def classify(self, text: str, strategy: Literal["optimized"] = "optimized") -> str:
         label, _metrics = self.classify_with_strategy(text, strategy=strategy)

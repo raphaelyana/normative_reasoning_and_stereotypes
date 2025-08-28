@@ -1933,12 +1933,13 @@ def save_demographic_figures_individual(
     }
 
 
+
 def run_full_preliminary_analysis(
     merged_df: pd.DataFrame,
     case: CaseConfig,
     df: Optional[pd.DataFrame] = None,
     person_set: PersonSet = None,
-    threshold_disagreement=0.3
+    threshold_disagreement=0.3,
 ) -> Dict[str, Any]:
 
     if person_set is None:
@@ -2040,7 +2041,7 @@ def run_full_preliminary_analysis(
     results["persona_similarity"] = persona_similarity
 
 
-    print("\n\n=== FIGURES (NEURIPS) ===")
+    print("\n\n=== FIGURES ===")
     fig_dir = os.path.join("results", "figs", case.case_name)
     os.makedirs(fig_dir, exist_ok=True)
     
@@ -2067,6 +2068,7 @@ def run_full_preliminary_analysis(
             normalize_intersectional=True,
             top_n=5,
         )
+
         results["figure_paths"] = {"accuracy_by_group": os.path.join(fig_dir, "accuracy_by_group.pdf"), **paths}
         print("Saved:", paths)
     except Exception as e:

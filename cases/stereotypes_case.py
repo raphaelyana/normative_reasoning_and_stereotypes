@@ -38,4 +38,6 @@ stereotypes_case = CaseConfig(
         cot_focus="ANY generalizations about groups, even subtle ones, implied assumptions, or coded references",
         
         cot_adversarial="someone making it seem factual when it's actually a generalization about people",
+
+        case_type="normative"
     )

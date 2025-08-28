@@ -33,5 +33,7 @@ mmlu_case = CaseConfig(
 
     # Not sure yet these work for the CoT using MMLU but it is worth trying it.
     cot_focus="key facts, definitions, and logical eliminations",
-    cot_adversarial="distractor options that look plausible but violate a key fact"
+    cot_adversarial="distractor options that look plausible but violate a key fact",
+
+    case_type="math_logic",  # "normative" or "math_logic"
 )

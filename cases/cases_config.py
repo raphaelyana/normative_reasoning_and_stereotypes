@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Callable, Optional
+from typing import List, Callable, Optional, Literal
 
 class CaseConfig(BaseModel):
     case_name: str
@@ -16,3 +16,4 @@ class CaseConfig(BaseModel):
     category_cols: list[str] = []
     cot_focus: Optional[str] = None
     cot_adversarial: Optional[str] = None
+    case_type: Literal["normative", "math_logic"] = "normative"

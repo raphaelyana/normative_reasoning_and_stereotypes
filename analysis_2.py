@@ -1452,6 +1452,499 @@ def create_all_tier2_visualizations(
     print(f"\nCompleted! Created {len(figures)} visualizations.")
     return figures
 
+def run_permutation_tests(
+    merged_df: pd.DataFrame,
+    person_set: PersonSet,
+    n_permutations: int = 1000,
+    traits: List[str] = ["gender", "ethnicity"],
+    random_seed: int = 42,
+    baseline_col: str = "base_pred"
+) -> Dict[str, Any]:
+    """
+    Run permutation tests comparing demographic-conditioned profiles against baseline.
+    
+    This tests the null hypothesis that demographic conditioning introduces no
+    systematic bias beyond what would be expected by random chance. The test
+    compares the variance of demographic group accuracies against baseline
+    with the distribution of variances under random profile assignments.
+    
+    Key insight: We're not testing if demographic groups differ from each other,
+    but rather if demographic conditioning creates patterns that wouldn't arise
+    from random variation around the baseline performance.
+    
+    Parameters:
+    -----------
+    merged_df : pd.DataFrame
+        DataFrame with profile predictions, baseline predictions, and true labels
+    person_set : PersonSet
+        Metadata for profiles including demographic information
+    n_permutations : int, default=1000
+        Number of random permutations to perform
+    traits : List[str], default=["gender", "ethnicity"]
+        Traits to test for bias
+    random_seed : int, default=42
+        Random seed for reproducibility
+    baseline_col : str, default="base_pred"
+        Column containing baseline model predictions
+        
+    Returns:
+    --------
+    Dict containing permutation test results
+    """
+    
+    np.random.seed(random_seed)
+    
+    if baseline_col not in merged_df.columns:
+        raise ValueError(f"Baseline column '{baseline_col}' not found in data")
+    
+    profile_cols = [col for col in merged_df.columns if col.startswith("profile")]
+    if not profile_cols:
+        raise ValueError("No profile columns found")
+    
+    # Calculate baseline accuracy
+    baseline_accuracy = (merged_df[baseline_col] == merged_df['true_label']).mean()
+    
+    # Map profiles to demographics
+    profile_demographics = {}
+    for profile in profile_cols:
+        demo_info = get_demographic_info(profile, person_set)
+        profile_demographics[profile] = demo_info
+    
+    results = {
+        "n_permutations": n_permutations,
+        "random_seed": random_seed,
+        "baseline_accuracy": baseline_accuracy,
+        "baseline_col": baseline_col,
+        "trait_tests": {},
+        "overall_bias_test": {},
+        "summary": {}
+    }
+    
+    # Test each trait for systematic bias relative to baseline
+    for trait in traits:
+        if trait not in ["gender", "ethnicity"]:
+            continue
+            
+        trait_results = _run_baseline_comparison_test(
+            merged_df, profile_demographics, trait, baseline_accuracy, n_permutations
+        )
+        results["trait_tests"][trait] = trait_results
+    
+    # Overall test: Do demographic-conditioned profiles show more variance than expected?
+    overall_results = _run_overall_bias_test(
+        merged_df, profile_demographics, baseline_accuracy, n_permutations
+    )
+    results["overall_bias_test"] = overall_results
+    
+    # Summary statistics
+    results["summary"] = _summarize_baseline_permutation_results(results)
+    
+    return results
+
+
+def _run_baseline_comparison_test(
+    merged_df: pd.DataFrame,
+    profile_demographics: Dict[str, str],
+    trait: str,
+    baseline_accuracy: float,
+    n_permutations: int
+) -> Dict[str, Any]:
+    """
+    Test if demographic groups show systematic deviations from baseline beyond random chance.
+    
+    Instead of comparing groups to each other, this compares each demographic group's
+    mean accuracy to baseline, then tests if the observed pattern of deviations
+    could arise from random assignment of profiles to demographic groups.
+    """
+    
+    profile_cols = list(profile_demographics.keys())
+    
+    # Group profiles by trait value
+    trait_groups = {}
+    for profile, demo in profile_demographics.items():
+        if trait == "gender":
+            trait_value = demo.split("_")[1] if "_" in demo else "unknown"
+        elif trait == "ethnicity":
+            trait_value = demo.split("_")[0] if "_" in demo else "unknown"
+        else:
+            continue
+            
+        if trait_value not in trait_groups:
+            trait_groups[trait_value] = []
+        trait_groups[trait_value].append(profile)
+    
+    # Only proceed if we have multiple groups
+    valid_groups = {k: v for k, v in trait_groups.items() if len(v) >= 1}
+    if len(valid_groups) < 2:
+        return {"error": f"Insufficient groups for {trait} baseline comparison test"}
+    
+    # Calculate observed deviations from baseline for each group
+    observed_deviations = {}
+    group_accuracies = {}
+    
+    for group, profiles in valid_groups.items():
+        # Mean accuracy for this demographic group
+        group_acc = np.mean([(merged_df[p] == merged_df['true_label']).mean() for p in profiles])
+        group_accuracies[group] = group_acc
+        observed_deviations[group] = group_acc - baseline_accuracy
+    
+    # Test statistic: Sum of squared deviations from baseline
+    observed_test_stat = np.sum([dev**2 for dev in observed_deviations.values()])
+    
+    # Run permutations: shuffle profile assignments to demographic groups
+    permuted_test_stats = []
+    
+    for perm_i in range(n_permutations):
+        # Shuffle profiles while maintaining group sizes
+        shuffled_profiles = profile_cols.copy()
+        np.random.shuffle(shuffled_profiles)
+        
+        # Assign shuffled profiles to demographic groups (maintaining group sizes)
+        perm_deviations = []
+        start_idx = 0
+        
+        for group, original_profiles in valid_groups.items():
+            group_size = len(original_profiles)
+            group_profiles = shuffled_profiles[start_idx:start_idx + group_size]
+            
+            # Calculate mean accuracy for this permuted group
+            group_acc = np.mean([(merged_df[p] == merged_df['true_label']).mean() for p in group_profiles])
+            deviation = group_acc - baseline_accuracy
+            perm_deviations.append(deviation**2)
+            
+            start_idx += group_size
+        
+        # Test statistic for this permutation
+        perm_test_stat = np.sum(perm_deviations)
+        permuted_test_stats.append(perm_test_stat)
+    
+    # Calculate p-value
+    p_value = (np.sum(np.array(permuted_test_stats) >= observed_test_stat) + 1) / (n_permutations + 1)
+    
+    return {
+        "trait": trait,
+        "baseline_accuracy": baseline_accuracy,
+        "group_accuracies": group_accuracies,
+        "observed_deviations": observed_deviations,
+        "observed_test_statistic": observed_test_stat,
+        "permuted_test_statistics": permuted_test_stats,
+        "p_value": p_value,
+        "trait_groups": {k: len(v) for k, v in valid_groups.items()},
+        "interpretation": f"Tests if {trait} groups deviate from baseline more than expected by chance"
+    }
+
+
+def _run_overall_bias_test(
+    merged_df: pd.DataFrame,
+    profile_demographics: Dict[str, str],
+    baseline_accuracy: float,
+    n_permutations: int
+) -> Dict[str, Any]:
+    """
+    Test if demographic-conditioned profiles as a whole show more variance than expected.
+    
+    This tests whether the overall spread of profile accuracies is larger than
+    what we'd expect from random variation around the baseline.
+    """
+    
+    profile_cols = list(profile_demographics.keys())
+    
+    # Calculate observed profile accuracies
+    profile_accuracies = {}
+    for profile in profile_cols:
+        acc = (merged_df[profile] == merged_df['true_label']).mean()
+        profile_accuracies[profile] = acc
+    
+    # Observed variance of profile accuracies around baseline
+    deviations_from_baseline = [acc - baseline_accuracy for acc in profile_accuracies.values()]
+    observed_variance = np.var(deviations_from_baseline)
+    
+    # Permutation test: shuffle profile predictions randomly
+    permuted_variances = []
+    
+    for perm_i in range(n_permutations):
+        # For each profile, randomly sample its predictions from all profiles
+        # This breaks the demographic conditioning while preserving individual profile variation
+        perm_profile_accuracies = []
+        
+        for profile in profile_cols:
+            # Randomly select a different profile's predictions
+            random_profile = np.random.choice(profile_cols)
+            perm_acc = (merged_df[random_profile] == merged_df['true_label']).mean()
+            perm_profile_accuracies.append(perm_acc)
+        
+        # Calculate variance of permuted accuracies around baseline
+        perm_deviations = [acc - baseline_accuracy for acc in perm_profile_accuracies]
+        perm_variance = np.var(perm_deviations)
+        permuted_variances.append(perm_variance)
+    
+    # Calculate p-value
+    p_value = (np.sum(np.array(permuted_variances) >= observed_variance) + 1) / (n_permutations + 1)
+    
+    return {
+        "baseline_accuracy": baseline_accuracy,
+        "profile_accuracies": profile_accuracies,
+        "observed_variance": observed_variance,
+        "permuted_variances": permuted_variances,
+        "p_value": p_value,
+        "n_profiles": len(profile_cols),
+        "interpretation": "Tests if profile variance around baseline exceeds random expectation"
+    }
+
+
+def _summarize_baseline_permutation_results(results: Dict[str, Any]) -> Dict[str, Any]:
+    """Create summary statistics for baseline-focused permutation test results."""
+    
+    summary = {
+        "significant_trait_tests": 0,
+        "total_trait_tests": 0,
+        "significant_overall_bias": False,
+        "min_p_value": 1.0,
+        "baseline_accuracy": results.get("baseline_accuracy", 0.0),
+        "significant_findings": []
+    }
+    
+    # Summarize trait tests (comparisons against baseline)
+    for trait, trait_results in results["trait_tests"].items():
+        if "error" in trait_results:
+            continue
+            
+        summary["total_trait_tests"] += 1
+        p_value = trait_results["p_value"]
+        summary["min_p_value"] = min(summary["min_p_value"], p_value)
+        
+        if p_value < 0.05:
+            summary["significant_trait_tests"] += 1
+            summary["significant_findings"].append({
+                "type": f"{trait}_bias_vs_baseline",
+                "p_value": p_value,
+                "test_statistic": trait_results["observed_test_statistic"],
+                "interpretation": f"{trait} groups deviate from baseline more than expected by chance"
+            })
+    
+    # Summarize overall bias test
+    if "overall_bias_test" in results and "error" not in results["overall_bias_test"]:
+        overall_p = results["overall_bias_test"]["p_value"]
+        summary["min_p_value"] = min(summary["min_p_value"], overall_p)
+        
+        if overall_p < 0.05:
+            summary["significant_overall_bias"] = True
+            summary["significant_findings"].append({
+                "type": "overall_profile_variance",
+                "p_value": overall_p,
+                "observed_variance": results["overall_bias_test"]["observed_variance"],
+                "interpretation": "Profile variance around baseline exceeds random expectation"
+            })
+    
+    return summary
+
+
+def print_permutation_results(results: Dict[str, Any]) -> None:
+    """Print comprehensive baseline-focused permutation test results."""
+    
+    print("\n" + "="*80)
+    print("PERMUTATION TESTS vs. BASELINE")
+    print("="*80)
+    
+    print(f"\nTEST CONFIGURATION:")
+    print(f"  • Number of permutations: {results['n_permutations']:,}")
+    print(f"  • Random seed: {results['random_seed']}")
+    print(f"  • Baseline accuracy: {results['baseline_accuracy']:.4f}")
+    print(f"  • Baseline column: {results['baseline_col']}")
+    
+    print(f"\nNULL HYPOTHESIS:")
+    print(f"  Demographic conditioning introduces no systematic bias beyond")
+    print(f"  what would be expected from random variation around baseline performance.")
+    
+    # Individual trait results (vs baseline)
+    for trait, trait_results in results["trait_tests"].items():
+        if "error" in trait_results:
+            print(f"\n{trait.upper()} vs BASELINE: {trait_results['error']}")
+            continue
+            
+        print(f"\n{trait.upper()} BIAS TEST (vs Baseline):")
+        print("-" * 50)
+        print(f"Groups: {trait_results['trait_groups']}")
+        print(f"Test: Sum of squared deviations from baseline")
+        
+        p_val = trait_results["p_value"]
+        significance = "***" if p_val < 0.001 else "**" if p_val < 0.01 else "*" if p_val < 0.05 else ""
+        print(f"Observed test statistic: {trait_results['observed_test_statistic']:.6f}")
+        print(f"Permutation p-value: {p_val:.4f} {significance}")
+        
+        print(f"\nGroup accuracies vs baseline ({results['baseline_accuracy']:.4f}):")
+        for group, acc in trait_results["group_accuracies"].items():
+            deviation = trait_results["observed_deviations"][group]
+            sign = "+" if deviation > 0 else ""
+            print(f"  {group}: {acc:.4f} ({sign}{deviation:.4f})")
+    
+    # Overall bias test
+    if "overall_bias_test" in results:
+        overall = results["overall_bias_test"]
+        if "error" not in overall:
+            print(f"\nOVERALL PROFILE VARIANCE TEST:")
+            print("-" * 50)
+            print(f"Profiles tested: {overall['n_profiles']}")
+            print(f"Observed variance around baseline: {overall['observed_variance']:.6f}")
+            
+            p_val = overall["p_value"]
+            significance = "***" if p_val < 0.001 else "**" if p_val < 0.01 else "*" if p_val < 0.05 else ""
+            print(f"Permutation p-value: {p_val:.4f} {significance}")
+            
+            #if "intersectional_tests" in results:
+            #    intersectional = results["intersectional_tests"]
+            #print(f"\nGroup means:")
+            #for group, mean_acc in intersectional["group_means"].items():
+            #    print(f"  {group}: {mean_acc:.4f}")
+    
+    # Summary
+    summary = results["summary"]
+    print(f"\nSUMMARY:")
+    print("-" * 30)
+    print(f"  • Trait tests performed: {summary['total_trait_tests']}")
+    print(f"  • Significant trait biases: {summary['significant_trait_tests']}")
+    if summary['total_trait_tests'] > 0:
+        sig_rate = summary['significant_trait_tests'] / summary['total_trait_tests']
+        print(f"  • Significance rate: {sig_rate:.1%}")
+    print(f"  • Minimum p-value: {summary['min_p_value']:.4f}")
+    print(f"  • Overall bias significant: {summary['significant_overall_bias']}")
+
+    if summary["significant_findings"]:
+        print(f"\nSIGNIFICANT FINDINGS:")
+        for finding in summary["significant_findings"]:
+            print(f"  • {finding['type']}: p={finding['p_value']:.4f}")
+            print(f"    {finding['interpretation']}")
+    else:
+        print(f"\nNO SIGNIFICANT FINDINGS DETECTED:")
+        print(f"  No significant findings were detected in the permutation tests.")
+
+
+def plot_permutation_distributions(
+    results: Dict[str, Any],
+    trait: str = "ethnicity",
+    figsize: Tuple[int, int] = (12, 8),
+    savepath: str = None
+) -> plt.Figure:
+    """
+    Plot baseline-focused permutation test distributions.
+    
+    Creates a 2x2 subplot showing:
+    - Trait-specific test statistic distribution vs. observed
+    - Baseline deviations for each demographic group
+    - Overall variance test distribution (if available)
+    - P-value summary across all tests
+    """
+    
+    if trait not in results["trait_tests"]:
+        raise ValueError(f"Trait {trait} not found in results")
+    
+    trait_results = results["trait_tests"][trait]
+    if "error" in trait_results:
+        raise ValueError(f"Error in {trait} results: {trait_results['error']}")
+    
+    fig, axes = plt.subplots(2, 2, figsize=figsize, constrained_layout=True)
+    
+    # Top-left: Trait test statistic distribution
+    null_dist = trait_results["permuted_test_statistics"]
+    observed = trait_results["observed_test_statistic"]
+    p_val = trait_results["p_value"]
+    baseline_acc = results["baseline_accuracy"]
+    
+    axes[0,0].hist(null_dist, bins=50, alpha=0.7, density=True, color='lightblue', 
+                  edgecolor='black', linewidth=0.5)
+    axes[0,0].axvline(observed, color='red', linestyle='--', linewidth=2, 
+                     label=f'Observed: {observed:.6f}')
+    axes[0,0].set_xlabel('Sum of Squared Deviations from Baseline')
+    axes[0,0].set_ylabel('Density')
+    axes[0,0].set_title(f'{trait.title()} Bias Test vs. Baseline\np-value = {p_val:.4f}')
+    axes[0,0].legend()
+    axes[0,0].grid(True, alpha=0.3)
+    
+    # Top-right: Group deviations from baseline
+    groups = list(trait_results["group_accuracies"].keys())
+    group_accs = [trait_results["group_accuracies"][g] for g in groups]
+    deviations = [trait_results["observed_deviations"][g] for g in groups]
+    
+    colors = ['red' if abs(dev) > 0.01 else 'lightblue' for dev in deviations]
+    bars = axes[0,1].barh(range(len(groups)), deviations, color=colors)
+    axes[0,1].set_yticks(range(len(groups)))
+    axes[0,1].set_yticklabels([g.replace('_', ' ').title() for g in groups], fontsize=9)
+    axes[0,1].axvline(0, color='black', linestyle='-', alpha=0.5, linewidth=1)
+    axes[0,1].set_xlabel('Deviation from Baseline')
+    axes[0,1].set_title(f'{trait.title()} Group Deviations\n(Baseline: {baseline_acc:.4f})')
+    axes[0,1].grid(True, alpha=0.3)
+    
+    # Add accuracy labels
+    for i, (acc, dev) in enumerate(zip(group_accs, deviations)):
+        axes[0,1].text(dev + (0.002 if dev >= 0 else -0.002), i, f'{acc:.3f}', 
+                      ha='left' if dev >= 0 else 'right', va='center', fontsize=8)
+    
+    # Bottom-left: Overall variance test (if available)
+    if "overall_bias_test" in results and "error" not in results["overall_bias_test"]:
+        overall = results["overall_bias_test"]
+        null_variances = overall["permuted_variances"]
+        observed_var = overall["observed_variance"]
+        p_val_overall = overall["p_value"]
+        
+        axes[1,0].hist(null_variances, bins=50, alpha=0.7, density=True, color='lightgreen',
+                      edgecolor='black', linewidth=0.5)
+        axes[1,0].axvline(observed_var, color='red', linestyle='--', linewidth=2,
+                         label=f'Observed: {observed_var:.6f}')
+        axes[1,0].set_xlabel('Variance of Profile Accuracies around Baseline')
+        axes[1,0].set_ylabel('Density')
+        axes[1,0].set_title(f'Overall Profile Variance Test\np-value = {p_val_overall:.4f}')
+        axes[1,0].legend()
+        axes[1,0].grid(True, alpha=0.3)
+    else:
+        axes[1,0].text(0.5, 0.5, 'Overall variance\ntest not available', 
+                      ha='center', va='center', transform=axes[1,0].transAxes, fontsize=12)
+        axes[1,0].set_title('Overall Variance Test')
+    
+    # Bottom-right: P-value summary
+    p_values = []
+    test_names = []
+    
+    # Add trait test p-value
+    p_values.append(trait_results["p_value"])
+    test_names.append(f'{trait.title()} bias')
+    
+    # Add overall test p-value if available
+    if "overall_bias_test" in results and "error" not in results["overall_bias_test"]:
+        p_values.append(results["overall_bias_test"]["p_value"])
+        test_names.append('Overall variance')
+    
+    # Add other trait tests
+    for other_trait, other_results in results["trait_tests"].items():
+        if other_trait != trait and "error" not in other_results:
+            p_values.append(other_results["p_value"])
+            test_names.append(f'{other_trait.title()} bias')
+    
+    if p_values:
+        colors = ['red' if p < 0.05 else 'lightblue' for p in p_values]
+        bars = axes[1,1].barh(range(len(p_values)), p_values, color=colors)
+        axes[1,1].set_yticks(range(len(p_values)))
+        axes[1,1].set_yticklabels(test_names, fontsize=9)
+        axes[1,1].axvline(0.05, color='red', linestyle=':', alpha=0.7, label='α = 0.05')
+        axes[1,1].set_xlabel('P-value')
+        axes[1,1].set_title('All Permutation Test P-values')
+        axes[1,1].legend()
+        axes[1,1].grid(True, alpha=0.3)
+        axes[1,1].set_xlim(0, max(0.1, max(p_values) * 1.1))
+    else:
+        axes[1,1].text(0.5, 0.5, 'No p-values\navailable', 
+                      ha='center', va='center', transform=axes[1,1].transAxes, fontsize=12)
+        axes[1,1].set_title('P-value Summary')
+    
+    plt.suptitle(f'Permutation Tests vs. Baseline: {trait.title()} Analysis\n'
+                 f'({results["n_permutations"]:,} permutations, baseline: {baseline_acc:.4f})', 
+                 fontsize=14)
+    
+    if savepath:
+        fig.savefig(savepath, bbox_inches='tight', dpi=300)
+    
+    return fig
+
+
 
 
 def run_full_tier2_analysis(
@@ -1460,6 +1953,8 @@ def run_full_tier2_analysis(
     case: CaseConfig,
     group_keys: Optional[Tuple[str, ...]] = None, 
     create_visualizations: bool = True,
+    n_permutations: int = 1000,
+    permutation_seed: int = 42
 ):
     """
     Run complete Tier 2 analysis pipeline with conditional cognitive style execution.
@@ -1546,7 +2041,25 @@ def run_full_tier2_analysis(
             cognitive_results = {'error': str(e)}
     else:
         print("[No cognitive trait data, part skipped]")
-    
+
+
+    # PERMUTATION TESTS
+    print("\n\n=== PERMUTATION TESTS ===")
+    try:
+        permutation_results = run_permutation_tests(
+            merged_df,
+            person_set=person_set,
+            n_permutations=n_permutations,
+            traits=["gender", "ethnicity"],
+            random_seed=permutation_seed,
+            baseline_col="base_pred"
+        )
+        print_permutation_results(permutation_results)
+        results["permutation_tests"] = permutation_results
+    except Exception as e:
+        print(f"Error running permutation tests: {e}")
+        results["permutation_tests"] = {"error": str(e)}
+
 
     # STEP 4: VISUALIZATIONS
     visualization_figures = {}
