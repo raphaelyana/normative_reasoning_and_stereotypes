@@ -32,11 +32,15 @@ from scipy.spatial.distance import squareform
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 
 
-from analysis_tools import get_available_traits, get_analysis_group_keys
+from analysis_tools import get_available_traits, get_analysis_group_keys, guarded_labelspace_analysis
 from analysis_0 import *
 from profiles.profile_sets import PERSON_SYSTEMATIC
 from profiles.schema import PersonSet
 from cases.cases_config import CaseConfig
+
+from tokens_metrics import TokenPricing, compute_token_economics
+
+
 
 def factorial_analysis_nway_anova(
     merged_df, 
@@ -499,7 +503,9 @@ def plot_risk_benefit_frontier(
     group_keys=("gender", "ethnicity", "age"), 
     category_cols=None,
     figsize=(10, 6), 
-    person_set: PersonSet = None
+    person_set: PersonSet = None,
+    token_info: Optional[pd.DataFrame] = None,
+    rae_lambda: float = 2.0 
 ):
     """
     Risk-Benefit Frontier Analysis - Adapted for PersonSet
@@ -598,6 +604,19 @@ def plot_risk_benefit_frontier(
     }).reset_index()
     
     print(f"Found {len(profile_performance)} profiles for risk-benefit analysis")
+
+    if token_info is not None and "profile" in token_info.columns:
+        ti = token_info.set_index("profile")
+        cols = [c for c in ["tokens_per_sample","cost_per_sample","total_cost",
+                            "efficiency_acc_per_1k_tokens","RAE_lambda"] if c in ti.columns]
+        profile_performance = profile_performance.join(ti[cols], on="profile", how="left")
+
+    # If RAE wasn't in token_info (because rescue stats came from here), compute it now:
+    if "RAE_lambda" not in profile_performance.columns and "tokens_per_sample" in profile_performance.columns:
+        profile_performance["RAE_lambda"] = (
+            (profile_performance["rescue_rate"] - rae_lambda*profile_performance["extra_err_rate"])
+            / profile_performance["tokens_per_sample"].replace(0, np.nan)
+        )
     
     # Extract traits for each profile using the same logic as ANOVA
     profile_traits = {}
@@ -917,6 +936,182 @@ def calculate_effect_sizes(performance_df, anova_results, group_keys=("gender", 
     print(f"\nTotal effect sizes calculated: {len(effect_sizes)}")
     return effect_sizes
 
+def print_risk_benefit_token_summary(token_table: pd.DataFrame, top_n: int = 10, safe_extra_err: float = 0.02):
+    if token_table is None or token_table.empty:
+        print("\n=== RISK–BENEFIT in terms of TOKENS ===\nNo token metrics available."); 
+        return
+
+    cols = [c for c in ["profile","rescue_rate","extra_err_rate","tokens_per_sample","RAE_lambda"] if c in token_table.columns]
+    tt = token_table[cols].dropna()
+    if tt.empty:
+        print("\n=== RISK–BENEFIT in terms of TOKENS ===\nNo complete rows for risk/benefit + tokens."); 
+        return
+
+    print("\n=== RISK–BENEFIT in terms of TOKENS ===")
+    # Top by RAE_λ
+    if "RAE_lambda" in tt.columns:
+        top = tt.sort_values("RAE_lambda", ascending=False).head(top_n)
+        print("\nTop profiles by risk-adjusted efficiency (RAE_λ):")
+        for _, r in top.iterrows():
+            print(f"  {r['profile']:<12} RAE={r['RAE_lambda']:.4f} | rescue={r['rescue_rate']:.3f} | extra={r['extra_err_rate']:.3f} | tok/sample={r['tokens_per_sample']:.1f}")
+
+    # “Safely bold” shortlist
+    safe = tt[(tt.get("extra_err_rate", 1.0) <= safe_extra_err) & (tt.get("rescue_rate", 0.0) >= 0)]
+    if "RAE_lambda" in safe.columns:
+        safe = safe[safe["RAE_lambda"] > 0]
+    if not safe.empty:
+        sb = safe.sort_values(["RAE_lambda","rescue_rate"], ascending=[False, False]).head(top_n) if "RAE_lambda" in safe.columns else safe.sort_values("rescue_rate", ascending=False).head(top_n)
+        print(f"\nSafely-bold profiles (extra_err ≤ {safe_extra_err:.3f}" + (", RAE>0" if "RAE_lambda" in tt.columns else "") + "):")
+        for _, r in sb.iterrows():
+            rae = f" | RAE={r['RAE_lambda']:.4f}" if "RAE_lambda" in r else ""
+            print(f"  {r['profile']:<12} rescue={r['rescue_rate']:.3f} | extra={r['extra_err_rate']:.3f} | tok/sample={r['tokens_per_sample']:.1f}{rae}")
+
+
+def plot_cost_aware_risk_benefit(
+    profile_performance: pd.DataFrame,
+    person_set: Optional[PersonSet] = None,
+    rae_lambda: float = 2.0,
+    figsize: Tuple[int, int] = (8, 6),
+    out_dir: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Cost-aware risk–benefit visuals:
+      (A) Rescue vs Extra Error colored by cost (or tokens if cost missing)
+      (B) Risk-adjusted efficiency (RAE_λ) vs Cost with Pareto frontier
+
+    Expects columns in profile_performance:
+      rescue_rate, extra_err_rate, profile,
+      (optional) cost_per_sample, tokens_per_sample, RAE_lambda
+    """
+    df = profile_performance.copy()
+
+    # Compute RAE if not present but we have tokens + rescue/extra
+    if "RAE_lambda" not in df.columns and {"rescue_rate","extra_err_rate","tokens_per_sample"}.issubset(df.columns):
+        df["RAE_lambda"] = (
+            (df["rescue_rate"] - rae_lambda * df["extra_err_rate"]) /
+            df["tokens_per_sample"].replace(0, np.nan)
+        )
+
+    # Choose color metric (prefers $ cost; falls back to tokens)
+    color_col = "cost_per_sample" if "cost_per_sample" in df.columns and df["cost_per_sample"].notna().any() else "tokens_per_sample"
+    color_label = "Cost per sample ($)" if color_col == "cost_per_sample" else "Tokens per sample"
+
+    paths = {}
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+
+    # ---------- (A) Risk vs Benefit colored by cost/tokens ----------
+    figA, axA = plt.subplots(figsize=figsize)
+    figA.set_layout_engine("constrained")
+    scA = axA.scatter(
+        df["extra_err_rate"].astype(float),
+        df["rescue_rate"].astype(float),
+        c=df[color_col].astype(float),
+        s=80, alpha=0.85, edgecolor="k", linewidth=0.3
+    )
+    axA.set_xlabel("Extra error rate (risk)")
+    axA.set_ylabel("Rescue rate (benefit)")
+    axA.set_title(f"Risk–Benefit colored by {color_label}")
+    cbA = figA.colorbar(scA, ax=axA)
+    cbA.set_label(color_label)
+
+    # Annotate a few best points (highest rescue with low risk)
+    if len(df) > 0:
+        top = df.sort_values(["extra_err_rate","rescue_rate"], ascending=[True, False]).head(5)
+        for _, r in top.iterrows():
+            label = r["profile"]
+            if person_set is not None:
+                try:
+                    # short demographic tag
+                    from analysis_tools import get_demographic_info
+                    label = get_demographic_info(r["profile"], person_set)
+                except Exception:
+                    pass
+            axA.annotate(
+                label, (float(r["extra_err_rate"]), float(r["rescue_rate"])),
+                xytext=(6,6), textcoords="offset points", fontsize=8,
+                bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="0.6", lw=0.6, alpha=0.9)
+            )
+
+    if out_dir:
+        pA = os.path.join(out_dir, "risk_benefit_colored_by_cost.pdf")
+        figA.savefig(pA)
+        plt.close(figA)
+        paths["risk_benefit_colored_by_cost"] = pA
+    else:
+        plt.show()
+
+    # ---------- (B) RAE_λ vs Cost with Pareto frontier ----------
+    # X: cost (lower is better if available; else tokens). Y: RAE_λ (higher is better).
+    x_col = "cost_per_sample" if "cost_per_sample" in df.columns and df["cost_per_sample"].notna().any() else "tokens_per_sample"
+    y_col = "RAE_lambda"
+    if y_col in df.columns and x_col in df.columns:
+        figB, axB = plt.subplots(figsize=figsize)
+        figB.set_layout_engine("constrained")
+
+        x = df[x_col].astype(float).values
+        y = df[y_col].astype(float).values
+        mask = np.isfinite(x) & np.isfinite(y)
+        x, y = x[mask], y[mask]
+        df_plot = df.loc[mask].reset_index(drop=True)
+
+        scB = axB.scatter(x, y, s=80, alpha=0.85, edgecolor="k", linewidth=0.3)
+        axB.set_xlabel("Cost per sample ($)" if x_col == "cost_per_sample" else "Tokens per sample")
+        axB.set_ylabel(f"RAE$_{{{rae_lambda:g}}}$  = (rescue − {rae_lambda:g}·extra) / tokens")
+        axB.set_title("Risk-adjusted efficiency vs cost")
+
+        # Pareto frontier: maximize y, minimize x
+        pareto = np.zeros(len(df_plot), dtype=bool)
+        for i in range(len(df_plot)):
+            dominated = False
+            for j in range(len(df_plot)):
+                if i == j:
+                    continue
+                if (df_plot.loc[j, x_col] <= df_plot.loc[i, x_col] and
+                    df_plot.loc[j, y_col] >= df_plot.loc[i, y_col] and
+                    (df_plot.loc[j, x_col] < df_plot.loc[i, x_col] or
+                     df_plot.loc[j, y_col] > df_plot.loc[i, y_col])):
+                    dominated = True
+                    break
+            if not dominated:
+                pareto[i] = True
+
+        df_pareto = df_plot.loc[pareto]
+        axB.scatter(df_pareto[x_col], df_pareto[y_col],
+                    c="red", s=150, marker="*", zorder=5, edgecolors="darkred", label="Pareto")
+
+        if len(df_pareto) > 1:
+            df_p_sorted = df_pareto.sort_values(x_col)
+            axB.plot(df_p_sorted[x_col], df_p_sorted[y_col], "r--", lw=2, alpha=0.8)
+
+        axB.legend(framealpha=0.9)
+
+        # annotate Pareto points
+        for _, r in df_pareto.iterrows():
+            label = r["profile"]
+            if person_set is not None:
+                try:
+                    from analysis_tools import get_demographic_info
+                    label = get_demographic_info(r["profile"], person_set)
+                except Exception:
+                    pass
+            axB.annotate(
+                label, (float(r[x_col]), float(r[y_col])),
+                xytext=(6,6), textcoords="offset points", fontsize=8,
+                bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="0.6", lw=0.6, alpha=0.9)
+            )
+
+        if out_dir:
+            pB = os.path.join(out_dir, "rae_vs_cost_pareto.pdf")
+            figB.savefig(pB)
+            plt.close(figB)
+            paths["rae_vs_cost_pareto"] = pB
+        else:
+            plt.show()
+
+    return {"paths": paths, "df": df}
+
+
 
 def ols_interaction_pvalue(df, dv, factor1, factor2):
     """
@@ -958,7 +1153,9 @@ def run_full_tier1_analysis(
     merged_df: pd.DataFrame, 
     case: CaseConfig,
     group_keys: Optional[Tuple[str, ...]] = None, 
-    person_set: PersonSet = None
+    person_set: PersonSet = None,
+    pricing: Optional[TokenPricing] = None, 
+    rae_lambda: float = 2.0  
 ) -> Dict[str, Any]:
     """
     Run the full Tier 1 analysis pipeline:
@@ -1003,6 +1200,20 @@ def run_full_tier1_analysis(
     
     print(f"Dataset shape: {merged_df.shape}")
 
+    rescue_stats_all = {}
+    for cat_col in getattr(case, "category_cols", []) or []:
+        if cat_col in merged_df.columns:
+            rescue_stats_all[cat_col] = guarded_labelspace_analysis(
+                rescue_stats_by_category, merged_df, case=case, category_col=cat_col
+            )
+
+
+    token_econ = compute_token_economics(
+        merged_df, pricing=pricing, rescue_stats_all=rescue_stats_all, rae_lambda=rae_lambda
+    )
+    token_table = token_econ.get("per_profile", pd.DataFrame())
+    print_risk_benefit_token_summary(token_table, top_n=10, safe_extra_err=0.02)
+
     try:
         print("\n" + "="*60)
         print("STEP 1: FACTORIAL N-WAY ANOVA ANALYSIS")
@@ -1027,13 +1238,33 @@ def run_full_tier1_analysis(
             case=case,
             group_keys=group_keys, 
             category_cols=case.category_cols,
-            person_set=person_set
+            person_set=person_set,
+            token_info=token_table,   
+            rae_lambda=rae_lambda
         )
         print("=== Pareto frontier analysis completed successfully")
         
     except Exception as e:
         print(f"ERROR: Pareto frontier analysis failed: {e}")
         pareto_results = {'error': str(e)}
+
+    try:
+        print("\n" + "="*60)
+        print("STEP 2B: COST-AWARE RISK–BENEFIT PLOTS")
+        print("="*60)
+        if isinstance(pareto_results, dict) and "performance_data" in pareto_results:
+            out_dir = os.path.join("results", "figs", case.case_name)
+            costplots = plot_cost_aware_risk_benefit(
+                pareto_results["performance_data"],
+                person_set=person_set,
+                rae_lambda=rae_lambda,
+                out_dir=out_dir
+            )
+            print("=== Cost-aware plots saved:", costplots.get("paths", {}))
+        else:
+            print("WARNING: No performance_data from Pareto step; skipping cost-aware plots.")
+    except Exception as e:
+        print(f"ERROR: Cost-aware plotting failed: {e}")
 
     try:
         print("\n" + "="*60)
@@ -1086,6 +1317,7 @@ def run_full_tier1_analysis(
         "pareto_results": pareto_results,
         "effect_sizes": effect_sizes,
         "group_keys": group_keys,
+        "token_economics": token_econ,
         "analysis_summary": {
             "significant_effects": anova_results.get('significant_effects', []),
             "pareto_optimal_count": len(pareto_results.get('pareto_optimal', [])),

@@ -4,7 +4,7 @@ import glob
 import json
 from collections import Counter, defaultdict
 from itertools import combinations
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple, Optional, NamedTuple
 
 import pandas as pd
 import numpy as np
@@ -33,6 +33,15 @@ from profiles.profile_sets import PERSON_ETHNICS
 from cases.cases_config import CaseConfig
 
 from plot_tools import apply_neurips_figure_style
+
+import tokens_metrics as TM
+from tokens_metrics import (
+    TokenPricing,
+    _gather_tokens_from_merged,
+    _safe_mean,
+    _per_profile_accuracy,
+    compute_token_economics,
+)
 
 
 __all__ = [
@@ -68,6 +77,8 @@ __all__ += [
 # ============================================================================
 # Preliminary Analysis
 # ============================================================================
+
+
 
 def test_comprehensive_demographic_accuracy_differences(
     merged_df,
@@ -1932,6 +1943,84 @@ def save_demographic_figures_individual(
         "intersectional": os.path.join(out_dir, "intersectional_heatmap.pdf"),
     }
 
+def print_token_economics_summary(token_econ: dict, top_n: int = 10):
+    perf = token_econ.get("per_profile", pd.DataFrame())
+    overall = token_econ.get("overall", {}) or {}
+
+    print("\n\n=== TOKEN ECONOMICS ===")
+    if overall:
+        def fmt(x):
+            return "—" if (x is None or (isinstance(x, float) and (np.isnan(x) or np.isinf(x)))) else f"{x:.3f}" if isinstance(x, float) else str(x)
+        print("OVERALL:")
+        print(f"  • Total calls: {overall.get('total_calls', '—')}")
+        print(f"  • Total tokens: {fmt(overall.get('total_tokens', np.nan))}")
+        print(f"  • Mean tokens/sample: {fmt(overall.get('tokens_per_sample_mean', np.nan))}")
+        if "total_cost" in overall and not pd.isna(overall["total_cost"]):
+            print(f"  • Total cost: ${fmt(overall.get('total_cost', np.nan))}")
+            print(f"  • Mean cost/sample: ${fmt(overall.get('cost_per_sample_mean', np.nan))}")
+            if "cost_per_correct" in overall and not pd.isna(overall["cost_per_correct"]):
+                print(f"  • Cost per correct: ${fmt(overall.get('cost_per_correct', np.nan))}")
+        if "baseline_accuracy" in overall and not pd.isna(overall["baseline_accuracy"]):
+            print(f"  • Baseline accuracy: {overall['baseline_accuracy']:.3f}")
+
+    if perf is None or perf.empty:
+        print("No per-profile token metrics available.")
+        return
+
+    # Top by accuracy-per-1k-tokens
+    if "efficiency_acc_per_1k_tokens" in perf.columns:
+        tmp = perf[["profile","accuracy","tokens_per_sample","efficiency_acc_per_1k_tokens"]].dropna()
+        tmp = tmp.sort_values("efficiency_acc_per_1k_tokens", ascending=False).head(top_n)
+        print("\nTop profiles by efficiency (accuracy per 1k tokens):")
+        for _, r in tmp.iterrows():
+            print(f"  {r['profile']:<12} eff={r['efficiency_acc_per_1k_tokens']:.2f} | acc={r['accuracy']:.3f} | tok/sample={r['tokens_per_sample']:.1f}")
+
+    # Top by cost-per-correct (if pricing provided)
+    if "cost_per_correct" in perf.columns and perf["cost_per_correct"].notna().any():
+        tmp = perf[["profile","cost_per_correct","accuracy","tokens_per_sample"]].dropna()
+        tmp = tmp.sort_values("cost_per_correct", ascending=True).head(top_n)
+        print("\nBest (lowest) cost per correct:")
+        for _, r in tmp.iterrows():
+            print(f"  {r['profile']:<12} ${r['cost_per_correct']:.4f} | acc={r['accuracy']:.3f} | tok/sample={r['tokens_per_sample']:.1f}")
+
+
+def plot_token_economics_figures(perf: pd.DataFrame, out_dir: str, have_pricing: bool = False):
+    """
+    Creates a couple of quick visuals:
+      1) tokens_per_sample vs accuracy (scatter)
+      2) cost_per_sample vs accuracy (scatter) [only if pricing]
+      3) rescue vs extra error colored by RAE (optional if those cols exist)
+    Saves PDFs into out_dir.
+    """
+    import matplotlib.pyplot as plt
+    os.makedirs(out_dir, exist_ok=True)
+
+    # 1) tokens vs accuracy
+    if {"tokens_per_sample","accuracy"}.issubset(perf.columns):
+        x = perf["tokens_per_sample"].astype(float)
+        y = perf["accuracy"].astype(float) * 100.0
+        fig, ax = plt.subplots(figsize=(7.5, 5.0))
+        fig.set_layout_engine("constrained")  # NEW: use new layout engine
+        ax.scatter(x, y, alpha=0.7, edgecolor="k", linewidth=0.3)
+        ax.set_xlabel("Tokens per sample")
+        ax.set_ylabel("Accuracy (%)")
+        ax.set_title("Tokens vs Accuracy (per profile)")
+        pth = os.path.join(out_dir, "tokens_vs_accuracy.pdf")
+        plt.savefig(pth); plt.close()
+
+    # 2) cost vs accuracy (if pricing)
+    if have_pricing and {"cost_per_sample","accuracy"}.issubset(perf.columns) and perf["cost_per_sample"].notna().any():
+        x = perf["cost_per_sample"].astype(float)
+        y = perf["accuracy"].astype(float) * 100.0
+        fig, ax = plt.subplots(figsize=(7.5, 5.0))
+        fig.set_layout_engine("constrained")  # NEW
+        ax.scatter(x, y, alpha=0.7, edgecolor="k", linewidth=0.3)
+        ax.set_xlabel("Cost per sample ($)")
+        ax.set_ylabel("Accuracy (%)")
+        ax.set_title("Cost vs Accuracy (per profile)")
+        pth = os.path.join(out_dir, "cost_vs_accuracy.pdf")
+        plt.savefig(pth); plt.close()
+
 
 
 def run_full_preliminary_analysis(
@@ -2073,6 +2162,32 @@ def run_full_preliminary_analysis(
         print("Saved:", paths)
     except Exception as e:
         print(f"Error saving individual demographic figures: {e}")
+
+    pricing = None  # keep tokens-only unless you set pricing above
+    token_econ = None  # ensure defined even if compute fails
+    try:
+        token_econ = compute_token_economics(
+            merged_df,
+            pricing=pricing,
+            rescue_stats_all=rescue_stats_all,
+            rae_lambda=2.0,
+            baseline_col="base_pred",
+        )
+    except Exception as e:
+        print(f"Error computing token economics: {e}")
+
+    results["token_economics"] = token_econ
+
+    if isinstance(token_econ, dict):
+        perf = token_econ.get("per_profile", pd.DataFrame())
+        if perf is not None and not perf.empty:
+            print_token_economics_summary(token_econ)
+            # save table
+            tok_csv = os.path.join(fig_dir, "token_economics_per_profile.csv")
+            perf.to_csv(tok_csv, index=False)
+            print("Saved:", tok_csv)
+            # figures
+            plot_token_economics_figures(perf, fig_dir, have_pricing=(pricing is not None))
 
     # ---------- SUMMARY ----------
     print(f"\n\n=== ANALYSIS SUMMARY ===")

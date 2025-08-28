@@ -22,27 +22,64 @@ def load_and_merge_profiles(
     extra_sample_cols: Optional[List[str]] = None,
 ) -> pd.DataFrame:
 
+    # ---------- BASE (baseline) ----------
     df_base = pd.read_csv(base_file_path)
-    merged = df_base[[sample_id_col, label_col, pred_col]].rename(columns={pred_col: "base_pred"})
 
+    base_keep = [c for c in [sample_id_col, label_col, pred_col,
+                             "prompt_tokens", "completion_tokens",
+                             "tokens_used", "max_tokens"] if c in df_base.columns]
+
+    df_base = df_base[base_keep].rename(columns={pred_col: "base_pred"})
+
+    base_rename = {}
+    if "prompt_tokens" in df_base.columns:
+        base_rename["prompt_tokens"] = "prompt_tokens__base_pred"
+    if "completion_tokens" in df_base.columns:
+        base_rename["completion_tokens"] = "completion_tokens__base_pred"
+    if "tokens_used" in df_base.columns:
+        base_rename["tokens_used"] = "tokens_used__base_pred"
+    if "max_tokens" in df_base.columns:
+        base_rename["max_tokens"] = "max_tokens__base_pred"
+    df_base = df_base.rename(columns=base_rename)
+
+    merged = df_base.copy()
+
+    # ---------- PROFILES ----------
     profile_files = glob.glob(role_playing_glob_pattern)
     print(f"=== Found {len(profile_files)} profile result files.")
 
     for file in profile_files:
         profile_folder = os.path.basename(os.path.dirname(file))
+        clean_profile_name = re.sub(r'_(passive|active)$', '', profile_folder)
+
         df_profile = pd.read_csv(file)
 
         if sample_id_col not in df_profile.columns or pred_col not in df_profile.columns:
             print(f"=== Skipping {profile_folder} (missing required columns)")
             continue
 
-        clean_profile_name = re.sub(r'_(passive|active)$', '', profile_folder)
-        df_profile = df_profile[[sample_id_col, pred_col]].rename(columns={pred_col: clean_profile_name})
+        keep_cols = [c for c in [sample_id_col, pred_col,
+                                 "prompt_tokens", "completion_tokens",
+                                 "tokens_used", "max_tokens"] if c in df_profile.columns]
+        df_p = df_profile[keep_cols].copy()
 
-        if profile_folder in merged.columns:
+        ren = {pred_col: clean_profile_name}
+
+        if "prompt_tokens" in df_p.columns:
+            ren["prompt_tokens"] = f"prompt_tokens__{clean_profile_name}"
+        if "completion_tokens" in df_p.columns:
+            ren["completion_tokens"] = f"completion_tokens__{clean_profile_name}"
+        if "tokens_used" in df_p.columns:
+            ren["tokens_used"] = f"tokens_used__{clean_profile_name}"
+        if "max_tokens" in df_p.columns:
+            ren["max_tokens"] = f"max_tokens__{clean_profile_name}"
+
+        df_p = df_p.rename(columns=ren)
+
+        if profile_folder in merged.columns and profile_folder != clean_profile_name:
             merged = merged.drop(columns=[profile_folder])
 
-        merged = merged.merge(df_profile, on=sample_id_col, how="left")
+        merged = merged.merge(df_p, on=sample_id_col, how="left")
 
     sample_df = sample_df.reset_index(drop=True)
     sample_df[sample_id_col] = sample_df.index
@@ -50,7 +87,6 @@ def load_and_merge_profiles(
     meta_candidates = (case.category_cols if hasattr(case, "category_cols") else [])
     if extra_sample_cols:
         meta_candidates = list(meta_candidates) + list(extra_sample_cols)
-
     meta_columns = [col for col in meta_candidates if col in sample_df.columns]
 
     merged = merged.merge(
@@ -60,27 +96,30 @@ def load_and_merge_profiles(
     )
 
     merged[label_col] = merged[label_col].astype(str).str.strip().str.lower()
-    merged["base_pred"] = merged["base_pred"].astype(str).str.strip().str.lower()
-    for col in merged.columns[3:]:
-        merged[col] = merged[col].astype(str).str.strip().str.lower()
+
+    pred_cols = ["base_pred"] + [c for c in merged.columns if re.match(r"^profile\d+$", c)]
+    for col in pred_cols:
+        if col in merged.columns:
+            merged[col] = merged[col].astype(str).str.strip().str.lower()
 
     fixed_columns = [sample_id_col, label_col, "base_pred"]
-    profile_columns = [
-        col for col in merged.columns
-        if col.startswith("profile") and col not in fixed_columns + meta_columns
-    ]
+    profile_pred_cols = [c for c in merged.columns
+                         if c.startswith("profile") and c not in fixed_columns + meta_columns]
 
-    def extract_profile_number(col_name):
-        match = re.search(r"profile(\d+)", col_name)
-        return int(match.group(1)) if match else float("inf")
+    token_prefixes = ("prompt_tokens__", "completion_tokens__", "tokens_used__", "max_tokens__")
+    token_columns = [c for c in merged.columns if c.startswith(token_prefixes)]
 
-    profile_columns = sorted(profile_columns, key=extract_profile_number)
+    def extract_profile_number(col_name: str):
+        m = re.search(r"profile(\d+)$", col_name)
+        return int(m.group(1)) if m else float("inf")
+    profile_pred_cols = sorted(profile_pred_cols, key=extract_profile_number)
 
-    final_columns = fixed_columns + meta_columns + profile_columns
+    final_columns = fixed_columns + meta_columns + profile_pred_cols + token_columns
     merged = merged[final_columns]
 
     print("=== Merged DataFrame ready with columns:\n", merged.columns.tolist())
     return merged
+
 
 
 def compute_accuracy(y_true, y_pred):
