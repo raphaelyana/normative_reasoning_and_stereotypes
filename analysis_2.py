@@ -27,6 +27,7 @@ from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 
 from analysis_0 import *
 from analysis_tools import get_available_traits, get_analysis_group_keys
+from analysis_tools import get_demographic_info, guarded_labelspace_analysis, resolve_plot_dir
 from profiles.profile_sets import PERSON_SYSTEMATIC
 from profiles.schema import PersonSet
 from analysis_tools import has_cognitive_style_data
@@ -1413,7 +1414,8 @@ def create_all_tier2_visualizations(
     cluster_results: Dict[str, Any],
     trait_results: Dict[str, Any] = None,
     baseline_accuracy: float = None,
-    show_top_ensembles: int = 8
+    show_top_ensembles: int = 8,
+    save_paths: Optional[Dict[str, Optional[str]]] = None
 ):
     """
     Create all Tier 2 visualizations with proper spacing and formatting.
@@ -1437,6 +1439,9 @@ def create_all_tier2_visualizations(
             show_top_n=show_top_ensembles
         )
         figures['ensemble'] = fig1
+        if save_paths and save_paths.get('ensemble'):
+            os.makedirs(os.path.dirname(save_paths['ensemble']), exist_ok=True)
+            fig1.savefig(save_paths['ensemble'])
         
     except Exception as e:
         print(f"   Error creating ensemble plot: {e}")
@@ -1445,6 +1450,10 @@ def create_all_tier2_visualizations(
         print("2. Cluster Analysis...")
         fig2 = plot_cluster_analysis(cluster_results)
         figures['cluster'] = fig2
+        if save_paths and save_paths.get('cluster'):
+            os.makedirs(os.path.dirname(save_paths['cluster']), exist_ok=True)
+            fig2.savefig(save_paths['cluster'])
+
         
     except Exception as e:
         print(f"   Error creating cluster plot: {e}")
@@ -1457,6 +1466,9 @@ def create_all_tier2_visualizations(
                 baseline_accuracy=baseline_accuracy
             )
             figures['trait'] = fig3
+            if save_paths and save_paths.get('trait'):
+                os.makedirs(os.path.dirname(save_paths['trait']), exist_ok=True)
+                fig3.savefig(save_paths['trait'])
             
         except Exception as e:
             print(f"   Error creating trait plot: {e}")
@@ -1467,6 +1479,9 @@ def create_all_tier2_visualizations(
             ensemble_results, cluster_results, trait_results
         )
         figures['recommendations'] = fig4
+        if save_paths and save_paths.get('recommendations'):
+            os.makedirs(os.path.dirname(save_paths['recommendations']), exist_ok=True)
+            fig4.savefig(save_paths['recommendations'])
         
     except Exception as e:
         print(f"   Error creating recommendations plot: {e}")
@@ -1977,7 +1992,11 @@ def run_full_tier2_analysis(
     create_visualizations: bool = True,
     perf_df: Optional[pd.DataFrame] = None,
     n_permutations: int = 1000,
-    permutation_seed: int = 42
+    permutation_seed: int = 42, 
+    plots_root: Optional[str] = None,
+    strategy: Optional[str] = None,
+    stage: str = "tier2",
+    per_figure_subdirs: Optional[Dict[str, str]] = None
 ):
     """
     Run complete Tier 2 analysis pipeline with conditional cognitive style execution.
@@ -2009,6 +2028,19 @@ def run_full_tier2_analysis(
     print(f"Dataset shape: {merged_df.shape}")
 
     category_cols = getattr(case, "category_cols", None) or ["stereotype_type"]
+
+    subdirs = per_figure_subdirs or {}
+    stage_dir     = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage)
+    ensembles_dir = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage,
+                                     extra_subdir=subdirs.get("ensembles") or "ensembles")
+    clusters_dir  = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage,
+                                     extra_subdir=subdirs.get("clusters") or "clusters")
+    traits_dir    = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage,
+                                     extra_subdir=subdirs.get("traits") or "trait_comparison")
+    recs_dir      = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage,
+                                     extra_subdir=subdirs.get("recommendations") or "recommendations")
+    perm_dir      = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage,
+                                     extra_subdir=subdirs.get("permutations") or "permutation_tests")
 
     # STEP 1: ENSEMBLE BY TRAIT ANALYSIS
     try:
@@ -2089,23 +2121,53 @@ def run_full_tier2_analysis(
         print(f"Error running permutation tests: {e}")
         results["permutation_tests"] = {"error": str(e)}
 
+    try:
+        for trait_name, tr in permutation_results.get("trait_tests", {}).items():
+            if "error" in tr:
+                continue
+            outp = os.path.join(perm_dir, f"permutation_{trait_name}.pdf")
+            plot_permutation_distributions(permutation_results, trait=trait_name, savepath=outp)
+    except Exception as e:
+        print(f"WARNING: Saving permutation plots failed: {e}")
+    
 
     # STEP 4: VISUALIZATIONS
     visualization_figures = {}
     if create_visualizations:
         try:
             print("\n=== Running Step 4: Creating Visualizations...")
+    
+            # Use cognitive style results if available for the trait plot
+            trait_results_for_plots = (
+                cognitive_results if (has_cognitive_data and isinstance(cognitive_results, dict)
+                                      and 'error' not in cognitive_results and 'skipped' not in cognitive_results)
+                else None
+            )
+    
+            save_paths = {
+                "ensemble": os.path.join(ensembles_dir, "ensemble_performance.pdf"),
+                "cluster": os.path.join(clusters_dir, "cluster_analysis.pdf"),
+                "trait": (
+                    os.path.join(
+                        traits_dir,
+                        f"{trait_results_for_plots.get('comparison_trait','trait')}_comparison.pdf"
+                    ) if trait_results_for_plots else None
+                ),
+                "recommendations": os.path.join(recs_dir, "system_recommendations.pdf"),
+            }
+    
             visualization_figures = create_all_tier2_visualizations(
                 ensemble_results=ensemble_results,
                 cluster_results=cluster_results,
-                trait_results=None,
-                show_top_ensembles=8
+                trait_results=trait_results_for_plots,
+                show_top_ensembles=8,
+                save_paths=save_paths
             )
             print("SUCCESS: Visualizations created successfully")
         except Exception as e:
             print(f"✗ ERROR: Visualization creation failed: {e}")
             visualization_figures = {'error': str(e)}
-
+    
     # STEP 5: EXECUTIVE SUMMARY
     print("\n" + "=" * 80)
     print("COMPREHENSIVE TIER 2 EXECUTIVE SUMMARY")

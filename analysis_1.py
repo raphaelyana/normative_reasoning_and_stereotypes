@@ -32,7 +32,7 @@ from scipy.spatial.distance import squareform
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 
 
-from analysis_tools import get_available_traits, get_analysis_group_keys, guarded_labelspace_analysis
+from analysis_tools import get_available_traits, get_analysis_group_keys, guarded_labelspace_analysis, resolve_plot_dir
 from analysis_0 import *
 from profiles.profile_sets import PERSON_SYSTEMATIC
 from profiles.schema import PersonSet
@@ -505,7 +505,8 @@ def plot_risk_benefit_frontier(
     figsize=(10, 6), 
     person_set: PersonSet = None,
     token_info: Optional[pd.DataFrame] = None,
-    rae_lambda: float = 2.0 
+    rae_lambda: float = 2.0,
+    out_dir: Optional[str] = None
 ):
     """
     Risk-Benefit Frontier Analysis - Adapted for PersonSet
@@ -568,6 +569,10 @@ def plot_risk_benefit_frontier(
     
     print("=== RISK-BENEFIT FRONTIER ANALYSIS ===")
     print(f"Group keys: {group_keys}")
+
+    paths = {}
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
 
     if category_cols is None:
         print("WARNING: category_cols not provided — defaulting to ['stereotype_type']")
@@ -683,7 +688,12 @@ def plot_risk_benefit_frontier(
         ax.grid(True, alpha=0.3)
         
         plt.tight_layout()
-        plt.show()
+        if out_dir:
+            p = os.path.join(out_dir, f"risk_benefit_by_{trait}.pdf")
+            fig.savefig(p, bbox_inches="tight"); plt.close(fig)
+            paths[f"risk_benefit_by_{trait}"] = p
+        else:
+            plt.show()
     
     # ========================================================================
     # PARETO FRONTIER ANALYSIS
@@ -753,7 +763,12 @@ def plot_risk_benefit_frontier(
                alpha=0.1, color='red')
     
     plt.tight_layout()
-    plt.show()
+    if out_dir:
+        p = os.path.join(out_dir, "pareto_frontier.pdf")
+        fig.savefig(p, bbox_inches="tight"); plt.close(fig)
+        paths["pareto_frontier"] = p
+    else:
+        plt.show()
     
     # ========================================================================
     # DETAILED ANALYSIS RESULTS
@@ -822,7 +837,8 @@ def plot_risk_benefit_frontier(
         'profile_traits': profile_traits,
         'safest_profile': safest,
         'most_beneficial_profile': most_beneficial,
-        'group_keys': group_keys
+        'group_keys': group_keys,
+        'paths': paths
     }
 
 
@@ -1155,7 +1171,11 @@ def run_full_tier1_analysis(
     group_keys: Optional[Tuple[str, ...]] = None, 
     person_set: PersonSet = None,
     pricing: Optional[TokenPricing] = None, 
-    rae_lambda: float = 2.0  
+    rae_lambda: float = 2.0,
+    plots_root: Optional[str] = None,
+    strategy: Optional[str] = None,
+    stage: str = "tier1",
+    per_figure_subdirs: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """
     Run the full Tier 1 analysis pipeline:
@@ -1179,6 +1199,13 @@ def run_full_tier1_analysis(
     print("="*80)
     print(f"Group keys: {group_keys}")
     print(f"Dataset shape: {merged_df.shape}")
+
+    subdirs = per_figure_subdirs or {}
+    stage_dir        = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage)
+    risk_benefit_dir = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage,
+                                        extra_subdir=subdirs.get("risk_benefit") or "risk_benefit")
+    costplots_dir    = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage,
+                                        extra_subdir=subdirs.get("token_econ") or "token_econ")
     
 
     if person_set is None:
@@ -1240,7 +1267,8 @@ def run_full_tier1_analysis(
             category_cols=case.category_cols,
             person_set=person_set,
             token_info=token_table,   
-            rae_lambda=rae_lambda
+            rae_lambda=rae_lambda,
+            out_dir=risk_benefit_dir
         )
         print("=== Pareto frontier analysis completed successfully")
         
@@ -1258,7 +1286,7 @@ def run_full_tier1_analysis(
                 pareto_results["performance_data"],
                 person_set=person_set,
                 rae_lambda=rae_lambda,
-                out_dir=out_dir
+                out_dir=costplots_dir
             )
             print("=== Cost-aware plots saved:", costplots.get("paths", {}))
         else:

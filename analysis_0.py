@@ -27,7 +27,10 @@ from scipy.stats import (
 from scipy.spatial.distance import squareform
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 
-from analysis_tools import get_demographic_info, get_analysis_group_keys, guarded_labelspace_analysis
+from analysis_tools import (
+    get_demographic_info, get_analysis_group_keys, guarded_labelspace_analysis,
+    resolve_plot_dir,
+)
 from profiles.schema import *
 from profiles.profile_sets import PERSON_ETHNICS
 from cases.cases_config import CaseConfig
@@ -57,15 +60,6 @@ __all__ = [
     "print_persona_similarity_analysis",
     "plot_accuracy_deltas_with_ci",
     "run_full_preliminary_analysis",
-    #"compute_pairwise_demographic_diffs",
-    #"plot_volcano_demographic_diffs",
-    #"plot_effect_size_heatmap",
-    #"plot_intersectional_accuracy_heatmap",
-    #"plot_demographic_accuracy_composite",
-]
-
-
-__all__ += [
     "compute_pairwise_demographic_diffs",
     "plot_volcano_demographic_diffs",
     "plot_effect_size_heatmap",
@@ -2029,6 +2023,10 @@ def run_full_preliminary_analysis(
     df: Optional[pd.DataFrame] = None,
     person_set: PersonSet = None,
     threshold_disagreement=0.3,
+    plots_root: Optional[str] = None,
+    strategy: Optional[str] = None,
+    stage: str = "preliminary",
+    per_figure_subdirs: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
 
     if person_set is None:
@@ -2131,35 +2129,46 @@ def run_full_preliminary_analysis(
 
 
     print("\n\n=== FIGURES ===")
-    fig_dir = os.path.join("results", "figs", case.case_name)
-    os.makedirs(fig_dir, exist_ok=True)
+    subdirs = per_figure_subdirs or {}
+    stage_dir = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage)
     
+    acc_dir    = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage,
+                                  extra_subdir=subdirs.get("accuracy_by_group") or "accuracy_by_group")
+    demo_dir   = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage,
+                                  extra_subdir=subdirs.get("demographic") or "demographic")
+    tokens_dir = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage,
+                                  extra_subdir=subdirs.get("token_econ") or "token_econ")
+        
     try:
         acc_summary = plot_accuracy_deltas_with_ci(
             merged_df,
             person_set=person_set,
             group_keys=group_keys,
             figsize=(10, 6),
-            savepath=os.path.join(fig_dir, "accuracy_by_group.pdf"),
+            savepath=os.path.join(acc_dir, "accuracy_by_group.pdf"),
         )
         results["accuracy_summary"] = acc_summary
-        print("Saved:", os.path.join(fig_dir, "accuracy_by_group.pdf"))
+        print("Saved:", os.path.join(acc_dir, "accuracy_by_group.pdf"))
     except Exception as e:
         print(f"Error generating accuracy plot: {e}")
         results["accuracy_summary"] = None
     
     try:
-        paths = save_demographic_figures_individual(
-            merged_df,
-            person_set=person_set,
-            out_dir=fig_dir,
-            figsize=(10, 6),
-            normalize_intersectional=True,
-            top_n=5,
+        acc_summary = plot_accuracy_deltas_with_ci(
+            merged_df, person_set=person_set, group_keys=group_keys, figsize=(10, 6),
+            savepath=os.path.join(acc_dir, "accuracy_by_group.pdf"),
         )
+        
+        paths = save_demographic_figures_individual(
+            merged_df, person_set=person_set, out_dir=demo_dir, figsize=(10, 6),
+            normalize_intersectional=True, top_n=5,
+        )
+        
+        results["figure_paths"] = {
+            "accuracy_by_group": os.path.join(acc_dir, "accuracy_by_group.pdf"),
+            **paths
+        }
 
-        results["figure_paths"] = {"accuracy_by_group": os.path.join(fig_dir, "accuracy_by_group.pdf"), **paths}
-        print("Saved:", paths)
     except Exception as e:
         print(f"Error saving individual demographic figures: {e}")
 
@@ -2182,12 +2191,9 @@ def run_full_preliminary_analysis(
         perf = token_econ.get("per_profile", pd.DataFrame())
         if perf is not None and not perf.empty:
             print_token_economics_summary(token_econ)
-            # save table
-            tok_csv = os.path.join(fig_dir, "token_economics_per_profile.csv")
+            tok_csv = os.path.join(tokens_dir, "token_economics_per_profile.csv")
             perf.to_csv(tok_csv, index=False)
-            print("Saved:", tok_csv)
-            # figures
-            plot_token_economics_figures(perf, fig_dir, have_pricing=(pricing is not None))
+            plot_token_economics_figures(perf, tokens_dir, have_pricing=(pricing is not None))
 
     # ---------- SUMMARY ----------
     print(f"\n\n=== ANALYSIS SUMMARY ===")

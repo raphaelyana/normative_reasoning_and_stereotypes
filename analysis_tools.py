@@ -308,3 +308,30 @@ def guarded_labelspace_analysis(
     else:
         print("[WARN] case.valid_labels vide ou non reconnu. Analyse non effectuée.")
         return {}
+
+
+
+def resolve_plot_dir(
+    case,
+    plots_root: Optional[str] = None,
+    strategy: Optional[str] = None,   # e.g., "zero_shot", "few_shot", "cot"
+    stage: Optional[str] = None,      # e.g., "preliminary", "tier1", "tier2"
+    extra_subdir: Optional[str] = None
+) -> str:
+    """
+    Build: <plots_root or 'results/figs'>/[strategy]/<case_name>/[stage]/[extra_subdir]
+    Creates the directory if missing.
+    """
+    base = plots_root or os.path.join("results", "figs")
+    case_name = case if isinstance(case, str) else getattr(case, "case_name", str(case))
+    parts = [base]
+    if strategy:
+        parts.append(strategy)
+    parts.append(case_name)
+    if stage:
+        parts.append(stage)
+    if extra_subdir:
+        parts.append(extra_subdir)
+    out = os.path.join(*parts)
+    os.makedirs(out, exist_ok=True)
+    return out

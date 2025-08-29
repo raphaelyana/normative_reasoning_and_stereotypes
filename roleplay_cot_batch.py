@@ -78,6 +78,7 @@ class RoleplayBatchRunner:
         person_set = PERSON_ETHNICS,
         api_key_env: str = "API_KEY_OPENAI",
         client: Optional[openai.OpenAI] = None,
+        case_filename_tag_map: Optional[Dict[str, str]] = None,
     ):
         load_dotenv()
         self.client = client or openai.OpenAI(api_key=os.getenv(api_key_env))
@@ -93,18 +94,22 @@ class RoleplayBatchRunner:
         self.manifests_dir = manifests_dir
         self.reports_dir = reports_dir
         self.person_set = person_set
+        
+        self.case_filename_tag_map = case_filename_tag_map or {}
 
         _ensure_dir(self.manifests_dir)
         _ensure_dir(self.reports_dir)
 
     # -------------------- paths --------------------
 
-    def output_paths(self, case_name: str, profile: str, role: str) -> Tuple[str, str]:
+    def output_paths(
+        self, case_name: str, profile: str, role: str, filename_tag: Optional[str] = None
+    ) -> Tuple[str, str]:
         base = os.path.join(self.output_base_dir, f"{profile}_{role}")
         _ensure_dir(base)
-        # Pretty filenames but keep full case_name; only custom_id uses slug
-        csv_path = os.path.join(base, f"results_{case_name.lower()}_{self.strategy}_cot.csv")
-        reasoning_path = os.path.join(base, f"reasoning_{case_name.lower()}_{self.strategy}_cot.json")
+        tag = self._file_tag_for(case_name, filename_tag)
+        csv_path = os.path.join(base, f"results_{tag}_{self.strategy}_cot.csv")
+        reasoning_path = os.path.join(base, f"reasoning_{tag}_{self.strategy}_cot.json")
         return csv_path, reasoning_path
 
     def is_profile_done(self, case_name: str, profile: str, role: str) -> bool:
@@ -113,6 +118,17 @@ class RoleplayBatchRunner:
 
     def filter_profiles_not_done(self, case_name: str, profiles: List[str], role: str) -> List[str]:
         return [p for p in profiles if not self.is_profile_done(case_name, p, role)]
+    
+    def _file_tag_for(self, case_name: str, override: Optional[str] = None) -> str:
+        """
+        Choose the filename 'tag' used in results_<TAG>_<strategy>_cot.{csv,json}.
+        Priority: explicit override > case_filename_tag_map > slug(case_name)
+        """
+        if override:
+            return override
+        if case_name in self.case_filename_tag_map:
+            return self.case_filename_tag_map[case_name]
+        return _slug_for_id(case_name)
 
     # -------------------- prompt builders --------------------
 
@@ -336,7 +352,7 @@ class RoleplayBatchRunner:
         with open(reasoning_path, "w", encoding="utf-8") as f:
             json.dump(merged, f, indent=2, ensure_ascii=False)
 
-    def collect_one_batch_merged(self, case: CaseConfig, df: pd.DataFrame, batch_id: str) -> pd.DataFrame:
+    def collect_one_batch_merged(self, case: CaseConfig, df: pd.DataFrame, batch_id: str, filename_tag: Optional[str] = None) -> pd.DataFrame:
         """
         Merge successes per profile; return a small DataFrame of output-file failures (rare).
         """
@@ -421,7 +437,7 @@ class RoleplayBatchRunner:
             })
 
         for profile, rows in per_profile_rows.items():
-            csv_path, reasoning_path = self.output_paths(case_name, profile, role)
+            csv_path, reasoning_path = self.output_paths(case_name, profile, role, filename_tag=filename_tag)
             self._merge_rows_csv(csv_path, rows)
             self._merge_reasoning_json(reasoning_path, per_profile_reasoning[profile])
             print(f"[MERGED] {len(rows)} rows → {csv_path}")
@@ -510,7 +526,8 @@ class RoleplayBatchRunner:
         df: pd.DataFrame,
         role: str,
         failures_df: pd.DataFrame,
-        profiles: List[str] = None
+        profiles: List[str] = None,
+        filename_tag: Optional[str] = None,
     ):
         """
         Re-run small failure sets with correct per-row case_type if present (column 'case_type').
@@ -545,7 +562,7 @@ class RoleplayBatchRunner:
                 pred_label, metrics = cot.classify_with_strategy(text, strategy=self.strategy, case_type=case_type)
                 mapped_label = case.label_map.get(str(pred_label).strip(), list(case.label_map.values())[-1])
 
-                csv_path, reasoning_path = self.output_paths(case_name, profile, role)
+                csv_path, reasoning_path = self.output_paths(case_name, profile, role, filename_tag=filename_tag)
                 self._merge_rows_csv(csv_path, [{
                     "sample_id": sample_id,
                     "text": text,
