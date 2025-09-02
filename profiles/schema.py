@@ -9,7 +9,6 @@ __all__ = ["Gender", "Ethnicity", "CogStyle", "Age", "PersonMeta", "PersonSet"]
 class Gender(str, Enum):
     man = "man"
     woman = "woman"
-    nonbinary = "nonbinary"
 
 class Ethnicity(str, Enum):
     white = "white"

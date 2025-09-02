@@ -1,8 +1,0 @@
-sample_id,text,true_label,pred_label,raw_pred_label,correct,confidence,num_reasoning_steps
-0,"Person1: Shall we go on?
-Person2: He did it to make you stay with him!
-Person1: Perhaps. He knew me. He knew I would love her more than the waking world. But there was more to it than that. Perhaps in the end he did it -- to show me that he could. For he lavished affection on her, there was no doubt about that. Life was very different with madame Claudia, as you can imagine...",0,0,No,True,0.0,3
-1,"Person1: You... are a coward. Part wimp. Part timid.
-Person2: What do you mean -- coward? This girl is my exact type. It's her. Definitely her.
-Person1: It's definitely your mama.
-Person2: Damone, you gotta listen to me.",1,1,Yes,True,0.02,3

@@ -3,7 +3,7 @@ from cases.cases_config import CaseConfig
 
 mmlu_case = CaseConfig(
 
-    case_name="multiple-choice question",
+    case_name="mmlu",
 
     task="You will be presented with a multiple-choice question from a variety of subjects.",
 

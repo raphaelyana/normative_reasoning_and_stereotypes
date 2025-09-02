@@ -40,3 +40,12 @@ playground.py
 experiment1_tests_.ipynb
 analysis_0dump.py
 batch_jobs/
+
+results/deepseek_v3/
+results/openai_4.1_mini/
+results/openai_4o_mini/
+# Keep results/figs/ folder
+#!results/figs/
+zero_shot_basic.py
+plots_workshop.py
+workshop.ipynb

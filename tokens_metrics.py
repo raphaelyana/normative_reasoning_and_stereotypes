@@ -6,7 +6,7 @@ import os, glob
 from typing import Dict, Iterable, Optional, Sequence, Tuple, NamedTuple, Any
 import numpy as np
 import pandas as pd
-
+from scipy.stats import t
 
 class TokenPricing(NamedTuple):
     prompt_per_1k: float
@@ -80,9 +80,9 @@ def add_cost_per_correct(token_df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     if "n_rows" in df:
-        denom = (df["accuracy"] * df["n_rows"]).replace(0, np.nan)
+        denom = (df["accuracy"]*df["n_rows"]).replace(0, np.nan)
     elif "n_items" in df:
-        denom = (df["accuracy"] * df["n_items"]).replace(0, np.nan)
+        denom = (df["accuracy"]*df["n_items"]).replace(0, np.nan)
     else:
         return df
 
@@ -93,7 +93,7 @@ def add_cost_per_correct(token_df: pd.DataFrame) -> pd.DataFrame:
 def add_risk_adjusted_efficiency(
     df: pd.DataFrame,
     rescue_col: str = "rescue_rate",
-    extra_err_col: str = "extra_err_rate",   # <- changed default
+    extra_err_col: str = "extra_err_rate",
     tokens_mean_col: str = "tokens_per_sample_mean",
     lam: float = 1.0,
     out_col: str = "rae_lambda"
@@ -109,7 +109,7 @@ def add_risk_adjusted_efficiency(
 
 
 
-def compute_token_economics(
+def compute_token_analysis(
     merged_df: pd.DataFrame,
     pricing: Optional[TokenPricing] = None,
     rescue_stats_all: Optional[Dict[str, pd.DataFrame]] = None,
@@ -166,7 +166,6 @@ def compute_token_economics(
         preds = merged_df[p].astype(str)
         n_calls = int(preds.notna().sum())
 
-        # accuracy
         if y_true is not None:
             acc = (preds == y_true).mean()
             n_correct = int((preds == y_true).sum())
@@ -174,7 +173,6 @@ def compute_token_economics(
             acc = np.nan
             n_correct = 0
 
-        # tokens (wide style)
         tok_df = _gather_tokens_from_merged(merged_df, p)
         if tok_df is not None and not tok_df.empty:
             pt_mean = float(tok_df["prompt_tokens"].mean())
@@ -187,7 +185,6 @@ def compute_token_economics(
         tokens_ps = (pt_mean + ct_mean) if np.isfinite(pt_mean) and np.isfinite(ct_mean) else np.nan
         total_tokens = (pt_sum + ct_sum) if np.isfinite(pt_sum) and np.isfinite(ct_sum) else np.nan
 
-        # cost
         if pricing and np.isfinite(tokens_ps):
             cost_ps = (pt_mean/1000.0)*pricing.prompt_per_1k + (ct_mean/1000.0)*pricing.completion_per_1k
             total_cost = (pt_sum/1000.0)*pricing.prompt_per_1k + (ct_sum/1000.0)*pricing.completion_per_1k
@@ -197,12 +194,10 @@ def compute_token_economics(
 
         eff_1k = (100.0*acc/tokens_ps*1000.0) if (np.isfinite(acc) and np.isfinite(tokens_ps) and tokens_ps > 0) else np.nan
 
-        # ΔCost/ΔAcc vs baseline (only if both baseline acc and (tokens or $) exist)
         if np.isfinite(baseline_acc) and np.isfinite(acc) and (acc != baseline_acc):
             if pricing and np.isfinite(cost_ps) and np.isfinite(base_cost_ps):
                 delta_cost_per_acc_pt = (cost_ps - base_cost_ps) / (100.0*(acc - baseline_acc))
             elif np.isfinite(tokens_ps) and np.isfinite(base_tokens_ps):
-                # token-only version if $ unavailable
                 delta_cost_per_acc_pt = (tokens_ps - base_tokens_ps) / (100.0*(acc - baseline_acc))
             else:
                 delta_cost_per_acc_pt = np.nan
@@ -233,7 +228,6 @@ def compute_token_economics(
 
     per_profile = pd.DataFrame(rows)
 
-    # ---- (optional) bring rescue/extra-error to compute RAE ----
     if rescue_stats_all:
         rs_list = []
         for df in rescue_stats_all.values():
@@ -269,9 +263,7 @@ def compute_token_economics(
     return {"per_profile": per_profile, "overall": overall}
 
 
-# ---------------------------
-# File discovery / loading
-# ---------------------------
+
 def find_profile_csv(
     base_dir: str,
     model: str,
@@ -305,9 +297,6 @@ def _read_tokens_csv(path: str) -> pd.DataFrame:
     return df[present] if present else pd.DataFrame()
 
 
-# -----------------------------------
-# Core aggregation per profile (1–2)
-# -----------------------------------
 def collect_token_usage_from_files(
     profiles: Sequence[str],
     base_dir: str,
@@ -345,15 +334,12 @@ def collect_token_usage_from_files(
         if df.empty:
             continue
 
-        # Build derived columns even if tokens_used already equals prompt+completion
         df["_tokens_sum_pc"] = df.get("prompt_tokens", 0) + df.get("completion_tokens", 0)
 
-        # Optional seed/fold grouping if present
         gcols = [c for c in (groupby_cols or []) if c in df.columns]
         if gcols:
             g = df.groupby(gcols, dropna=False)
         else:
-            # fake single group
             df["_const"] = 1
             g = df.groupby("_const")
 
@@ -370,11 +356,10 @@ def collect_token_usage_from_files(
             n_rows=("tokens_used", "size"),
         ).reset_index(drop=False)
 
-        # Add the profile column and rename primaries to our canonical names
         agg.insert(0, "profile", pk)
-        agg["tokens_per_sample_mean"] = agg["tokens_pc_mean"]    # (1)  \bar{T}
-        agg["tokens_total_sum"]       = agg["tokens_pc_sum"]     # (2)  T_total
-        agg["tokens_gap_sum"]         = agg["tokens_used_sum"] - agg["tokens_pc_sum"]
+        agg["tokens_per_sample_mean"] = agg["tokens_pc_mean"]
+        agg["tokens_total_sum"] = agg["tokens_pc_sum"]
+        agg["tokens_gap_sum"] = agg["tokens_used_sum"]-agg["tokens_pc_sum"]
 
         rows.append(agg)
 
@@ -383,10 +368,8 @@ def collect_token_usage_from_files(
 
     out = pd.concat(rows, ignore_index=True)
 
-    # Indexing
     index_cols = ["profile"] + [c for c in (groupby_cols or []) if c in out.columns]
     out = out.set_index(index_cols).sort_index()
-    # Keep a clean column order
     preferred = [
         "tokens_per_sample_mean", "tokens_total_sum",
         "prompt_tokens_mean", "completion_tokens_mean",
@@ -398,9 +381,6 @@ def collect_token_usage_from_files(
     return out[cols]
 
 
-# ----------------------------------------------------
-# Accuracy join + efficiency (6) + CPC (4) and $
-# ----------------------------------------------------
 def attach_accuracy(
     token_df: pd.DataFrame,
     merged_df: pd.DataFrame
@@ -416,7 +396,7 @@ def attach_accuracy(
     }
     n = len(merged_df)
     token_df["accuracy"] = pd.Series(acc).reindex(token_df.index.get_level_values("profile")).values
-    token_df["n_items"] = n  # per profile run length
+    token_df["n_items"]=n
     return token_df
 
 
@@ -437,11 +417,9 @@ def compute_cost_columns(
     cr = float(price_per_1k.get("completion", 0.0))
     df = token_df.copy()
 
-    # Per-sample mean cost
     if "prompt_tokens_mean" in df and "completion_tokens_mean" in df:
         df["cost_sample_mean"] = (df["prompt_tokens_mean"]/1000.0)*pr + (df["completion_tokens_mean"]/1000.0)*cr
 
-    # Total cost
     if "prompt_tokens_sum" in df and "completion_tokens_sum" in df:
         df["cost_total"] = (df["prompt_tokens_sum"]/1000.0)*pr + (df["completion_tokens_sum"]/1000.0)*cr
 
@@ -469,7 +447,7 @@ def add_cost_per_correct(
 ) -> pd.DataFrame:
     """
     Adds:
-      cost_per_correct = cost_total / (#correct)                                 (4)
+      cost_per_correct = cost_total / (#correct)
     Requires cost_total + n_rows + accuracy (to get #correct).
     """
     df = token_df.copy()
@@ -479,9 +457,6 @@ def add_cost_per_correct(
     return df
 
 
-# --------------------------------------------------------
-# Marginal cost per accuracy point (5) between A and B
-# --------------------------------------------------------
 def marginal_cost_per_accuracy_point(
     row_A: pd.Series,
     row_B: pd.Series,
@@ -505,9 +480,6 @@ def marginal_cost_per_accuracy_point(
     return float(dcost / dacc)
 
 
-# --------------------------------------------------------
-# Risk-adjusted efficiency (7)
-# --------------------------------------------------------
 def add_risk_adjusted_efficiency(
     df: pd.DataFrame,
     rescue_col: str = "rescue_rate",
@@ -528,9 +500,6 @@ def add_risk_adjusted_efficiency(
     return out
 
 
-# --------------------------------------------------------
-# High-level convenience to assemble a per-profile table
-# --------------------------------------------------------
 def build_profile_cost_table(
     merged_df: pd.DataFrame,
     base_dir: str,
@@ -569,7 +538,6 @@ def build_profile_cost_table(
     tok = add_efficiency_columns(tok)
     tok = add_cost_per_correct(tok)
 
-    # Attach rescue/extra-error if provided
     if rescue_extra_df is not None:
         k, rk, ek = rescue_key_map
         if k in rescue_extra_df.columns:
@@ -586,7 +554,6 @@ def build_profile_cost_table(
                                                    tokens_mean_col="tokens_per_sample_mean",
                                                    lam=float(rae_lambda), out_col=f"rae_lambda_{rae_lambda:g}").set_index(tok.index.names)
 
-    # Reorder columns for readability
     preferred = [
         "accuracy",
         "tokens_per_sample_mean", "tokens_total_sum",
@@ -599,9 +566,6 @@ def build_profile_cost_table(
     return tok[cols]
 
 
-# --------------------------------------------------------
-# Trait-level aggregation (CIs across profiles)
-# --------------------------------------------------------
 def summarize_by_trait(
     profile_table: pd.DataFrame,
     person_set,
@@ -615,8 +579,6 @@ def summarize_by_trait(
 
     Output columns: <metric>_mean, <metric>_ci
     """
-    from scipy.stats import t
-    # map profile -> trait value
     prof_to_trait = {}
     for pid, meta in person_set.metadata.items():
         if pid in profile_table.index.get_level_values("profile"):

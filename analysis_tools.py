@@ -277,26 +277,31 @@ def guarded_labelspace_analysis(
     """
     n_labels = len(case.valid_labels)
     if n_labels == 2:
-        return analysis_func(
-            merged_df,
-            person_set=person_set,
-            case=case,
-            baseline_col=baseline_col,
-            profile_prefix=profile_prefix,
-            **kwargs
-        )
+            return analysis_func(
+                merged_df,
+                person_set=person_set,
+                case=case,
+                baseline_col=baseline_col,
+                profile_prefix=profile_prefix,
+                **kwargs
+            )
     elif n_labels > 2:
         print(f"[INFO] Multi-class label space detected ({n_labels} labels). Binarizing for analysis.")
+
         df_bin = merged_df.copy()
         for p in [c for c in merged_df.columns if c.startswith(profile_prefix)]:
             df_bin[p] = (merged_df[p] == merged_df["true_label"]).astype(int)
+        
+        df_bin[baseline_col] = (merged_df[baseline_col] == merged_df["true_label"]).astype(int)
+        
         df_bin["true_label"] = 1
         case_bin = case.copy(update={
             "case_name": case.case_name + "_binarized",
             "valid_labels": [1, 0],
             "label_map": {"1": "1", "0": "0"},
-            "label_col": "true_label"
+            "label_col": "true_label",
         })
+        
         return analysis_func(
             df_bin,
             person_set=person_set,
@@ -316,7 +321,8 @@ def resolve_plot_dir(
     plots_root: Optional[str] = None,
     strategy: Optional[str] = None,   # e.g., "zero_shot", "few_shot", "cot"
     stage: Optional[str] = None,      # e.g., "preliminary", "tier1", "tier2"
-    extra_subdir: Optional[str] = None
+    extra_subdir: Optional[str] = None,
+    sub_case: Optional[str] = None,
 ) -> str:
     """
     Build: <plots_root or 'results/figs'>/[strategy]/<case_name>/[stage]/[extra_subdir]
@@ -328,6 +334,8 @@ def resolve_plot_dir(
     if strategy:
         parts.append(strategy)
     parts.append(case_name)
+    if sub_case:
+        parts.append(sub_case)
     if stage:
         parts.append(stage)
     if extra_subdir:
