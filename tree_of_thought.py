@@ -9,7 +9,7 @@ import pandas as pd
 from collections import defaultdict
 from pydantic import BaseModel, Field
 from cases.get_case_config import get_case_config
-from cases.cases_config import CaseConfig, ThoughtOutput
+from cases.cases_config import CaseConfig
 from cases.stereotypes_case import stereotypes_case
 from cases.manipulation_case import manipulation_case
 import json
@@ -17,6 +17,10 @@ import json
 DEFAULT_MODEL_DICT = {
     'default': 'gpt-4o-mini',
 }
+
+class ThoughtOutput(BaseModel):
+    thought: str = Field(..., description="The reasoning step or reflection")
+    label: Optional[str] = Field(None, description="Optional label (e.g., 'Yes' or 'No')")
 
 class ThoughtState(Enum):
     PENDING = "pending"

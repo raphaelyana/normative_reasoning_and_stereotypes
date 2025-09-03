@@ -1,1355 +1,906 @@
-import os
-import glob
-import json
-from collections import Counter
-import itertools
-from itertools import combinations, product
-from typing import List, Dict, Any, Tuple, Optional
-from enum import Enum
+import os, re, sys, json
+from itertools import combinations
+from typing import Dict, Iterable, Optional, Tuple
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
 
-from sklearn.metrics import accuracy_score, silhouette_score
-from sklearn.model_selection import KFold
-from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import LabelEncoder
+import scipy
+from scipy.stats import norm
+from scipy.special import expit, logit
 
-from scipy import stats
-from statsmodels.stats.contingency_tables import mcnemar
-from statsmodels.stats.multitest import multipletests
-from scipy.stats import (
-    bootstrap, f_oneway, ttest_ind, kruskal, mannwhitneyu, pearsonr
-)
-from statsmodels.formula.api import ols
 import statsmodels.api as sm
-from statsmodels.stats.anova import anova_lm
-from statsmodels.stats.multicomp import pairwise_tukeyhsd
+import statsmodels.formula.api as smf
+from statsmodels.stats.multitest import multipletests
 
-from scipy.spatial.distance import squareform
-from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
+from patsy import dmatrix
 
-
-from analysis_tools import get_available_traits, get_analysis_group_keys, guarded_labelspace_analysis, resolve_plot_dir
-from analysis_0 import *
-from profiles.profile_sets import PERSON_SYSTEMATIC
+from analysis_tools import get_analysis_group_keys, resolve_plot_dir
 from profiles.schema import PersonSet
 from cases.cases_config import CaseConfig
 
-from tokens_metrics import TokenPricing, compute_token_economics
+from plot_tools import apply_neurips_figure_style, new_pub_fig
 
 
+def _resolve_group_keys(person_set: PersonSet, group_keys):
+    if group_keys is None or (isinstance(group_keys, str) and group_keys.upper() == "AUTO"):
+        return tuple(get_analysis_group_keys(person_set))
+    return tuple(group_keys)
 
-def factorial_analysis_nway_anova(
-    merged_df, 
-    group_keys=("gender", "ethnicity", "age"),
-    person_set: PersonSet = None
-):
+
+def _norm_trait(v):
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return "unknown"
+    return str(v).strip().lower()
+
+def _profile_cols(df: pd.DataFrame):
+    return [c for c in df.columns if c.startswith("profile") and "__" not in c]
+
+def to_long_roleplay_only(
+    merged_df: pd.DataFrame,
+    person_set: PersonSet,
+    group_keys: Tuple[str, ...] = ("gender", "ethnicity")
+) -> pd.DataFrame:
     """
-    Configurable N-way ANOVA: Trait x Trait x ... -> Performance Metrics
-    
-    Tests which profile traits (gender, ethnicity, etc.) affect accuracy
-    using proper factorial ANOVA with interaction effects.
-    
-    Parameters:
-    - merged_df: DataFrame containing predictions and true labels
-    - group_keys: tuple of metadata fields to extract and analyze
-    - person_set: PersonSet object containing trait metadata
-
-    Returns:
-    - dict with performance data, anova results, and significant effects
+    Reshape wide merged_df (profile columns) to long:
+      columns required: sample_id, true_label, profileX...
+      adds: correct (0/1) and attached traits from person_set
     """
+    prof_cols = _profile_cols(merged_df)
+    if not {"sample_id", "true_label"}.issubset(merged_df.columns):
+        raise ValueError("merged_df must contain 'sample_id' and 'true_label'")
 
-    def norm_val(v):
-        """Normalize values to lowercase string for ANOVA."""
-        if v == "Unknown":
-            return "unknown"
-        elif isinstance(v, (int, float)):
-            return str(v)
-        else:
-            return str(v).lower()
+    long = merged_df[["sample_id", "true_label"] + prof_cols].melt(
+        id_vars=["sample_id", "true_label"],
+        value_vars=prof_cols,
+        var_name="profile", value_name="pred"
+    )
+    long["correct"] = (long["pred"] == long["true_label"]).astype(int)
 
-    def extract_traits(profile_id):
-        """Get normalized trait values using existing PersonSet.get_traits method."""
-        if person_set is None:
-            return {k: "unknown" for k in group_keys}
-        
-        traits = person_set.get_traits(profile_id, group_keys)
-        return {k: norm_val(traits[k]) for k in group_keys}
-    
-    print(f"=== FACTORIAL ANOVA ANALYSIS ===")
-    print(f"Group keys: {group_keys}")
-    
-    # Get profile columns - same logic as plotting function
-    profile_cols = [col for col in merged_df.columns if col.startswith("profile")]
-    print(f"Found {len(profile_cols)} profile columns")
-    
-    # Extract traits for each profile - same logic as plotting function
-    profile_traits = {}
-    for p in profile_cols:
-        traits = extract_traits(p)
-        profile_traits[p] = traits
-    
-    # Calculate primary performance metric: accuracy
-    performance_data = []
-    for profile in profile_cols:
-        if profile not in merged_df.columns:
-            print(f"WARNING: Profile {profile} not found in merged_df columns")
+    trait_map = {}
+    for p in prof_cols:
+        t = person_set.get_traits(p, group_keys) if person_set is not None else {k: "unknown" for k in group_keys}
+        trait_map[p] = {k: _norm_trait(t.get(k, "unknown")) for k in group_keys}
+    traits_df = pd.DataFrame.from_dict(trait_map, orient="index").reset_index().rename(columns={"index": "profile"})
+    long = long.merge(traits_df, on="profile", how="left")
+
+    long["sample_id"] = long["sample_id"].astype("category")
+    for k in group_keys:
+        long[k] = long[k].astype("category")
+    return long
+
+def drop_saturated(long_df: pd.DataFrame, out_dir: Optional[str] = None) -> pd.DataFrame:
+    """
+    Drop items/profiles that are perfectly separated (all 0s or all 1s).
+    """
+    var_by_item = long_df.groupby("sample_id", observed=False)["correct"].var(ddof=0)
+    sat_items = set(var_by_item.index[var_by_item.fillna(0.0) == 0.0].tolist())
+
+    var_by_prof = long_df.groupby("profile", observed=False)["correct"].var(ddof=0)
+    sat_profiles = set(var_by_prof.index[var_by_prof.fillna(0.0) == 0.0].tolist())
+
+    kept = long_df.loc[~long_df["sample_id"].isin(sat_items) & ~long_df["profile"].isin(sat_profiles)].copy()
+
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+        pd.DataFrame({"sample_id": sorted(sat_items)}).to_csv(
+            os.path.join(out_dir, "dropped_items_saturated.csv"), index=False
+        )
+        pd.DataFrame({"profile": sorted(sat_profiles)}).to_csv(
+            os.path.join(out_dir, "dropped_profiles_saturated.csv"), index=False
+        )
+    print(f"[Separation guard] items dropped: {len(sat_items)}; profiles dropped: {len(sat_profiles)}; "
+          f"rows {len(long_df)} → {len(kept)}")
+    return kept
+
+def make_formula(traits: Tuple[str, ...], references: Optional[Dict[str, str]] = None) -> str:
+    """
+    Build a logistic-GLM formula with optional explicit Treatment references.
+    If 'references' is provided, we inject the baseline in each C(...).
+    """
+    references = references or {}
+
+    def Cref(k: str) -> str:
+        ref = references.get(k, None)
+        return (f"C({k}, Treatment(reference='{ref}'))" if ref is not None else f"C({k})")
+
+    mains = [Cref(k) for k in traits]
+    inters = []
+    for a, b in combinations(traits, 2):
+        Ca = Cref(a)
+        Cb = Cref(b)
+        inters.append(f"{Ca}:{Cb}")
+    return "correct ~ " + " + ".join(mains + inters)
+
+
+def _baseline_row_from_model(res):
+    df = res.model.data.frame
+    endog = getattr(res.model, "endog_names", None)
+    row = {}
+    for c in df.columns:
+        if c == endog:
             continue
-            
-        # Calculate accuracy with error checking
-        predictions = merged_df[profile]
-        true_labels = merged_df['true_label']
-        
-        # Check for missing values
-        if predictions.isna().any() or true_labels.isna().any():
-            print(f"WARNING: Missing values found in {profile}")
-            accuracy = (predictions == true_labels).mean()
+        s = df[c]
+        if pd.api.types.is_categorical_dtype(s):
+            row[c] = s.cat.categories[0]
+        elif pd.api.types.is_numeric_dtype(s):
+            row[c] = float(pd.to_numeric(s, errors="coerce").mean())
         else:
-            accuracy = (predictions == true_labels).mean()
-        
-        # Check for invalid accuracy values
-        if pd.isna(accuracy) or np.isinf(accuracy):
-            print(f"ERROR: Invalid accuracy for {profile}: {accuracy}")
-            accuracy = 0.0  # Set to default value
-            
-        # Build row with traits
-        row = {
-            'profile': profile,
-            'accuracy': accuracy,
-        }
-        row.update(profile_traits[profile])
-        performance_data.append(row)
+            vals = pd.unique(s.dropna())
+            row[c] = vals[0] if len(vals) else None
+    return row
 
-    performance_df = pd.DataFrame(performance_data)
-    
-    # ========================================================================
-    # DATA VALIDATION AND CLEANING
-    # ========================================================================
-    
-    print(f"\nPerformance data shape: {performance_df.shape}")
-    print(f"Traits found: {[col for col in performance_df.columns if col in group_keys]}")
-    
-    # Check for problematic values
-    print(f"\n=== DATA VALIDATION ===")
-    print(f"Accuracy range: {performance_df['accuracy'].min():.6f} - {performance_df['accuracy'].max():.6f}")
-    print(f"Missing values in accuracy: {performance_df['accuracy'].isna().sum()}")
-    print(f"Infinite values in accuracy: {np.isinf(performance_df['accuracy']).sum()}")
-    
-    # Check for zero variance groups
-    zero_var_groups = []
-    for trait in group_keys:
-        if trait in performance_df.columns:
-            group_vars = performance_df.groupby(trait)['accuracy'].var()
-            zero_var = group_vars[group_vars == 0.0]
-            if len(zero_var) > 0:
-                zero_var_groups.append((trait, zero_var.index.tolist()))
-                print(f"WARNING: Zero variance in {trait} groups: {zero_var.index.tolist()}")
-    
-    # Clean data: remove rows with invalid accuracy values
-    valid_mask = ~(pd.isna(performance_df['accuracy']) | np.isinf(performance_df['accuracy']))
-    if not valid_mask.all():
-        print(f"Removing {(~valid_mask).sum()} rows with invalid accuracy values")
-        performance_df = performance_df[valid_mask].reset_index(drop=True)
-    
-    # Display summary statistics
-    print(f"\n=== SUMMARY STATISTICS ===")
-    for trait in group_keys:
-        if trait in performance_df.columns:
-            print(f"{trait.upper()}:")
-            summary = performance_df.groupby(trait)['accuracy'].agg(['count', 'mean', 'std'])
-            print(summary)
-            print()
-    
-    # ========================================================================
-    # FACTORIAL ANOVA ANALYSIS
-    # ========================================================================
-    
-    results = {}
-    dependent_var = 'accuracy'  # Focus on accuracy as main metric
-    
-    print(f"\n{'='*60}")
-    print(f"FACTORIAL ANOVA: {dependent_var.upper()}")
-    print(f"{'='*60}")
-    
-    # Check if we have enough data for ANOVA
-    valid_traits = []
-    for trait in group_keys:
-        if trait in performance_df.columns:
-            unique_vals = performance_df[trait].dropna().unique()
-            if len(unique_vals) >= 2:
-                valid_traits.append(trait)
-                
-                # Check sample sizes per group
-                group_sizes = performance_df.groupby(trait).size()
-                min_size = group_sizes.min()
-                max_size = group_sizes.max()
-                
-                print(f"{trait}: {len(unique_vals)} levels: {list(unique_vals)}")
-                print(f"  Sample sizes: min={min_size}, max={max_size}, per group: {dict(group_sizes)}")
-                
-                # Check variance within groups
-                group_vars = performance_df.groupby(trait)[dependent_var].var()
-                min_var = group_vars.min()
-                max_var = group_vars.max()
-                
-                if min_var < 1e-6:
-                    print(f"  WARNING: Very low variance detected (min={min_var:.2e}). Post-hoc tests may be unreliable.")
-                
-                # Check for extreme outliers
-                q1 = performance_df.groupby(trait)[dependent_var].quantile(0.25)
-                q3 = performance_df.groupby(trait)[dependent_var].quantile(0.75)
-                iqr = q3 - q1
-                outliers = performance_df.groupby(trait).apply(
-                    lambda x: ((x[dependent_var] < (q1[x.name] - 1.5 * iqr[x.name])) | 
-                              (x[dependent_var] > (q3[x.name] + 1.5 * iqr[x.name]))).sum()
-                )
-                if outliers.sum() > 0:
-                    print(f"  INFO: Outliers detected per group: {dict(outliers[outliers > 0])}")
-                
-            else:
-                print(f"WARNING: {trait} has insufficient levels ({len(unique_vals)}) for ANOVA")
-    
-    if len(valid_traits) == 0:
-        print("ERROR: No valid traits found for ANOVA analysis")
-        return {
-            'performance_data': performance_df,
-            'anova_results': {},
-            'significant_effects': [],
-            'profile_traits': profile_traits,
-            'error': 'No valid traits for analysis'
-        }
-    
-    # ========================================================================
-    # PROPER FACTORIAL ANOVA USING STATSMODELS
-    # ========================================================================
-    
-    anova_results = {}
-    
-    try:
-        # Build formula for factorial ANOVA
-        # Create formula with all main effects and interactions
-        if len(valid_traits) == 1:
-            formula = f"{dependent_var} ~ C({valid_traits[0]})"
-        elif len(valid_traits) == 2:
-            t1, t2 = valid_traits[0], valid_traits[1]
-            formula = f"{dependent_var} ~ C({t1}) + C({t2}) + C({t1}):C({t2})"
-        elif len(valid_traits) == 3:
-                t1, t2, t3 = valid_traits[0], valid_traits[1], valid_traits[2]
-                # Check if we have enough degrees of freedom for full model
-                n_params = (len(performance_df[t1].unique()) - 1) + \
-                          (len(performance_df[t2].unique()) - 1) + \
-                          (len(performance_df[t3].unique()) - 1) + \
-                          (len(performance_df[t1].unique()) - 1) * (len(performance_df[t2].unique()) - 1) + \
-                          (len(performance_df[t1].unique()) - 1) * (len(performance_df[t3].unique()) - 1) + \
-                          (len(performance_df[t2].unique()) - 1) * (len(performance_df[t3].unique()) - 1) + \
-                          (len(performance_df[t1].unique()) - 1) * (len(performance_df[t2].unique()) - 1) * (len(performance_df[t3].unique()) - 1)
-                
-                df_resid = len(performance_df) - n_params - 1
-                print(f"Model complexity check: {n_params} parameters, {len(performance_df)} observations, {df_resid} residual df")
-                
-                if df_resid <= 5:  # Too few degrees of freedom
-                    print(f"WARNING: Insufficient degrees of freedom ({df_resid}). Using simplified model.")
-                    formula = f"{dependent_var} ~ C({t1}) + C({t2}) + C({t3}) + C({t1}):C({t2}) + C({t1}):C({t3}) + C({t2}):C({t3})"
-                    print("Removing 3-way interaction to preserve degrees of freedom")
-                else:
-                    formula = f"{dependent_var} ~ C({t1}) + C({t2}) + C({t3}) + C({t1}):C({t2}) + C({t1}):C({t3}) + C({t2}):C({t3}) + C({t1}):C({t2}):C({t3})"
-        else:
-            # For more than 3 traits, just do main effects and 2-way interactions
-            main_effects = " + ".join([f"C({trait})" for trait in valid_traits])
-            interactions = " + ".join([f"C({t1}):C({t2})" for t1, t2 in itertools.combinations(valid_traits, 2)])
-            formula = f"{dependent_var} ~ {main_effects} + {interactions}"
-        
-        print(f"ANOVA Formula: {formula}")
-        
-        # Additional data validation before fitting
-        print(f"\nPre-ANOVA validation:")
-        print(f"  Data shape: {performance_df.shape}")
-        print(f"  Accuracy stats: mean={performance_df['accuracy'].mean():.6f}, std={performance_df['accuracy'].std():.6f}")
-        
-        # Check if we have sufficient variation for ANOVA
-        overall_var = performance_df['accuracy'].var()
-        if overall_var < 1e-10:
-            raise ValueError(f"Insufficient variance in accuracy data (var={overall_var:.2e})")
-        
-        # Fit the model with fallback options
-        model = None
-        for attempt in range(3):
+def _exog_from_rows(res, rows: list[dict]) -> np.ndarray:
+    """Build design rows using the model's DesignInfo (no string parsing)."""
+    DI = res.model.data.design_info
+    new = pd.DataFrame(rows)
+    fit = res.model.data.frame
+    for c in new.columns:
+        if c in fit.columns and pd.api.types.is_categorical_dtype(fit[c]):
+            new[c] = pd.Categorical(new[c], categories=list(fit[c].cat.categories))
+    X = dmatrix(DI, new, return_type="dataframe")
+    return np.asarray(X)
+
+
+
+def wald_block_tests(res, traits: Tuple[str, ...], n_clusters: Optional[int] = None) -> pd.DataFrame:
+    """
+    Joint block tests with small-sample F-approximation (when available).
+    Reports test type (F), stat, df1, df2).
+    """
+    if n_clusters is not None and n_clusters < 30:
+        print(f"[warn] Only {n_clusters} clusters; using F-approximation for joint tests.")
+
+    df_fit = res.model.data.frame
+    base = _baseline_row_from_model(res)
+    blocks = []
+
+    def _add_block(label: str, R: np.ndarray):
+        wt = res.wald_test(R, use_f=True, scalar=True) 
+        stat = float(wt.statistic)
+        pval = float(wt.pvalue)
+        df_num = int(getattr(wt, "df_num", R.shape[0]) or R.shape[0])
+        df_den = getattr(wt, "df_denom", None)
+        test = "F" if df_den is not None else "chi2"
+        row = {"block": label, "test": test, "stat": stat, "df1": df_num, "p": pval}
+        if df_den is not None:
             try:
-                print(f"Attempting model fit (attempt {attempt + 1}): {formula}")
-                model = ols(formula, data=performance_df).fit()
-                anova_table = anova_lm(model, typ=2)  # Type II ANOVA
-                break
-            except (np.linalg.LinAlgError, ValueError) as e:
-                print(f"  Model fit failed: {e}")
-                if attempt == 0 and len(valid_traits) == 3:
-                    # Remove 3-way interaction
-                    t1, t2, t3 = valid_traits[0], valid_traits[1], valid_traits[2]
-                    formula = f"{dependent_var} ~ C({t1}) + C({t2}) + C({t3}) + C({t1}):C({t2}) + C({t1}):C({t3}) + C({t2}):C({t3})"
-                    print(f"  Trying without 3-way interaction: {formula}")
-                elif attempt == 1:
-                    # Remove all interactions, main effects only
-                    main_effects = " + ".join([f"C({trait})" for trait in valid_traits])
-                    formula = f"{dependent_var} ~ {main_effects}"
-                    print(f"  Trying main effects only: {formula}")
-                else:
-                    print("  All model fitting attempts failed")
-                    raise e
-        
-        if model is None:
-            raise ValueError("Could not fit any ANOVA model")
-        
-        print(f"\nANOVA Results:")
-        print(anova_table)
-        
-        # Store results
-        anova_results['formula'] = formula
-        anova_results['anova_table'] = anova_table
-        anova_results['model_summary'] = model.summary()
-        anova_results['r_squared'] = model.rsquared
-        anova_results['adj_r_squared'] = model.rsquared_adj
-        
-        # Extract significant effects
-        significant_effects = []
-        for effect in anova_table.index:
-            if effect != 'Residual':
-                p_value = anova_table.loc[effect, 'PR(>F)']
-                if p_value < 0.05:
-                    significant_effects.append({
-                        'effect': effect,
-                        'f_statistic': anova_table.loc[effect, 'F'],
-                        'p_value': p_value,
-                        'eta_squared': anova_table.loc[effect, 'sum_sq'] / anova_table['sum_sq'].sum()
-                    })
-        
-        anova_results['significant_effects'] = significant_effects
-        
-        print(f"\nSignificant Effects (p < 0.05):")
-        for effect in significant_effects:
-            print(f"  {effect['effect']}: F={effect['f_statistic']:.3f}, p={effect['p_value']:.4f}, η²={effect['eta_squared']:.3f}")
-        
-    except Exception as e:
-        print(f"ERROR in ANOVA analysis: {str(e)}")
-        anova_results['error'] = str(e)
-        significant_effects = []
-    
-    # ========================================================================
-    # POST-HOC ANALYSIS FOR SIGNIFICANT MAIN EFFECTS
-    # ========================================================================
-    
-    posthoc_results = {}
-    
-    if 'significant_effects' in anova_results:
-        for effect_info in anova_results['significant_effects']:
-            effect_name = effect_info['effect']
-            
-            # Check if it's a main effect (single trait, not interaction)
-            if ':' not in effect_name and effect_name.startswith('C(') and effect_name.endswith(')'):
-                trait = effect_name[2:-1]  # Remove 'C(' and ')'
-                
-                print(f"\nPost-hoc analysis for {trait}:")
-                
-                try:
-                    # Use Bonferroni correction instead of Tukey for more robust results
-                    from scipy.stats import ttest_ind
-                    from itertools import combinations
-                    
-                    groups = performance_df.groupby(trait)[dependent_var].apply(list)
-                    group_names = list(groups.index)
-                    
-                    # Pairwise t-tests with Bonferroni correction
-                    n_comparisons = len(group_names) * (len(group_names) - 1) // 2
-                    alpha_corrected = 0.05 / n_comparisons
-                    
-                    print(f"  Pairwise comparisons with Bonferroni correction (α = {alpha_corrected:.4f}):")
-                    
-                    comparisons = []
-                    for g1, g2 in combinations(group_names, 2):
-                        data1 = groups[g1]
-                        data2 = groups[g2]
-                        
-                        if len(data1) > 1 and len(data2) > 1:
-                            t_stat, p_val = ttest_ind(data1, data2)
-                            mean_diff = np.mean(data2) - np.mean(data1)
-                            significant = p_val < alpha_corrected
-                            
-                            comparisons.append({
-                                'group1': g1,
-                                'group2': g2,
-                                'mean1': np.mean(data1),
-                                'mean2': np.mean(data2),
-                                'mean_diff': mean_diff,
-                                't_stat': t_stat,
-                                'p_value': p_val,
-                                'significant': significant
-                            })
-                            
-                            sig_marker = "***" if significant else ""
-                            print(f"    {g1} vs {g2}: t={t_stat:.3f}, p={p_val:.4f} {sig_marker}")
-                    
-                    posthoc_results[trait] = {
-                        'method': 'bonferroni',
-                        'alpha_corrected': alpha_corrected,
-                        'comparisons': comparisons
-                    }
-                    
-                except Exception as e:
-                    print(f"  ERROR in post-hoc analysis for {trait}: {str(e)}")
-                    
-                    # Fallback: try Tukey with warnings suppressed
-                    try:
-                        import warnings
-                        with warnings.catch_warnings():
-                            warnings.simplefilter("ignore")
-                            tukey_result = pairwise_tukeyhsd(
-                                performance_df[dependent_var], 
-                                performance_df[trait], 
-                                alpha=0.05
-                            )
-                            print(f"  Tukey HSD (with warnings suppressed):")
-                            print(tukey_result)
-                            posthoc_results[trait] = {
-                                'method': 'tukey_suppressed',
-                                'tukey_summary': str(tukey_result)
-                            }
-                    except Exception as e2:
-                        print(f"  Both Bonferroni and Tukey failed: {str(e2)}")
-                        posthoc_results[trait] = {'error': str(e)}
-    
-    # ========================================================================
-    # EFFECT SIZE CALCULATIONS
-    # ========================================================================
-    
-    effect_sizes = {}
-    
-    for trait in valid_traits:
-        groups = performance_df.groupby(trait)[dependent_var].apply(list)
-        if len(groups) == 2:
-            # Cohen's d for two groups
-            group_names = list(groups.index)
-            g1, g2 = groups.iloc[0], groups.iloc[1]
-            
-            if len(g1) > 0 and len(g2) > 0:
-                pooled_std = np.sqrt(((len(g1) - 1) * np.var(g1, ddof=1) + 
-                                    (len(g2) - 1) * np.var(g2, ddof=1)) / 
-                                   (len(g1) + len(g2) - 2))
-                cohens_d = (np.mean(g2) - np.mean(g1)) / pooled_std
-                
-                effect_sizes[trait] = {
-                    'type': 'cohens_d',
-                    'value': cohens_d,
-                    'group1': group_names[0],
-                    'group2': group_names[1],
-                    'group1_mean': np.mean(g1),
-                    'group2_mean': np.mean(g2),
-                    'interpretation': ('Small' if abs(cohens_d) < 0.5 else 
-                                     'Medium' if abs(cohens_d) < 0.8 else 'Large')
-                }
-        
-        elif len(groups) > 2:
-            # Eta-squared is already calculated in ANOVA table
-            if 'anova_table' in anova_results:
-                effect_name = f"C({trait})"
-                if effect_name in anova_results['anova_table'].index:
-                    eta_sq = (anova_results['anova_table'].loc[effect_name, 'sum_sq'] / 
-                             anova_results['anova_table']['sum_sq'].sum())
-                    effect_sizes[trait] = {
-                        'type': 'eta_squared',
-                        'value': eta_sq,
-                        'interpretation': ('Small' if eta_sq < 0.06 else 
-                                         'Medium' if eta_sq < 0.14 else 'Large')
-                    }
-    
-    print(f"\n=== EFFECT SIZES ===")
-    for trait, effect_info in effect_sizes.items():
-        print(f"{trait}: {effect_info['type']} = {effect_info['value']:.3f} ({effect_info['interpretation']})")
-    
-    # ========================================================================
-    # FINAL SUMMARY
-    # ========================================================================
-    
-    print(f"\n{'='*60}")
-    print(f"FACTORIAL ANOVA SUMMARY")
-    print(f"{'='*60}")
-    print(f"Total profiles analyzed: {len(performance_df)}")
-    print(f"Traits analyzed: {', '.join(valid_traits)}")
-    
-    if 'significant_effects' in anova_results:
-        print(f"Significant effects found: {len(anova_results['significant_effects'])}")
-        if 'r_squared' in anova_results:
-            print(f"Model R²: {anova_results['r_squared']:.3f}")
-            print(f"Adjusted R²: {anova_results['adj_r_squared']:.3f}")
+                row["df2"] = float(df_den)
+            except Exception:
+                row["df2"] = None
+        else:
+            row["df2"] = None
+        blocks.append(row)
+
+    for k in traits:
+        if k not in df_fit.columns or not pd.api.types.is_categorical_dtype(df_fit[k]):
+            continue
+        levels = list(df_fit[k].cat.categories)
+        if len(levels) < 2:
+            continue
+        R = []
+        for lv in levels[1:]:
+            r0 = base.copy()
+            r1 = base.copy(); r1[k] = lv
+            X = _exog_from_rows(res, [r1, r0])
+            R.append((X[0] - X[1]))
+        R = np.vstack(R)
+        _add_block(f"main:C({k})", R)
+
+    for i in range(len(traits)):
+        for j in range(i+1, len(traits)):
+            a, b = traits[i], traits[j]
+            if any(t not in df_fit.columns or not pd.api.types.is_categorical_dtype(df_fit[t]) for t in (a, b)):
+                continue
+            A = list(df_fit[a].cat.categories)
+            B = list(df_fit[b].cat.categories)
+            if len(A) < 2 or len(B) < 2:
+                continue
+            R = []
+            for ai in A[1:]:
+                for bj in B[1:]:
+                    r00 = base.copy()
+                    r10 = base.copy(); r10[a] = ai
+                    r01 = base.copy(); r01[b] = bj
+                    r11 = base.copy(); r11[a] = ai; r11[b] = bj
+                    X = _exog_from_rows(res, [r11, r10, r01, r00])
+                    L = (X[0] - X[1]) - (X[2] - X[3])
+                    R.append(L)
+            R = np.vstack(R)
+            _add_block(f"inter:C({a}):C({b})", R)
+
+    cols = ["block", "test", "stat", "df1", "df2", "p"]
+    return (pd.DataFrame(blocks, columns=cols).sort_values("p").reset_index(drop=True)
+            if blocks else pd.DataFrame(columns=cols))
+
+
+def pairwise_contrasts_fdr(res, factor: str, df_design: pd.DataFrame) -> pd.DataFrame:
+    if factor not in df_design.columns or not pd.api.types.is_categorical_dtype(df_design[factor]):
+        return pd.DataFrame()
+    levels = list(df_design[factor].cat.categories)
+    if len(levels) < 2: return pd.DataFrame()
+
+    beta, V = res.params.values, res.cov_params().values
+    base_row = _baseline_row_from_model(res)
+
+    out = []
+    for i in range(len(levels)):
+        for j in range(i+1, len(levels)):
+            li, lj = levels[i], levels[j]
+            r1 = base_row.copy(); r1[factor] = li
+            r2 = base_row.copy(); r2[factor] = lj
+            X = _exog_from_rows(res, [r1, r2])
+            L = (X[0] - X[1]).reshape(1, -1)
+
+            est = float(L @ beta)
+            se  = float(np.sqrt(L @ V @ L.T))
+            wt  = res.wald_test(L, use_f=True, scalar=True)
+            p   = float(wt.pvalue)
+            df2 = getattr(wt, "df_denom", np.nan)
+
+            out.append({
+                "factor": factor, "level_i": li, "level_j": lj,
+                "logit_diff": est, "OR_ratio": np.exp(est),
+                "se": se, "stat": float(wt.statistic), "df2": float(df2), "p": p
+            })
+
+    tab = pd.DataFrame(out)
+    if len(tab):
+        tab["q"] = multipletests(tab["p"].values, method="fdr_bh")[1]
+        tab = tab.sort_values(["q", "p", "factor", "level_i", "level_j"]).reset_index(drop=True)
+    return tab
+
+
+def _set_ordered_categories(
+    long: pd.DataFrame,
+    group_keys: Tuple[str, ...],
+    reference_levels: Optional[Dict[str, str]] = None,
+) -> Tuple[pd.DataFrame, Dict[str, str], Dict[str, list]]:
+    """
+    Ensure each group factor is categorical with desired ordering and a clear baseline.
+    Moves 'unknown' (case-insensitive) to the end if present.
+    Returns (long_df, chosen_refs, ordered_levels).
+    """
+    reference_levels = reference_levels or {}
+    chosen_refs: Dict[str, str] = {}
+    ordered_levels: Dict[str, list] = {}
+
+    for k in group_keys:
+        if k not in long.columns:
+            continue
+
+        if not pd.api.types.is_categorical_dtype(long[k]):
+            long[k] = long[k].astype("category")
+
+        levels = list(long[k].cat.categories.astype(str))
+
+        if k.lower() == "age":
+            try:
+                levels_sorted = sorted(levels, key=lambda s: int(str(s)))
+            except Exception:
+                levels_sorted = levels[:]
+        else:
+            levels_sorted = levels[:]
+
+        unk = [lv for lv in levels_sorted if lv.lower() == "unknown"]
+        levels_sorted = [lv for lv in levels_sorted if lv.lower() != "unknown"] + unk
+
+        ref = reference_levels.get(k)
+        if ref is None:
+            defaults = {"gender": "man", "ethnicity": "white", "age": "20"}
+            ref = defaults.get(k, levels_sorted[0] if levels_sorted else None)
+            if ref not in levels_sorted and levels_sorted:
+                ref = levels_sorted[0]
+        else:
+            if ref not in levels_sorted and levels_sorted:
+                ref = levels_sorted[0]
+
+        final_levels = [ref] + [lv for lv in levels_sorted if lv != ref] if levels_sorted else []
+
+        long[k] = pd.Categorical(long[k].astype(str), categories=final_levels, ordered=False)
+        chosen_refs[k] = ref
+        ordered_levels[k] = final_levels
+
+    return long, chosen_refs, ordered_levels
+
+
+
+def _persist_glm_metadata(
+    out_dir: Optional[str],
+    *,
+    formula: str,
+    factors_levels: Dict[str, list],
+    references: Dict[str, str],
+    cluster_on: str,
+    n_rows: int,
+    n_items: int,
+    n_profiles: int,
+    n_clusters: int,
+    seed: Optional[int] = None,
+    filename: str = "glm_metadata.json",
+) -> None:
+    if not out_dir:
+        return
+    os.makedirs(out_dir, exist_ok=True)
+    meta = {
+        "formula": formula,
+        "factors": {
+            k: {"levels": list(v), "reference": references.get(k)}
+            for k, v in factors_levels.items()
+        },
+        "cluster_on": cluster_on,
+        "n_rows": int(n_rows),
+        "n_items": int(n_items),
+        "n_profiles": int(n_profiles),
+        "n_clusters": int(n_clusters),
+        "seed": seed,
+        "notes": "Cluster-robust SEs; binomial GLM.",
+        "versions": {
+            "python": sys.version,
+            "pandas": pd.__version__,
+            "numpy": np.__version__,
+            "scipy": scipy.__version__,
+            "statsmodels": sm.__version__,
+        },
+    }
+    with open(os.path.join(out_dir, filename), "w") as f:
+        json.dump(meta, f, indent=2)
+
+
+
+
+def fit_tier1_profiles_only(
+    merged_df: pd.DataFrame,
+    person_set: PersonSet,
+    group_keys: Optional[Tuple[str, ...]] = ("gender", "ethnicity"),
+    cluster_on: str = "sample_id",
+    out_dir: Optional[str] = None,
+    apply_separation_guard: bool = False,
+    reference_levels: Optional[Dict[str, str]] = None,
+) -> Dict[str, object]:
+    """
+    Binomial GLM on profile rows only, with specified demographic traits.
+    Clustered SEs on 'cluster_on'. No item fixed effects.
+    """
+    group_keys = _resolve_group_keys(person_set, group_keys)
+    long = to_long_roleplay_only(merged_df, person_set, group_keys=group_keys)
+
+    if apply_separation_guard:
+        long = drop_saturated(long, out_dir=out_dir)
+    if len(long) == 0:
+        raise ValueError("No rows left to fit after preprocessing.")
+
+    long, chosen_refs, ordered_levels = _set_ordered_categories(
+        long, group_keys=group_keys, reference_levels=reference_levels
+    )
+
+    n_clusters = long[cluster_on].nunique()
+
+    kept = tuple(k for k in group_keys if k in long and long[k].nunique(dropna=True) >= 2)
+    if not kept:
+        raise ValueError("No varying traits among profiles.")
+
+    formula = make_formula(kept, references=chosen_refs)
+
+    if cluster_on not in ("sample_id", "profile"):
+        cluster_on = "sample_id"
+    if long[cluster_on].nunique() < 2:
+        cov_kw = None
+        cov_type = "nonrobust"
     else:
-        print("No ANOVA results available")
-    
+        cov_kw = {"groups": long[cluster_on], "use_correction": True, "df_correction": True}
+        cov_type = "cluster"
+
+    model = smf.glm(formula, data=long, family=sm.families.Binomial())
+    try:
+        res = model.fit(cov_type=cov_type, cov_kwds=cov_kw)
+    except np.linalg.LinAlgError:
+        res = model.fit_regularized(alpha=1e-6, L1_wt=0.0)
+        res.cov_params = lambda: pd.DataFrame(np.nan, index=res.params.index, columns=res.params.index)
+
+    summ = res.summary2().tables[1].copy()
+    summ["term"] = summ.index.astype(str)
+    view = summ.reset_index(drop=True)
+    if {"Coef.","[0.025","0.975]"}.issubset(view.columns):
+        view["OR"] = np.exp(view["Coef."])
+        view["OR_ci_low"] = np.exp(view["[0.025"])
+        view["OR_ci_high"] = np.exp(view["0.975]"])
+    if "p" not in view.columns:
+        view["p"] = (view["P>|z|"] if "P>|z|" in view.columns
+                     else view["P>|t|"] if "P>|t|" in view.columns
+                     else np.nan)
+
+    blocks = wald_block_tests(res, kept, n_clusters=n_clusters)
+
+    _persist_glm_metadata(
+        out_dir,
+        formula=formula,
+        factors_levels=ordered_levels,
+        references=chosen_refs,
+        cluster_on=cluster_on,
+        n_rows=len(long),
+        n_items=long["sample_id"].nunique() if "sample_id" in long.columns else np.nan,
+        n_profiles=long["profile"].nunique() if "profile" in long.columns else np.nan,
+        n_clusters=long[cluster_on].nunique(),
+        seed=None,
+    )
+
+    print("\n=== Tier-1 (profiles-only) GLM ===")
+    print("Formula:", formula)
+    print("Baselines:", ", ".join([f"{k}={v}" for k, v in chosen_refs.items() if k in kept]))
+    print(f"n_rows={len(long):,} | n_items={long['sample_id'].nunique()} | n_profiles={long['profile'].nunique()}")
+    print(f"Clustered on: {cluster_on} (n_clusters={long[cluster_on].nunique()})")
+    print("\n-- Block Wald tests --")
+    wb = blocks.copy()
+    if len(wb):
+        def _fmt_row(r):
+            if r.get("test") == "F" and pd.notnull(r.get("df2", None)):
+                return f"{r['block']}: F({int(r['df1'])}, {int(r['df2'])})={r['stat']:.3g}, p={r['p']:.4g}"
+            else:
+                return f"{r['block']}: χ²({int(r['df1'])})={r['stat']:.3g}, p={r['p']:.4g}"
+        for _, r in wb.iterrows():
+            print("   - " + _fmt_row(r))
+    else:
+        print("(none)")
+
     return {
-        'performance_data': performance_df,
-        'anova_results': anova_results,
-        'posthoc_results': posthoc_results,
-        'effect_sizes': effect_sizes,
-        'significant_effects': anova_results.get('significant_effects', []),
-        'profile_traits': profile_traits,
-        'valid_traits': valid_traits
+        "data": long,
+        "formula": formula,
+        "result": res,
+        "coef_table": view,
+        "wald_blocks": blocks,
+        "kept_traits": kept,
+        "references": chosen_refs,
+        "levels": ordered_levels,
     }
 
 
 
 
-def plot_risk_benefit_frontier(
-    merged_df, 
-    case: CaseConfig,
-    group_keys=("gender", "ethnicity", "age"), 
-    category_cols=None,
-    figsize=(10, 6), 
-    person_set: PersonSet = None,
-    token_info: Optional[pd.DataFrame] = None,
-    rae_lambda: float = 2.0,
-    out_dir: Optional[str] = None
-):
-    """
-    Risk-Benefit Frontier Analysis - Adapted for PersonSet
-    
-    Creates individual plots for each trait showing:
-    - X-axis: Extra error rate (risk)  
-    - Y-axis: Rescue rate (benefit)
-    
-    Plus a final Pareto frontier plot identifying "safely bold" profiles.
-    """
-    
-    def norm_val(v):
-        """Normalize values for consistent display."""
-        if v == "Unknown":
-            return "unknown"
-        elif isinstance(v, (int, float)):
-            return str(v)
-        else:
-            return str(v).lower()
+def tidy_glm_tables(
+    fit: Dict[str, object],
+    focus_factors: Iterable[str] = ("gender", "ethnicity"),
+) -> Dict[str, pd.DataFrame]:
+    res = fit["result"]
 
-    def extract_traits(profile_id):
-        """Get normalized trait values using existing PersonSet.get_traits method."""
-        if person_set is None:
-            return {k: "unknown" for k in group_keys}
-        
-        traits = person_set.get_traits(profile_id, group_keys)
-        return {k: norm_val(traits.get(k, "Unknown")) for k in group_keys}
-    
-    def get_demographic_info(profile_name: str, person_set) -> str:
-        """
-        Return a demographic signature like 'man_white_20' or 'woman_black_25'.
-        Works whether person_set.get_traits returns a dict or a PersonMeta.
-        """
-        traits = person_set.get_traits(profile_name, group_keys)
-        
-        def read(tr, key):
-            v = tr.get(key) if isinstance(tr, dict) else getattr(tr, key, None)
-            if hasattr(v, 'value'):  # Enum
-                v = v.value
-            return None if v is None else str(v).lower()
-        
-        parts = []
-        for k in ("gender", "ethnicity"):
-            v = read(traits, k)
-            if v and v != "unknown":
-                parts.append(v)
-        
-        cs = read(traits, "cognitive_style")
-        if cs and cs != "unknown":
-            parts.append(cs)
-        else:
-            # Check for age and other extra fields
-            for f in group_keys:
-                if f not in ("gender", "ethnicity", "cognitive_style"):
-                    v = read(traits, f)
-                    if v and v != "unknown":
-                        parts.append(v)
-        
-        return "_".join(parts) if parts else "unknown"
-    
-    print("=== RISK-BENEFIT FRONTIER ANALYSIS ===")
-    print(f"Group keys: {group_keys}")
+    params = res.params.copy()
+    conf = res.conf_int()
+    if isinstance(conf, np.ndarray):
+        conf = pd.DataFrame(conf, index=params.index, columns=["ci_low", "ci_high"])
+    else:
+        conf = conf.copy()
+        conf.columns = ["ci_low", "ci_high"]
+    se = res.bse
+    if isinstance(se, np.ndarray):
+        se = pd.Series(se, index=params.index)
+    z = params / se
+    p = res.pvalues
+    if isinstance(p, np.ndarray):
+        p = pd.Series(p, index=params.index)
 
-    paths = {}
-    if out_dir:
-        os.makedirs(out_dir, exist_ok=True)
-
-    if category_cols is None:
-        print("WARNING: category_cols not provided — defaulting to ['stereotype_type']")
-        category_cols = ["stereotype_type"]
-
-    print("\n\n=== RESCUE STATISTICS BY CATEGORY ===")
-    rescue_stats_list = []
-
-    from analysis_tools import guarded_labelspace_analysis
-    
-    for cat_col in category_cols:
-        if cat_col in merged_df.columns:
-            rescue_stats = guarded_labelspace_analysis(
-                rescue_stats_by_category,
-                merged_df,
-                case=case,
-                category_col=cat_col,
-                person_set=person_set
-            )
-            rescue_stats["category_col"] = cat_col
-            rescue_stats_list.append(rescue_stats)
-
-    if not rescue_stats_list:
-        raise ValueError("No valid category columns found in merged_df.")
-
-    rescue_stats = pd.concat(rescue_stats_list, ignore_index=True)
-    
-    # Aggregate performance by profile
-    profile_performance = rescue_stats.groupby('profile').agg({
-        'rescue_rate': 'mean',
-        'extra_err_rate': 'mean', 
-        'rescued': 'sum',
-        'extra_errors': 'sum'
-    }).reset_index()
-    
-    print(f"Found {len(profile_performance)} profiles for risk-benefit analysis")
-
-    if token_info is not None and "profile" in token_info.columns:
-        ti = token_info.set_index("profile")
-        cols = [c for c in ["tokens_per_sample","cost_per_sample","total_cost",
-                            "efficiency_acc_per_1k_tokens","RAE_lambda"] if c in ti.columns]
-        profile_performance = profile_performance.join(ti[cols], on="profile", how="left")
-
-    # If RAE wasn't in token_info (because rescue stats came from here), compute it now:
-    if "RAE_lambda" not in profile_performance.columns and "tokens_per_sample" in profile_performance.columns:
-        profile_performance["RAE_lambda"] = (
-            (profile_performance["rescue_rate"] - rae_lambda*profile_performance["extra_err_rate"])
-            / profile_performance["tokens_per_sample"].replace(0, np.nan)
-        )
-    
-    # Extract traits for each profile using the same logic as ANOVA
-    profile_traits = {}
-    for profile in profile_performance["profile"]:
-        # Clean the profile name to get the base persona ID
-        
-        traits = person_set.get_traits(profile)
-        profile_traits[profile] = traits
-        
-        # Add traits to performance dataframe
-        for trait_name in group_keys:
-            if trait_name not in profile_performance.columns:
-                profile_performance[trait_name] = None
-    
-    # Map traits to performance dataframe
-    for trait_name in group_keys:
-        profile_performance[trait_name] = profile_performance["profile"].map(
-            lambda p: profile_traits.get(p, {}).get(trait_name, "unknown")
-        )
-    
-    # Create intersectional identifier
-    profile_performance["intersectional"] = profile_performance.apply(
-        lambda row: "_".join(str(row[k]) for k in group_keys if pd.notnull(row[k]) and row[k] != "unknown"), 
+    coef_tab = pd.concat(
+        [params.rename("coef"),
+         se.rename("se"),
+         z.rename("z"),
+         p.rename("p"),
+         conf[["ci_low", "ci_high"]]],
         axis=1
     )
-    
-    print(f"Sample profile traits extracted:")
-    for i, (profile, traits) in enumerate(list(profile_traits.items())[:3]):
-        print(f"  {profile}: {traits}")
-    
-    # ========================================================================
-    # INDIVIDUAL PLOTS FOR EACH TRAIT
-    # ========================================================================
-    
-    default_colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
-    
-    for trait in group_keys:
-        print(f"\nCreating risk-benefit plot for {trait}...")
-        
-        fig, ax = plt.subplots(1, 1, figsize=figsize)
-        
-        values = profile_performance[trait].unique()
-        valid_values = [v for v in values if v != "unknown"]
-        
-        if len(valid_values) == 0:
-            print(f"WARNING: No valid values found for {trait}, skipping plot")
-            plt.close(fig)
-            continue
-        
-        print(f"  {trait} levels: {valid_values}")
-        
-        for j, val in enumerate(valid_values):
-            subset = profile_performance[profile_performance[trait] == val]
-            if len(subset) > 0:
-                ax.scatter(subset['extra_err_rate'], subset['rescue_rate'], 
-                          c=default_colors[j % len(default_colors)], 
-                          label=f"{val} (n={len(subset)})", 
-                          alpha=0.7, s=80, edgecolors='black', linewidth=0.5)
-        
-        ax.set_xlabel('Extra Error Rate (Risk)', fontsize=12)
-        ax.set_ylabel('Rescue Rate (Benefit)', fontsize=12)
-        ax.set_title(f'Risk-Benefit Analysis by {trait.capitalize()}', fontsize=14, fontweight='bold')
-        ax.legend(title=trait.capitalize(), bbox_to_anchor=(1.05, 1), loc='upper left')
-        ax.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        if out_dir:
-            p = os.path.join(out_dir, f"risk_benefit_by_{trait}.pdf")
-            fig.savefig(p, bbox_inches="tight"); plt.close(fig)
-            paths[f"risk_benefit_by_{trait}"] = p
-        else:
-            plt.show()
-    
-    # ========================================================================
-    # PARETO FRONTIER ANALYSIS
-    # ========================================================================
-    
-    print(f"\nCreating Pareto frontier analysis...")
-    
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
-    
-    # Plot all profiles
-    ax.scatter(profile_performance['extra_err_rate'], profile_performance['rescue_rate'],
-               c='lightblue', alpha=0.6, s=80, edgecolors='black', linewidth=0.5,
-               label='All Profiles')
-    
-    # Calculate Pareto frontier
-    points = profile_performance[['extra_err_rate', 'rescue_rate']].values
-    pareto_mask = np.zeros(len(points), dtype=bool)
-    
-    for i, point in enumerate(points):
-        dominated = False
-        for j, other_point in enumerate(points):
-            if i != j:
-                # A point is dominated if another point has lower risk AND higher benefit
-                if (other_point[0] <= point[0] and other_point[1] >= point[1] and 
-                    (other_point[0] < point[0] or other_point[1] > point[1])):
-                    dominated = True
-                    break
-        if not dominated:
-            pareto_mask[i] = True
-    
-    pareto_points = profile_performance[pareto_mask].copy()
-    
-    # Plot Pareto optimal points
-    ax.scatter(pareto_points['extra_err_rate'], pareto_points['rescue_rate'],
-               c='red', s=150, marker='*', label='Pareto Optimal', zorder=5, edgecolors='darkred')
-    
-    # Annotate Pareto optimal points with demographic info
-    for idx, row in pareto_points.iterrows():
-        if person_set:
-            demo_label = get_demographic_info(row['profile'], person_set)
-        else:
-            demo_label = row['profile'].replace('profile', 'P')
-        
-        ax.annotate(demo_label, 
-                    (row['extra_err_rate'], row['rescue_rate']),
-                    xytext=(8, 8), textcoords='offset points', 
-                    fontsize=8, fontweight='bold',
-                    bbox=dict(boxstyle='round,pad=0.3', facecolor='white', 
-                             edgecolor='red', alpha=0.8, linewidth=1.5))
-    
-    # Draw Pareto frontier line
-    if len(pareto_points) > 1:
-        pareto_sorted = pareto_points.sort_values('extra_err_rate')
-        ax.plot(pareto_sorted['extra_err_rate'], pareto_sorted['rescue_rate'], 
-                'r--', alpha=0.7, linewidth=2, label='Pareto Frontier')
-    
-    ax.set_xlabel('Extra Error Rate (Risk)', fontsize=12)
-    ax.set_ylabel('Rescue Rate (Benefit)', fontsize=12)
-    ax.set_title('Pareto Frontier: "Safely Bold" Profiles', fontsize=14, fontweight='bold')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    
-    # Add optimal regions
-    ax.axhspan(ax.get_ylim()[0], profile_performance['rescue_rate'].mean(), 
-               alpha=0.1, color='red', label='Below Average Benefit')
-    ax.axvspan(profile_performance['extra_err_rate'].mean(), ax.get_xlim()[1], 
-               alpha=0.1, color='red')
-    
-    plt.tight_layout()
-    if out_dir:
-        p = os.path.join(out_dir, "pareto_frontier.pdf")
-        fig.savefig(p, bbox_inches="tight"); plt.close(fig)
-        paths["pareto_frontier"] = p
-    else:
-        plt.show()
-    
-    # ========================================================================
-    # DETAILED ANALYSIS RESULTS
-    # ========================================================================
-    
-    print("\n" + "="*60)
-    print("PARETO FRONTIER ANALYSIS RESULTS")
-    print("="*60)
-    
-    print(f"\nPareto Optimal Profiles ({len(pareto_points)} found):")
-    for idx, row in pareto_points.iterrows():
-        if person_set:
-            demo_info = get_demographic_info(row['profile'], person_set)
-            print(f"  {demo_info} ({row['profile']})")
-        else:
-            traits = profile_traits.get(row['profile'], {})
-            trait_str = ", ".join(f"{k}: {traits.get(k, 'unknown')}" for k in group_keys)
-            print(f"  {row['profile']}: {trait_str}")
-        print(f"    Rescue Rate: {row['rescue_rate']:.3f}, Extra Error Rate: {row['extra_err_rate']:.3f}")
-        print(f"    Total Rescued: {row['rescued']}, Total Extra Errors: {row['extra_errors']}")
-    
-    print(f"\nRisk-Benefit Statistics:")
-    print(f"  Total profiles analyzed: {len(profile_performance)}")
-    print(f"  Average rescue rate: {profile_performance['rescue_rate'].mean():.3f}")
-    print(f"  Average extra error rate: {profile_performance['extra_err_rate'].mean():.3f}")
-    print(f"  Best rescue rate: {profile_performance['rescue_rate'].max():.3f}")
-    print(f"  Lowest extra error rate: {profile_performance['extra_err_rate'].min():.3f}")
-    
-    # Profile archetypes
-    safest = profile_performance.loc[profile_performance['extra_err_rate'].idxmin()]
-    most_beneficial = profile_performance.loc[profile_performance['rescue_rate'].idxmax()]
-    
-    print(f"\nProfile Archetypes:")
-    if person_set:
-        safest_demo = get_demographic_info(safest['profile'], person_set)
-        beneficial_demo = get_demographic_info(most_beneficial['profile'], person_set)
-        print(f"  Safest Profile: {safest_demo} ({safest['profile']})")
-        print(f"    Extra Error Rate: {safest['extra_err_rate']:.3f}")
-        print(f"  Most Beneficial Profile: {beneficial_demo} ({most_beneficial['profile']})")
-        print(f"    Rescue Rate: {most_beneficial['rescue_rate']:.3f}")
-    else:
-        safest_traits = profile_traits.get(safest['profile'], {})
-        safest_str = ", ".join(f"{k}: {safest_traits.get(k, 'unknown')}" for k in group_keys)
-        print(f"  Safest Profile: {safest['profile']} ({safest_str})")
-        print(f"    Extra Error Rate: {safest['extra_err_rate']:.3f}")
-        
-        beneficial_traits = profile_traits.get(most_beneficial['profile'], {})
-        beneficial_str = ", ".join(f"{k}: {beneficial_traits.get(k, 'unknown')}" for k in group_keys)
-        print(f"  Most Beneficial Profile: {most_beneficial['profile']} ({beneficial_str})")
-        print(f"    Rescue Rate: {most_beneficial['rescue_rate']:.3f}")
-    
-    # Demographic analysis of Pareto optimal profiles
-    if len(pareto_points) > 0:
-        print(f"\nDemographic Composition of Pareto Optimal Profiles:")
-        for trait in group_keys:
-            trait_counts = pareto_points[trait].value_counts()
-            print(f"  {trait.capitalize()}:")
-            for value, count in trait_counts.items():
-                if value != "unknown":
-                    pct = (count / len(pareto_points)) * 100
-                    print(f"    {value}: {count} ({pct:.1f}%)")
-    
-    return {
-        'performance_data': profile_performance,
-        'pareto_optimal': pareto_points,
-        'profile_traits': profile_traits,
-        'safest_profile': safest,
-        'most_beneficial_profile': most_beneficial,
-        'group_keys': group_keys,
-        'paths': paths
-    }
+    coef_tab["term"] = coef_tab.index.astype(str)
+    coef_tab["OR"] = np.exp(coef_tab["coef"])
+    coef_tab["OR_ci_low"] = np.exp(coef_tab["ci_low"])
+    coef_tab["OR_ci_high"] = np.exp(coef_tab["ci_high"])
+    coef_tab = coef_tab.reset_index(drop=True)
+
+    coef_tab_view = coef_tab[~coef_tab["term"].str.startswith("C(sample_id)[")].reset_index(drop=True)
+    wald_blocks = fit.get("wald_blocks", pd.DataFrame(columns=["block","test","stat","df1","df2","p"]))
+    return {"coef_table": coef_tab_view, "wald_blocks": wald_blocks}
 
 
 
-
-
-def calculate_effect_sizes(performance_df, anova_results, group_keys=("gender", "ethnicity", "age")):
+def run_glm_cluster_pipeline(
+    merged_df: pd.DataFrame,
+    person_set: PersonSet,
+    out_root: str,
+    group_keys: Optional[Tuple[str, ...]] = ("gender", "ethnicity"),
+    cluster_on: str = "sample_id",
+    apply_separation_guard: bool = False,
+) -> Dict[str, object]:
     """
-    Calculate Cohen's d effect sizes directly from ANOVA performance data.
-    Updated to work with the new PersonSet structure and flexible group_keys.
+    Fits the Tier-1 GLM, tidies outputs, runs symmetric pairwise (FDR)
+    for each kept factor, and writes CSVs (single canonical set).
     """
-    
-    effect_sizes = {}
-    print("CALCULATING ANOVA-BASED EFFECT SIZES")
-    print("=" * 60)
+    os.makedirs(out_root, exist_ok=True)
 
-    def calculate_cohens_d(group1_vals, group2_vals, group1_name, group2_name):
-        if len(group1_vals) == 0 or len(group2_vals) == 0:
-            return None
-        mean1, mean2 = np.mean(group1_vals), np.mean(group2_vals)
-        var1, var2 = np.var(group1_vals, ddof=1), np.var(group2_vals, ddof=1)
-        if var1 == 0 and var2 == 0:
-            cohens_d = 0.0
-        else:
-            pooled_std = np.sqrt((var1 + var2) / 2)
-            cohens_d = (mean1 - mean2) / pooled_std if pooled_std > 0 else 0.0
-        magnitude = 'large' if abs(cohens_d) >= 0.8 else 'medium' if abs(cohens_d) >= 0.5 else 'small'
-        return {
-            'cohens_d': cohens_d,
-            'magnitude': magnitude,
-            f'{group1_name}_mean': mean1,
-            f'{group2_name}_mean': mean2,
-            'difference': mean1 - mean2,
-            f'{group1_name}_n': len(group1_vals),
-            f'{group2_name}_n': len(group2_vals)
-        }
+    group_keys = _resolve_group_keys(person_set, group_keys)
 
-    # Focus on accuracy as the primary metric from ANOVA results
-    dependent_vars = ['accuracy']
-    
-    # Add other metrics if they exist in the performance dataframe
-    optional_vars = ['rescue_rate', 'extra_error_rate', 'bias_magnitude', 'disagreement_rate', 'mislabelling_rate']
-    for var in optional_vars:
-        if var in performance_df.columns:
-            dependent_vars.append(var)
-
-    print("\nMAIN EFFECTS FROM ANOVA")
-    print("-" * 40)
-
-    # Process significant main effects from ANOVA results
-    if 'significant_effects' in anova_results:
-        for effect_info in anova_results['significant_effects']:
-            effect_name = effect_info['effect']
-            
-            # Check if it's a main effect (single trait, not interaction)
-            if ':' not in effect_name and effect_name.startswith('C(') and effect_name.endswith(')'):
-                trait = effect_name[2:-1]  # Remove 'C(' and ')'
-                
-                if trait in group_keys and trait in performance_df.columns:
-                    print(f"\nProcessing significant main effect: {trait}")
-                    levels = performance_df[trait].dropna().unique()
-                    
-                    for i, val1 in enumerate(levels):
-                        for val2 in levels[i+1:]:
-                            vals1 = performance_df[performance_df[trait] == val1]['accuracy'].values
-                            vals2 = performance_df[performance_df[trait] == val2]['accuracy'].values
-                            effect_size = calculate_cohens_d(vals1, vals2, str(val1).lower(), str(val2).lower())
-                            if effect_size:
-                                key = f"accuracy_{trait}_{str(val1).lower()}_vs_{str(val2).lower()}"
-                                effect_sizes[key] = effect_size
-                                print(f"  accuracy - {val1} vs {val2}: d = {effect_size['cohens_d']:.3f} ({effect_size['magnitude']})")
-
-    print("\nINTERACTION EFFECTS")
-    print("-" * 40)
-
-    # Calculate pairwise comparisons for all trait combinations (since interactions may not be significant)
-    for dv in dependent_vars:
-        if dv not in performance_df.columns:
-            continue
-            
-        for i in range(len(group_keys)):
-            for j in range(i+1, len(group_keys)):
-                g1, g2 = group_keys[i], group_keys[j]
-                
-                if g1 not in performance_df.columns or g2 not in performance_df.columns:
-                    continue
-                
-                g1_vals = performance_df[g1].dropna().unique()
-                g2_vals = performance_df[g2].dropna().unique()
-                
-                for val1 in g1_vals:
-                    for val2 in g2_vals:
-                        group1_mask = (performance_df[g1] == val1) & (performance_df[g2] == val2)
-                        for val3 in g1_vals:
-                            for val4 in g2_vals:
-                                if val1 == val3 and val2 == val4:
-                                    continue
-                                group2_mask = (performance_df[g1] == val3) & (performance_df[g2] == val4)
-                                vals1 = performance_df[group1_mask][dv].values
-                                vals2 = performance_df[group2_mask][dv].values
-                                if len(vals1) > 0 and len(vals2) > 0:
-                                    name1 = f"{val1}_{val2}".lower()
-                                    name2 = f"{val3}_{val4}".lower()
-                                    effect_size = calculate_cohens_d(vals1, vals2, name1, name2)
-                                    # Only show effects above threshold to avoid noise
-                                    if effect_size and abs(effect_size['cohens_d']) > 0.3:
-                                        key = f"{dv}_{name1}_vs_{name2}"
-                                        effect_sizes[key] = effect_size
-                                        print(f"  {dv} - {name1} vs {name2}: d = {effect_size['cohens_d']:.3f} ({effect_size['magnitude']})")
-
-    print(f"\nTotal effect sizes calculated: {len(effect_sizes)}")
-    return effect_sizes
-
-def print_risk_benefit_token_summary(token_table: pd.DataFrame, top_n: int = 10, safe_extra_err: float = 0.02):
-    if token_table is None or token_table.empty:
-        print("\n=== RISK–BENEFIT in terms of TOKENS ===\nNo token metrics available."); 
-        return
-
-    cols = [c for c in ["profile","rescue_rate","extra_err_rate","tokens_per_sample","RAE_lambda"] if c in token_table.columns]
-    tt = token_table[cols].dropna()
-    if tt.empty:
-        print("\n=== RISK–BENEFIT in terms of TOKENS ===\nNo complete rows for risk/benefit + tokens."); 
-        return
-
-    print("\n=== RISK–BENEFIT in terms of TOKENS ===")
-    # Top by RAE_λ
-    if "RAE_lambda" in tt.columns:
-        top = tt.sort_values("RAE_lambda", ascending=False).head(top_n)
-        print("\nTop profiles by risk-adjusted efficiency (RAE_λ):")
-        for _, r in top.iterrows():
-            print(f"  {r['profile']:<12} RAE={r['RAE_lambda']:.4f} | rescue={r['rescue_rate']:.3f} | extra={r['extra_err_rate']:.3f} | tok/sample={r['tokens_per_sample']:.1f}")
-
-    # “Safely bold” shortlist
-    safe = tt[(tt.get("extra_err_rate", 1.0) <= safe_extra_err) & (tt.get("rescue_rate", 0.0) >= 0)]
-    if "RAE_lambda" in safe.columns:
-        safe = safe[safe["RAE_lambda"] > 0]
-    if not safe.empty:
-        sb = safe.sort_values(["RAE_lambda","rescue_rate"], ascending=[False, False]).head(top_n) if "RAE_lambda" in safe.columns else safe.sort_values("rescue_rate", ascending=False).head(top_n)
-        print(f"\nSafely-bold profiles (extra_err ≤ {safe_extra_err:.3f}" + (", RAE>0" if "RAE_lambda" in tt.columns else "") + "):")
-        for _, r in sb.iterrows():
-            rae = f" | RAE={r['RAE_lambda']:.4f}" if "RAE_lambda" in r else ""
-            print(f"  {r['profile']:<12} rescue={r['rescue_rate']:.3f} | extra={r['extra_err_rate']:.3f} | tok/sample={r['tokens_per_sample']:.1f}{rae}")
-
-
-def plot_cost_aware_risk_benefit(
-    profile_performance: pd.DataFrame,
-    person_set: Optional[PersonSet] = None,
-    rae_lambda: float = 2.0,
-    figsize: Tuple[int, int] = (8, 6),
-    out_dir: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Cost-aware risk–benefit visuals:
-      (A) Rescue vs Extra Error colored by cost (or tokens if cost missing)
-      (B) Risk-adjusted efficiency (RAE_λ) vs Cost with Pareto frontier
-
-    Expects columns in profile_performance:
-      rescue_rate, extra_err_rate, profile,
-      (optional) cost_per_sample, tokens_per_sample, RAE_lambda
-    """
-    df = profile_performance.copy()
-
-    # Compute RAE if not present but we have tokens + rescue/extra
-    if "RAE_lambda" not in df.columns and {"rescue_rate","extra_err_rate","tokens_per_sample"}.issubset(df.columns):
-        df["RAE_lambda"] = (
-            (df["rescue_rate"] - rae_lambda * df["extra_err_rate"]) /
-            df["tokens_per_sample"].replace(0, np.nan)
-        )
-
-    # Choose color metric (prefers $ cost; falls back to tokens)
-    color_col = "cost_per_sample" if "cost_per_sample" in df.columns and df["cost_per_sample"].notna().any() else "tokens_per_sample"
-    color_label = "Cost per sample ($)" if color_col == "cost_per_sample" else "Tokens per sample"
-
-    paths = {}
-    if out_dir:
-        os.makedirs(out_dir, exist_ok=True)
-
-    # ---------- (A) Risk vs Benefit colored by cost/tokens ----------
-    figA, axA = plt.subplots(figsize=figsize)
-    figA.set_layout_engine("constrained")
-    scA = axA.scatter(
-        df["extra_err_rate"].astype(float),
-        df["rescue_rate"].astype(float),
-        c=df[color_col].astype(float),
-        s=80, alpha=0.85, edgecolor="k", linewidth=0.3
+    fit = fit_tier1_profiles_only(
+        merged_df=merged_df,
+        person_set=person_set,
+        group_keys=group_keys,
+        cluster_on=cluster_on,
+        out_dir=out_root,  
+        apply_separation_guard=apply_separation_guard,
     )
-    axA.set_xlabel("Extra error rate (risk)")
-    axA.set_ylabel("Rescue rate (benefit)")
-    axA.set_title(f"Risk–Benefit colored by {color_label}")
-    cbA = figA.colorbar(scA, ax=axA)
-    cbA.set_label(color_label)
 
-    # Annotate a few best points (highest rescue with low risk)
-    if len(df) > 0:
-        top = df.sort_values(["extra_err_rate","rescue_rate"], ascending=[True, False]).head(5)
-        for _, r in top.iterrows():
-            label = r["profile"]
-            if person_set is not None:
-                try:
-                    # short demographic tag
-                    from analysis_tools import get_demographic_info
-                    label = get_demographic_info(r["profile"], person_set)
-                except Exception:
-                    pass
-            axA.annotate(
-                label, (float(r["extra_err_rate"]), float(r["rescue_rate"])),
-                xytext=(6,6), textcoords="offset points", fontsize=8,
-                bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="0.6", lw=0.6, alpha=0.9)
-            )
+    kept = fit.get("kept_traits", tuple(k for k in group_keys if k in fit["data"].columns))
+    tables = tidy_glm_tables(fit, focus_factors=kept)
 
-    if out_dir:
-        pA = os.path.join(out_dir, "risk_benefit_colored_by_cost.pdf")
-        figA.savefig(pA)
-        plt.close(figA)
-        paths["risk_benefit_colored_by_cost"] = pA
+    tables["coef_table"].to_csv(os.path.join(out_root, "glm_coef_OR.csv"), index=False)
+    tables["wald_blocks"].to_csv(os.path.join(out_root, "glm_block_tests.csv"), index=False)
+
+    for fac in kept:
+        pw = pairwise_contrasts_fdr(fit["result"], fac, fit["data"])
+        if len(pw):
+            pw.to_csv(os.path.join(out_root, f"glm_pairwise_{fac}.csv"), index=False)
+
+    print("\n================ GLM (profiles-only, Binomial) ================")
+    print("Formula:", fit["formula"])
+    print(f"n_rows={len(fit['data']):,}, n_profiles={fit['data']['profile'].nunique()}, "
+          f"n_items={fit['data']['sample_id'].nunique()}")
+    print(f"Clustered on: {cluster_on}")
+    print("\n-- Block Wald tests --")
+    print(tables["wald_blocks"].to_string(index=False) if len(tables["wald_blocks"]) else "(none)")
+
+    return {"fit": fit, **tables}
+
+
+def _predict_prob_ci_marginalized(res, factor: str, levels: list[str], alpha: float = 0.05):
+    df_fit = res.model.data.frame.copy()
+    DI = res.model.data.design_info
+    beta = res.params.values
+    V = res.cov_params().values
+    z = norm.ppf(1.0 - alpha/2.0)
+
+    cats = (list(df_fit[factor].cat.categories)
+            if factor in df_fit.columns and pd.api.types.is_categorical_dtype(df_fit[factor])
+            else None)
+
+    means, los, his = [], [], []
+    for lv in levels:
+        df_new = df_fit.copy()
+        if factor in df_new.columns:
+            df_new[factor] = (pd.Categorical([lv]*len(df_new), categories=cats)
+                              if cats is not None else lv)
+
+        X = dmatrix(DI, df_new, return_type="dataframe").to_numpy()
+        eta = X @ beta
+        mu  = 1.0/(1.0 + np.exp(-eta))
+
+        m = float(np.mean(mu))                 
+        w = (mu * (1 - mu))[:, None]
+        g = np.mean(w * X, axis=0)
+        var_m = float(max(g @ V @ g, 0.0))
+        se_m = np.sqrt(var_m)
+
+        eps = 1e-8
+        m_clip = float(np.clip(m, eps, 1 - eps))
+        logit_m = float(logit(m_clip))
+        se_logit_m = float(se_m / (m_clip * (1 - m_clip)))
+        lo = float(expit(logit_m - z * se_logit_m))
+        hi = float(expit(logit_m + z * se_logit_m))
+
+        means.append(m); los.append(lo); his.append(hi)
+    return np.array(means), np.array(los), np.array(his)
+
+
+def _predict_prob_ci_marginalized_2d(res, factor_a: str, A: list[str], factor_b: str, B: list[str],
+                                     alpha: float = 0.05) -> pd.DataFrame:
+    df_fit = res.model.data.frame.copy()
+    DI = res.model.data.design_info
+    beta = res.params.values
+    V = res.cov_params().values
+    z = norm.ppf(1.0 - alpha/2.0)
+
+    cats_a = list(df_fit[factor_a].cat.categories) if (factor_a in df_fit and
+                                                       pd.api.types.is_categorical_dtype(df_fit[factor_a])) else None
+    cats_b = list(df_fit[factor_b].cat.categories) if (factor_b in df_fit and
+                                                       pd.api.types.is_categorical_dtype(df_fit[factor_b])) else None
+
+    rows = []
+    for a in A:
+        for b in B:
+            df_new = df_fit.copy()
+            if factor_a in df_new.columns:
+                df_new[factor_a] = (pd.Categorical([a]*len(df_new), categories=cats_a)
+                                    if cats_a is not None else a)
+            if factor_b in df_new.columns:
+                df_new[factor_b] = (pd.Categorical([b]*len(df_new), categories=cats_b)
+                                    if cats_b is not None else b)
+
+            X = dmatrix(DI, df_new, return_type="dataframe").to_numpy()
+            eta = X @ beta
+            mu  = 1.0/(1.0 + np.exp(-eta))
+
+            m = float(np.mean(mu))
+            w = (mu * (1 - mu))[:, None]
+            g = np.mean(w * X, axis=0)
+            var_m = float(max(g @ V @ g, 0.0))
+            se_m  = np.sqrt(var_m)
+
+            eps = 1e-8
+            m_clip = float(np.clip(m, eps, 1 - eps))
+            logit_m = float(logit(m_clip))
+            se_logit_m = float(se_m / (m_clip * (1 - m_clip)))
+            lo = float(expit(logit_m - z * se_logit_m))
+            hi = float(expit(logit_m + z * se_logit_m))
+            rows.append((a, b, m, lo, hi))
+
+
+    if not rows:
+        return pd.DataFrame(columns=[factor_a, factor_b, "prob", "lo", "hi"])
+    out = pd.DataFrame(rows, columns=[factor_a, factor_b, "prob", "lo", "hi"])
+    if cats_a is not None: out[factor_a] = pd.Categorical(out[factor_a], categories=cats_a)
+    if cats_b is not None: out[factor_b] = pd.Categorical(out[factor_b], categories=cats_b)
+    return out
+
+
+
+def plot_predicted_main_effect(res, factor, out_path, title=None, y_zoom="auto"):
+    apply_neurips_figure_style()
+    df_fit = res.model.data.frame
+    if factor not in df_fit.columns or not pd.api.types.is_categorical_dtype(df_fit[factor]):
+        return
+
+    levels = list(df_fit[factor].cat.categories)
+    p, lo, hi = _predict_prob_ci_marginalized(res, factor, levels)
+
+    fig, ax = new_pub_fig(title or f"Predicted accuracy by {factor}", figsize=(4.8, 3.0))
+    x = np.arange(len(levels))
+    ax.errorbar(x, p, yerr=[p-lo, hi-p], fmt="o", capsize=3)
+    ax.set_xticks(x); ax.set_xticklabels(levels, rotation=20, ha="right")
+    ax.set_ylabel("Predicted accuracy (marginalized)")
+    ax.grid(True, alpha=0.25)
+
+    if y_zoom == "auto":
+        pad = max(0.005, 0.15*(float(np.nanmax(p))-float(np.nanmin(p))))
+        ax.set_ylim(max(0.0, float(np.nanmin(p))-pad), min(1.0, float(np.nanmax(p))+pad))
+    elif isinstance(y_zoom, (tuple, list)) and len(y_zoom) == 2:
+        ax.set_ylim(*y_zoom)
     else:
-        plt.show()
+        ax.set_ylim(0, 1)
 
-    # ---------- (B) RAE_λ vs Cost with Pareto frontier ----------
-    # X: cost (lower is better if available; else tokens). Y: RAE_λ (higher is better).
-    x_col = "cost_per_sample" if "cost_per_sample" in df.columns and df["cost_per_sample"].notna().any() else "tokens_per_sample"
-    y_col = "RAE_lambda"
-    if y_col in df.columns and x_col in df.columns:
-        figB, axB = plt.subplots(figsize=figsize)
-        figB.set_layout_engine("constrained")
-
-        x = df[x_col].astype(float).values
-        y = df[y_col].astype(float).values
-        mask = np.isfinite(x) & np.isfinite(y)
-        x, y = x[mask], y[mask]
-        df_plot = df.loc[mask].reset_index(drop=True)
-
-        scB = axB.scatter(x, y, s=80, alpha=0.85, edgecolor="k", linewidth=0.3)
-        axB.set_xlabel("Cost per sample ($)" if x_col == "cost_per_sample" else "Tokens per sample")
-        axB.set_ylabel(f"RAE$_{{{rae_lambda:g}}}$  = (rescue − {rae_lambda:g}·extra) / tokens")
-        axB.set_title("Risk-adjusted efficiency vs cost")
-
-        # Pareto frontier: maximize y, minimize x
-        pareto = np.zeros(len(df_plot), dtype=bool)
-        for i in range(len(df_plot)):
-            dominated = False
-            for j in range(len(df_plot)):
-                if i == j:
-                    continue
-                if (df_plot.loc[j, x_col] <= df_plot.loc[i, x_col] and
-                    df_plot.loc[j, y_col] >= df_plot.loc[i, y_col] and
-                    (df_plot.loc[j, x_col] < df_plot.loc[i, x_col] or
-                     df_plot.loc[j, y_col] > df_plot.loc[i, y_col])):
-                    dominated = True
-                    break
-            if not dominated:
-                pareto[i] = True
-
-        df_pareto = df_plot.loc[pareto]
-        axB.scatter(df_pareto[x_col], df_pareto[y_col],
-                    c="red", s=150, marker="*", zorder=5, edgecolors="darkred", label="Pareto")
-
-        if len(df_pareto) > 1:
-            df_p_sorted = df_pareto.sort_values(x_col)
-            axB.plot(df_p_sorted[x_col], df_p_sorted[y_col], "r--", lw=2, alpha=0.8)
-
-        axB.legend(framealpha=0.9)
-
-        # annotate Pareto points
-        for _, r in df_pareto.iterrows():
-            label = r["profile"]
-            if person_set is not None:
-                try:
-                    from analysis_tools import get_demographic_info
-                    label = get_demographic_info(r["profile"], person_set)
-                except Exception:
-                    pass
-            axB.annotate(
-                label, (float(r[x_col]), float(r[y_col])),
-                xytext=(6,6), textcoords="offset points", fontsize=8,
-                bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="0.6", lw=0.6, alpha=0.9)
-            )
-
-        if out_dir:
-            pB = os.path.join(out_dir, "rae_vs_cost_pareto.pdf")
-            figB.savefig(pB)
-            plt.close(figB)
-            paths["rae_vs_cost_pareto"] = pB
-        else:
-            plt.show()
-
-    return {"paths": paths, "df": df}
+    fig.savefig(out_path, bbox_inches="tight"); plt.close(fig)
 
 
 
-def ols_interaction_pvalue(df, dv, factor1, factor2):
+def plot_block_wald(wald_blocks: pd.DataFrame, out_path: str, title: str | None = None):
+    if wald_blocks is None or len(wald_blocks) == 0:
+        return
+    apply_neurips_figure_style()
+    df = wald_blocks.copy()
+    df["neglog10p"] = -np.log10(df["p"].clip(lower=np.finfo(float).tiny))
+    df = df.sort_values("neglog10p", ascending=True)
+
+    fig, ax = new_pub_fig(title or "Joint block tests (−log10 p)", figsize=(4.8, 2.8))
+    y = np.arange(len(df))
+    ax.barh(y, df["neglog10p"])
+    ax.set_yticks(y)
+    ax.set_yticklabels(df["block"])
+    ax.axvline(-np.log10(0.05), color="0.5", ls="--", lw=1)
+    ax.set_xlabel("−log10 p (higher = stronger)")
+    fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_interaction_pred(res, factor_a: str, factor_b: str, out_path: str,
+                          title: str | None = None, y_zoom: tuple[float, float] | str | None = "auto",
+                          inset: bool = True):
+    apply_neurips_figure_style()
+    df_fit = res.model.data.frame
+    if factor_a not in df_fit.columns or factor_b not in df_fit.columns:
+        return
+    if not (pd.api.types.is_categorical_dtype(df_fit[factor_a]) and
+            pd.api.types.is_categorical_dtype(df_fit[factor_b])):
+        return
+
+    A = list(df_fit[factor_a].cat.categories)
+    B = list(df_fit[factor_b].cat.categories)
+
+    new = _predict_prob_ci_marginalized_2d(res, factor_a, A, factor_b, B)
+
+    fig, ax = new_pub_fig(title or f"Predicted accuracy: {factor_a} × {factor_b}", figsize=(5.4, 3.4))
+    x = np.arange(len(B))
+    dodge = np.linspace(-0.15, 0.15, num=len(A)) if len(A) > 1 else [0.0]
+
+    for i, a in enumerate(A):
+        sub = new[new[factor_a] == a].copy()
+        y, ylo, yhi = sub["prob"].to_numpy(), sub["lo"].to_numpy(), sub["hi"].to_numpy()
+        ax.errorbar(x + dodge[i], y, yerr=[y - ylo, yhi - y], fmt="-o", capsize=3, label=str(a), lw=1.2, ms=3)
+
+    ax.set_xticks(x); ax.set_xticklabels(B, rotation=20, ha="right")
+    ax.set_ylabel("Predicted accuracy (marginalized)")
+
+    if y_zoom == "auto":
+        ymin, ymax = float(np.nanmin(new["prob"])), float(np.nanmax(new["prob"]))
+        span = max(1e-6, ymax - ymin); pad = max(0.005, 0.15 * span)
+        ax.set_ylim(max(0.0, ymin - pad), min(1.0, ymax + pad))
+    elif isinstance(y_zoom, (tuple, list)) and len(y_zoom) == 2:
+        ax.set_ylim(*y_zoom)
+    else:
+        ax.set_ylim(0, 1)
+
+    ax.legend(title=factor_a, ncol=min(3, len(A))); ax.grid(True, alpha=0.25)
+    fig.savefig(out_path, bbox_inches="tight"); plt.close(fig)
+
+    if inset:
+        fig2, ax2 = new_pub_fig(None, figsize=(2.0, 1.8))
+        for i, a in enumerate(A):
+            sub = new[new[factor_a] == a].copy()
+            y, ylo, yhi = sub["prob"].to_numpy(), sub["lo"].to_numpy(), sub["hi"].to_numpy()
+            ax2.errorbar(x + dodge[i], y, yerr=[y - ylo, yhi - y], fmt="-o", capsize=2, lw=1.0, ms=2)
+        ax2.set_xticks(x); ax2.set_xticklabels(B, rotation=45, ha="right")
+        ax2.set_ylim(0, 1); ax2.set_ylabel("p"); ax2.grid(True, alpha=0.25)
+        inset_path = out_path.replace(".pdf", "_inset.pdf")
+        fig2.savefig(inset_path, bbox_inches="tight"); plt.close(fig2)
+
+
+def _wilson_ci(k, n, alpha=0.05):
+    if n == 0: return (np.nan, np.nan, np.nan)
+    p = k/n
+    z = norm.ppf(1.0-alpha/2.0)  
+    denom = 1 + z*z/n
+    center = (p + z*z/(2*n))/denom
+    half = z*np.sqrt((p*(1-p) + z*z/(4*n))/n) / denom
+    return p, max(0.0, center-half), min(1.0, center+half)
+
+def plot_marginal_accuracy(long_df: pd.DataFrame, factor: str, out_path: str, title: str | None = None):
+    apply_neurips_figure_style()
+    if factor not in long_df.columns or not pd.api.types.is_categorical_dtype(long_df[factor]):
+        return
+
+    g = long_df.groupby(factor, observed=True)["correct"].agg(["sum","count"]).reset_index()
+    rows = []
+    for _, r in g.iterrows():
+        p, lo, hi = _wilson_ci(int(r["sum"]), int(r["count"]))
+        rows.append((str(r[factor]), p, lo, hi, int(r["count"])))
+    df = pd.DataFrame(rows, columns=[factor,"acc","lo","hi","n"])
+
+    order = list(long_df[factor].cat.categories)
+    df[factor] = pd.Categorical(df[factor], categories=order, ordered=True)
+    df = df.sort_values(factor)
+
+    fig, ax = new_pub_fig(title or f"Accuracy by {factor}", figsize=(4.6, 2.8))
+    x = np.arange(len(df))
+    ax.errorbar(x, df["acc"], yerr=[df["acc"]-df["lo"], df["hi"]-df["acc"]],
+                fmt="o", capsize=3)
+    ax.set_xticks(x); ax.set_xticklabels(df[factor].astype(str), rotation=25, ha="right")
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Accuracy")
+    for xi, ni in zip(x, df["n"]):
+        ax.text(xi, 0.02, f"n={ni}", ha="center", va="bottom", fontsize=7)
+    fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+
+
+
+def make_tier1_minimal_plots(fit_dict: dict, out_dir: str, factors: Optional[Tuple[str, ...]] = None) -> dict:
     """
-    Run OLS regression with interaction term and return the p-value for the interaction.
-    Updated to handle the new trait structure.
-
-    Parameters:
-    - df: DataFrame with data
-    - dv: dependent variable (e.g. "accuracy")
-    - factor1: first factor (e.g. "gender")
-    - factor2: second factor (e.g. "ethnicity")
-
-    Returns:
-    - interaction_p: float or None
+    Produces three figures:
+      (1) Block Wald bars
+      (2) Predicted accuracy for the strongest interaction (zoom+inset)
+      (3) Empirical accuracy by the most relevant single factor (default to age if present)
     """
-    try:
-        # Check if factors exist in dataframe
-        if factor1 not in df.columns or factor2 not in df.columns:
-            print(f"⚠️ Factors {factor1} or {factor2} not found in dataframe")
-            return None
-            
-        formula = f"{dv} ~ C({factor1}) * C({factor2})"
-        model = ols(formula, data=df).fit()
-        anova_table = sm.stats.anova_lm(model, typ=2)
+    os.makedirs(out_dir, exist_ok=True)
+    paths = {}
 
-        interaction_term = f"C({factor1}):C({factor2})"
-        if interaction_term in anova_table.index:
-            p_value = anova_table.loc[interaction_term, "PR(>F)"]
-            return p_value
-        else:
-            print(f"WARNING: Interaction term {interaction_term} not found in ANOVA table")
-            return None
-    except Exception as e:
-        print(f"WARNING: Interaction OLS failed: {e}")
-        return None
+    wb = fit_dict.get("wald_blocks", pd.DataFrame())
+    p = os.path.join(out_dir, "glm_block_wald.pdf")
+    plot_block_wald(wb, p)
+    paths["block_wald"] = p
+
+    best_pair = None
+    if len(wb):
+        inter = wb[wb["block"].str.startswith("inter:")].copy()
+        if factors:
+            inter = inter[inter["block"].apply(
+                lambda s: all(f in s for f in [f"C({f})" for f in factors])
+            )]
+        if len(inter):
+            inter = inter.sort_values("p", ascending=True).iloc[0]
+            m = re.match(r"inter:C\(([^)]+)\):C\(([^)]+)\)", str(inter["block"]))
+            if m:
+                best_pair = (m.group(1), m.group(2))
+
+    if best_pair is None:
+        df = fit_dict["data"]
+        cand = [f for f in ("gender","age","ethnicity") if f in df.columns]
+        if len(cand) >= 2:
+            best_pair = (cand[0], cand[1])
+
+    if best_pair is not None:
+        a, b = best_pair
+        p = os.path.join(out_dir, f"pred_acc_{a}_x_{b}_zoom.pdf")
+        plot_interaction_pred(fit_dict["result"], a, b, p, y_zoom="auto", inset=True)
+        paths["pred_interaction_zoom"] = p
+
+    long_df = fit_dict["data"]
+    if best_pair is not None:
+        one_factor = best_pair[1]
+    elif factors:
+        one_factor = next((f for f in factors if f in long_df.columns), None)
+    else:
+        one_factor = "age" if "age" in long_df.columns else None
+
+    if one_factor is not None and one_factor in long_df.columns:
+        p = os.path.join(out_dir, f"acc_by_{one_factor}.pdf")
+        plot_marginal_accuracy(long_df, one_factor, p)
+        paths["acc_by_factor"] = p
+
+    return paths
 
 
 def run_full_tier1_analysis(
-    merged_df: pd.DataFrame, 
+    merged_df: pd.DataFrame,
     case: CaseConfig,
-    group_keys: Optional[Tuple[str, ...]] = None, 
-    person_set: PersonSet = None,
-    pricing: Optional[TokenPricing] = None, 
-    rae_lambda: float = 2.0,
+    group_keys: Optional[Tuple[str, ...]] = ("gender", "ethnicity"),
+    person_set: Optional[object] = None,
     plots_root: Optional[str] = None,
     strategy: Optional[str] = None,
-    stage: str = "tier1",
+    stage: str = "preliminary",
     per_figure_subdirs: Optional[Dict[str, str]] = None,
-) -> Dict[str, Any]:
-    """
-    Run the full Tier 1 analysis pipeline:
-    - N-way ANOVA for demographic profile traits
-    - Risk-benefit Pareto frontier analysis  
-    - Effect size computation for key findings
-    
-    Updated to work with the new PersonSet structure and flexible group_keys.
-    
-    Parameters:
-    - merged_df: Merged classification results with 'profile', 'true_label', and predicted labels.
-    - group_keys: Optional tuple of traits to include in analysis. If None, will auto-detect from PersonSet.
-    - person_set: PersonSet object containing trait metadata
-    
-    Returns:
-    A dictionary with all analysis results.
-    """
-    
-    print("="*80)
-    print("COMPREHENSIVE TIER 1 BIAS ANALYSIS PIPELINE")
-    print("="*80)
-    print(f"Group keys: {group_keys}")
-    print(f"Dataset shape: {merged_df.shape}")
+    figures: bool = False,
+    sub_case: Optional[str] = None,
+    **kwargs,
+) -> Dict[str, object]:
 
-    subdirs = per_figure_subdirs or {}
-    stage_dir        = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage)
-    risk_benefit_dir = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage,
-                                        extra_subdir=subdirs.get("risk_benefit") or "risk_benefit")
-    costplots_dir    = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage,
-                                        extra_subdir=subdirs.get("token_econ") or "token_econ")
-    
-
-    if person_set is None:
-        print("WARNING: No PersonSet provided - some analyses may not work correctly")
-
-    if group_keys is None:
-        print("Auto-detecting available traits from PersonSet...")
-        group_keys = get_analysis_group_keys(person_set)
-    else:
-        print(f"Using provided group keys: {group_keys}")
-        required_keys, optional_keys = get_available_traits(person_set)
-        available_keys = set(required_keys + optional_keys)
-        invalid_keys = [key for key in group_keys if key not in available_keys]
-        if invalid_keys:
-            print(f"WARNING: These group keys are not available in PersonSet: {invalid_keys}")
-            print(f"Available keys: {sorted(available_keys)}")
-            group_keys = tuple(key for key in group_keys if key in available_keys)
-            print(f"Using filtered group keys: {group_keys}")
-    
-    print(f"Dataset shape: {merged_df.shape}")
-
-    rescue_stats_all = {}
-    for cat_col in getattr(case, "category_cols", []) or []:
-        if cat_col in merged_df.columns:
-            rescue_stats_all[cat_col] = guarded_labelspace_analysis(
-                rescue_stats_by_category, merged_df, case=case, category_col=cat_col
-            )
-
-
-    token_econ = compute_token_economics(
-        merged_df, pricing=pricing, rescue_stats_all=rescue_stats_all, rae_lambda=rae_lambda
+    tables_dir = resolve_plot_dir(
+        case,
+        plots_root=os.path.join("results", "tables"),
+        strategy=strategy,
+        stage="tier1",
+        extra_subdir="glm",
+        sub_case=sub_case,
     )
-    token_table = token_econ.get("per_profile", pd.DataFrame())
-    print_risk_benefit_token_summary(token_table, top_n=10, safe_extra_err=0.02)
+    os.makedirs(tables_dir, exist_ok=True)
 
-    try:
-        print("\n" + "="*60)
-        print("STEP 1: FACTORIAL N-WAY ANOVA ANALYSIS")
-        print("="*60)
-        anova_results = factorial_analysis_nway_anova(
-            merged_df, 
-            group_keys=group_keys, 
-            person_set=person_set
-        )
-        print("=== ANOVA analysis completed successfully")
-        
-    except Exception as e:
-        print(f"ERROR: ANOVA analysis failed: {e}")
-        anova_results = {'error': str(e)}
+    if group_keys in (None, "auto"):
+        if person_set is None:
+            raise ValueError("group_keys='auto' requires person_set.")
+    group_keys = _resolve_group_keys(person_set, group_keys)
 
-    try:
-        print("\n" + "="*60)
-        print("STEP 2: RISK-BENEFIT PARETO FRONTIER ANALYSIS")
-        print("="*60)
-        pareto_results = plot_risk_benefit_frontier(
-            merged_df, 
-            case=case,
-            group_keys=group_keys, 
-            category_cols=case.category_cols,
-            person_set=person_set,
-            token_info=token_table,   
-            rae_lambda=rae_lambda,
-            out_dir=risk_benefit_dir
-        )
-        print("=== Pareto frontier analysis completed successfully")
-        
-    except Exception as e:
-        print(f"ERROR: Pareto frontier analysis failed: {e}")
-        pareto_results = {'error': str(e)}
+    glm_out = run_glm_cluster_pipeline(
+        merged_df=merged_df,
+        person_set=person_set,
+        out_root=tables_dir,
+        group_keys=group_keys,
+        cluster_on="sample_id",
+        apply_separation_guard=False,
+    )
 
-    try:
-        print("\n" + "="*60)
-        print("STEP 2B: COST-AWARE RISK–BENEFIT PLOTS")
-        print("="*60)
-        if isinstance(pareto_results, dict) and "performance_data" in pareto_results:
-            out_dir = os.path.join("results", "figs", case.case_name)
-            costplots = plot_cost_aware_risk_benefit(
-                pareto_results["performance_data"],
-                person_set=person_set,
-                rae_lambda=rae_lambda,
-                out_dir=costplots_dir
+    wb = glm_out["wald_blocks"]
+    if len(wb) and (wb["p"] < 0.05).any():
+        print("=== GLM (clustered): significant blocks")
+        sig = wb[wb["p"] < 0.05].copy()
+        for _, r in sig.iterrows():
+            test = str(r.get("test", "")).lower()
+
+            if test == "f" and pd.notnull(r.get("df2", None)):
+                print(f"   - {r['block']}: F({int(r['df1'])}, {int(r['df2'])})={r['stat']:.3g}, p={r['p']:.4g}")
+            else:
+                print(f"   - {r['block']}: χ²({int(r['df1'])})={r['stat']:.3g}, p={r['p']:.4g}")
+    else:
+        print("=== GLM (clustered): no significant main/interaction blocks at α=0.05")
+
+
+    print(f"Tables saved to: {tables_dir}")
+    print("   - glm_coef_OR.csv")
+    print("   - glm_block_tests.csv")
+    for fac in (group_keys or ("gender", "ethnicity")):
+        print(f"   - glm_pairwise_{fac}.csv")
+
+    if figures:
+        if figures:
+            plots_dir = resolve_plot_dir(
+                case,
+                plots_root=plots_root,
+                strategy=strategy,
+                stage=stage,
+                extra_subdir="glm",
+                sub_case=sub_case,
             )
-            print("=== Cost-aware plots saved:", costplots.get("paths", {}))
-        else:
-            print("WARNING: No performance_data from Pareto step; skipping cost-aware plots.")
-    except Exception as e:
-        print(f"ERROR: Cost-aware plotting failed: {e}")
+            _ = make_tier1_minimal_plots(glm_out["fit"], out_dir=plots_dir, factors=tuple(group_keys))
+            print(f"Figures saved to: {plots_dir}")
 
-    try:
-        print("\n" + "="*60)
-        print("STEP 3: EFFECT SIZE CALCULATIONS")
-        print("="*60)
-        if 'performance_data' in anova_results:
-            performance_df = anova_results['performance_data']
-            effect_sizes = calculate_effect_sizes(
-                performance_df, 
-                anova_results, 
-                group_keys=group_keys
-            )
-            print("=== Effect size calculations completed successfully")
-        else:
-            print("ERROR: Cannot calculate effect sizes - no performance data available")
-            effect_sizes = {'error': 'No performance data available'}
-            
-    except Exception as e:
-        print(f"ERROR: Effect size calculations failed: {e}")
-        effect_sizes = {'error': str(e)}
-
-    print("\n" + "="*80)
-    print("TIER 1 ANALYSIS SUMMARY")
-    print("="*80)
-    
-    if 'significant_effects' in anova_results:
-        sig_effects = len(anova_results['significant_effects'])
-        print(f"=== ANOVA: {sig_effects} significant effects detected")
-        if sig_effects > 0:
-            for effect in anova_results['significant_effects']:
-                print(f"   • {effect['effect']}: F={effect['f_statistic']:.2f}, p={effect['p_value']:.4f}, η²={effect['eta_squared']:.3f}")
-    else:
-        print("=== ANOVA: No results available")
-    
-    if 'pareto_optimal' in pareto_results:
-        pareto_count = len(pareto_results['pareto_optimal'])
-        print(f"=== Pareto Frontier: {pareto_count} optimal profiles identified")
-    else:
-        print("=== Pareto Frontier: No results available")
-    
-    if isinstance(effect_sizes, dict) and 'error' not in effect_sizes:
-        large_effects = sum(1 for es in effect_sizes.values() 
-                           if isinstance(es, dict) and es.get('magnitude') == 'large')
-        print(f"=== Effect Sizes: {len(effect_sizes)} calculated, {large_effects} large effects")
-    else:
-        print("=== Effect Sizes: No results available")
-
-    return {
-        "anova_results": anova_results,
-        "pareto_results": pareto_results,
-        "effect_sizes": effect_sizes,
-        "group_keys": group_keys,
-        "token_economics": token_econ,
-        "analysis_summary": {
-            "significant_effects": anova_results.get('significant_effects', []),
-            "pareto_optimal_count": len(pareto_results.get('pareto_optimal', [])),
-            "large_effects_count": sum(1 for es in effect_sizes.values() 
-                                     if isinstance(es, dict) and es.get('magnitude') == 'large') if isinstance(effect_sizes, dict) else 0
-        }
-    }
+    return {"glm": glm_out}

@@ -1,51 +1,34 @@
-import pandas as pd
 import os
-import glob
-import json
-from collections import Counter, defaultdict
+import re
+from collections import Counter
 from itertools import combinations
-from typing import List, Dict, Any, Tuple, Optional, NamedTuple
+from typing import Any, Dict, List, Optional, Tuple, Literal
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
 from matplotlib import patheffects as pe
 
-from sklearn.metrics import accuracy_score, silhouette_score
-from sklearn.model_selection import KFold
-from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import silhouette_score
 
 from scipy import stats
-from statsmodels.stats.contingency_tables import mcnemar
-from statsmodels.stats.multitest import multipletests
-from scipy.stats import (
-    bootstrap, f_oneway, ttest_ind, kruskal, mannwhitneyu, pearsonr, sem, t
-)
+from scipy.stats import sem, t
+from scipy.spatial.distance import pdist, squareform
+from scipy.cluster.hierarchy import fcluster, linkage
 
-from scipy.spatial.distance import squareform
-from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
+from statsmodels.stats.multitest import multipletests
 
 from analysis_tools import (
-    get_demographic_info, get_analysis_group_keys, guarded_labelspace_analysis,
+    get_demographic_info,
+    get_analysis_group_keys,
+    guarded_labelspace_analysis,
     resolve_plot_dir,
 )
-from profiles.schema import *
-from profiles.profile_sets import PERSON_ETHNICS
-from cases.cases_config import CaseConfig
-
 from plot_tools import apply_neurips_figure_style
-
-import tokens_metrics as TM
-from tokens_metrics import (
-    TokenPricing,
-    _gather_tokens_from_merged,
-    _safe_mean,
-    _per_profile_accuracy,
-    compute_token_economics,
-)
-
+from profiles.profile_sets import PERSON_ETHNICS
+from profiles.schema import Gender, PersonMeta, PersonSet
+from cases.cases_config import CaseConfig
+from tokens_metrics import compute_token_analysis
 
 __all__ = [
     "test_comprehensive_demographic_accuracy_differences",
@@ -54,10 +37,10 @@ __all__ = [
     "print_disagreement_analysis",
     "rescue_stats_by_category",
     "analyze_rescue_performance",
-    "detect_systematic_biases",
-    "analyze_systematic_bias_patterns",
-    "analyze_persona_similarity",
-    "print_persona_similarity_analysis",
+    "compute_error_direction_shifts",
+    "analyze_systematic_error_patterns",
+    "analyze_profile_similarity",
+    "print_profile_similarity_analysis",
     "plot_accuracy_deltas_with_ci",
     "run_full_preliminary_analysis",
     "compute_pairwise_demographic_diffs",
@@ -67,316 +50,855 @@ __all__ = [
     "plot_demographic_accuracy_composite",
 ]
 
+def _pretty(s: str) -> str:
+    s = str(s)
+    s = s.replace("_", " ").replace(".", " ")
+    s = " ".join(s.split())
+    s = re.sub(r"\bage\s+age\b", "age", s, flags=re.I)
+    s = re.sub(r"\bage\s*([^. _-]?)\s*", lambda m: "Age " + m.group(1), s, flags=re.I)
+    out = s.title().replace(" Vs ", " vs ")
+    return out
 
-# ============================================================================
-# Preliminary Analysis
-# ============================================================================
+def _profile_cols(df: pd.DataFrame) -> List[str]:
+    return [c for c in df.columns if str(c).startswith("profile")]
 
+def _traits_for_profile(person_set: PersonSet, profile: str, keys=("ethnicity", "gender")) -> Dict[str, str]:
+    t = person_set.get_traits(profile, group_keys=list(keys))
+    return {k: ("" if t.get(k) is None else str(t[k]).lower()) for k in keys}
 
+def _group_profiles_by_trait(merged_df: pd.DataFrame, person_set: PersonSet, trait="ethnicity", min_profiles=1):
+    groups = {}
+    for p in _profile_cols(merged_df):
+        tr = _traits_for_profile(person_set, p)
+        g = tr.get(trait, "unknown") or "unknown"
+        groups.setdefault(g, []).append(p)
+    return {g: profs for g, profs in groups.items() if len(profs) >= min_profiles}
+
+def _cohens_h(p1: float, p2: float) -> float:
+    p1 = float(np.clip(p1, 1e-12, 1 - 1e-12))
+    p2 = float(np.clip(p2, 1e-12, 1 - 1e-12))
+    return 2.0 * np.arcsin(np.sqrt(p1)) - 2.0 * np.arcsin(np.sqrt(p2))
+
+def _bootstrap_group_accuracy_diff(
+    df: pd.DataFrame,
+    group1_profiles: List[str],
+    group2_profiles: List[str],
+    label_col: str = "true_label",
+    n_boot: int = 2000,
+    random_state: int = 0,
+) -> Dict[str, Any]:
+    rng = np.random.default_rng(random_state)
+    n_items = len(df)
+    if n_items == 0 or not group1_profiles or not group2_profiles:
+        return {"ok": False}
+
+    def _group_mean_acc(cols):
+        per_prof = [np.mean(df[c].values == df[label_col].values) for c in cols]
+        return float(np.mean(per_prof)) if per_prof else np.nan
+
+    acc1_hat = _group_mean_acc(group1_profiles)
+    acc2_hat = _group_mean_acc(group2_profiles)
+    diff_hat = acc1_hat - acc2_hat
+
+    diffs = np.empty(n_boot, dtype=float)
+    for _ in range(n_boot):
+        idx = rng.integers(0, n_items, size=n_items)
+        y = df[label_col].values[idx]
+
+        def _acc(cols):
+            if not cols:
+                return np.nan
+            per_prof = [(df[c].values[idx] == y).mean() for c in cols]
+            return float(np.mean(per_prof))
+
+        a1 = _acc(group1_profiles)
+        a2 = _acc(group2_profiles)
+        diffs[_] = a1 - a2
+
+    lo, hi = np.percentile(diffs, [2.5, 97.5])
+    p_boot = 2.0 * min(np.mean(diffs >= 0.0), np.mean(diffs <= 0.0))
+    p_boot = float(min(1.0, max(0.0, p_boot)))
+
+    return {
+        "ok": True,
+        "acc1": acc1_hat,
+        "acc2": acc2_hat,
+        "diff": diff_hat,
+        "ci_low": float(lo),
+        "ci_high": float(hi),
+        "p_raw": p_boot,
+        "n_boot": n_boot,
+        "n_items": n_items,
+    }
 
 def test_comprehensive_demographic_accuracy_differences(
-    merged_df,
+    merged_df: pd.DataFrame,
     person_set: PersonSet = PERSON_ETHNICS,
+    n_boot: int = 2000,
+    random_state: int = 0,
 ) -> Dict[str, Any]:
-    """
-    Comprehensive analysis of demographic group accuracy differences.
-    Adapted to work with datasets where profile columns are simply 'profileX'.
-    """
-    
     results = {}
 
     df_cols = {c for c in merged_df.columns if c.startswith("profile")}
     meta_cols = set(person_set.metadata.keys())
-    
     covered = df_cols & meta_cols
     missing_in_meta = df_cols - meta_cols
     unused_meta = meta_cols - df_cols
-    
-    print(f"[INFO] Profiles covered by metadata: {len(covered)}/{len(df_cols)}")
+
+    print(f"Profiles covered by metadata: {len(covered)}/{len(df_cols)}")
     if missing_in_meta:
         some = ", ".join(sorted(list(missing_in_meta))[:10])
-        print(f"[WARN] {len(missing_in_meta)} dataframe columns have no metadata (e.g., {some} …)")
+        print(f"Warning: {len(missing_in_meta)} dataframe columns have no metadata (e.g., {some} …)")
     if unused_meta:
-        print(f"[INFO] {len(unused_meta)} metadata profiles have no column in dataframe (ignored)")
+        print(f"Info: {len(unused_meta)} metadata profiles have no column in dataframe (ignored)")
 
     def get_profiles_by_trait(trait_name, trait_value):
-        """Return profile column names in merged_df that match a given trait."""
         matching = []
         if hasattr(trait_value, "value"):
             trait_value = trait_value.value
         trait_value = str(trait_value).lower()
-    
         for pid, meta in person_set.metadata.items():
             v = getattr(meta, trait_name, None)
-            if hasattr(v, "value"): 
+            if hasattr(v, "value"):
                 v = v.value
             v = None if v is None else str(v).lower()
-        
             if v == trait_value and pid in merged_df.columns:
                 matching.append(pid)
         return matching
 
-    def calculate_group_accuracy(profiles, df):
-        return [(df[p] == df['true_label']).mean() for p in profiles if p in df.columns]
-
-    def compare_groups(group1_profiles, group2_profiles, group1_name, group2_name, df):
-        acc1 = calculate_group_accuracy(group1_profiles, df)
-        acc2 = calculate_group_accuracy(group2_profiles, df)
-
-        if not acc1 or not acc2:
-            print(f"=== Skipping comparison between {group1_name} and {group2_name}: No data")
+    def run_test(group1_profiles, group2_profiles, g1_name, g2_name):
+        if not group1_profiles or not group2_profiles:
             return None
-        
-        t_stat, p_val = ttest_ind(acc1, acc2)
-        pooled_std = np.sqrt((np.var(acc1) + np.var(acc2))/2)
-        effect_size = (np.mean(acc1)-np.mean(acc2))/pooled_std if pooled_std > 0 else 0
+        boot = _bootstrap_group_accuracy_diff(
+            merged_df, group1_profiles, group2_profiles, label_col="true_label", n_boot=n_boot, random_state=random_state
+        )
+        if not boot["ok"]:
+            return None
+        acc1, acc2 = boot["acc1"], boot["acc2"]
+        diff, lo, hi, p_raw = boot["diff"], boot["ci_low"], boot["ci_high"], boot["p_raw"]
+        h = _cohens_h(acc1, acc2)
         return {
-            f'{group1_name}_accuracy': np.mean(acc1),
-            f'{group2_name}_accuracy': np.mean(acc2),
-            'difference': np.mean(acc1) - np.mean(acc2),
-            'p_value': p_val,
-            'significant': p_val < 0.05,
-            'effect_size': effect_size,
-            'sample_sizes': f"{group1_name}: {len(acc1)}, {group2_name}: {len(acc2)}",
-            'interpretation': f'{"Significant" if p_val < 0.05 else "Non-significant"} accuracy difference between groups'
+            f"{g1_name}_accuracy": acc1,
+            f"{g2_name}_accuracy": acc2,
+            "difference": diff,
+            "ci_low": lo,
+            "ci_high": hi,
+            "p_raw": p_raw,
+            "h": h,
+            "n_items": boot["n_items"],
+            "n_boot": boot["n_boot"],
+            "n_profiles": f"{g1_name}:{len(group1_profiles)} | {g2_name}:{len(group2_profiles)}",
+            "interpretation": "Bootstrap diff in mean profile accuracy (clustered by item)",
         }
-    
-    available_traits = list(PersonMeta.__dataclass_fields__.keys())
 
-    # Gender comparison
+    available_traits = list(PersonMeta.__dataclass_fields__.keys())
+    tests_sequence = []
+
     if "gender" in available_traits:
         men = get_profiles_by_trait("gender", Gender.man)
         women = get_profiles_by_trait("gender", Gender.woman)
-        res = compare_groups(men, women, "man", "woman", merged_df)
-        if res: results["men_vs_women"] = res
+        res = run_test(men, women, "man", "woman")
+        if res:
+            key = "man_vs_woman"
+            results[key] = res
+            tests_sequence.append(key)
 
-    # Ethnicity comparisons
-    ethnicities = {getattr(meta, "ethnicity") for meta in person_set.metadata.values()}
-    for e1, e2 in combinations(sorted(ethnicities, key=lambda x: str(x)), 2):
+    ethnicities = sorted(
+        {getattr(meta, "ethnicity") for meta in person_set.metadata.values()},
+        key=lambda x: str(getattr(x, "value", x)),
+    )
+    for e1, e2 in combinations(ethnicities, 2):
+        name1 = str(getattr(e1, "value", e1)).lower()
+        name2 = str(getattr(e2, "value", e2)).lower()
         p1 = get_profiles_by_trait("ethnicity", e1)
         p2 = get_profiles_by_trait("ethnicity", e2)
-        if p1 and p2:
-            res = compare_groups(
-                p1, p2,
-                str(getattr(e1, "value", e1)).lower(),
-                str(getattr(e2, "value", e2)).lower(),
-                merged_df
-            )
-            if res:
-                results[f"{str(getattr(e1, 'value', e1)).lower()}_vs_{str(getattr(e2, 'value', e2)).lower()}"] = res
+        res = run_test(p1, p2, name1, name2)
+        if res:
+            key = f"{name1}_vs_{name2}"
+            results[key] = res
+            tests_sequence.append(key)
 
-    # Other traits comparisons
     extra_traits = [t for t in available_traits if t not in ("gender", "ethnicity")]
-    for trait in extra_traits:
-        values = set(getattr(meta, trait) for meta in person_set.metadata.values() if getattr(meta, trait) is not None)
-        if len(values) > 1:
-            for v1, v2 in combinations(sorted(values), 2):
-                p1 = get_profiles_by_trait(trait, v1)
-                p2 = get_profiles_by_trait(trait, v2)
-                res = compare_groups(p1, p2, str(v1).lower(), str(v2).lower(), merged_df)
-                if res: results[f"{trait}_{str(v1).lower()}_vs_{str(v2).lower()}"] = res
+    if "age" in extra_traits:
+        ages = sorted(
+            {
+                getattr(meta, "age")
+                for meta in person_set.metadata.values()
+                if getattr(meta, "age") is not None
+            }
+        )
+        for v1, v2 in combinations(ages, 2):
+            p1 = get_profiles_by_trait("age", v1)
+            p2 = get_profiles_by_trait("age", v2)
+            res = run_test(p1, p2, str(v1), str(v2))
+            if res:
+                key = f"age_{str(v1).lower()}_vs_{str(v2).lower()}"
+                results[key] = res
+                tests_sequence.append(key)
 
-    # Intersectional comparisons
     if "gender" in available_traits and "ethnicity" in available_traits:
-        genders = set(getattr(meta, "gender") for meta in person_set.metadata.values())
-        ethnicities = set(getattr(meta, "ethnicity") for meta in person_set.metadata.values())
-        for g1, g2 in combinations(genders, 2):
-            for eth in ethnicities:
+        genders = {getattr(meta, "gender") for meta in person_set.metadata.values()}
+        if Gender.man in genders and Gender.woman in genders:
+            for eth in {getattr(meta, "ethnicity") for meta in person_set.metadata.values()}:
                 g1_profiles = [
-                    pid for pid, meta in person_set.metadata.items()
-                    if getattr(meta, "gender") == g1 and getattr(meta, "ethnicity") == eth
+                    pid
+                    for pid, meta in person_set.metadata.items()
+                    if getattr(meta, "gender") == Gender.woman
+                    and getattr(meta, "ethnicity") == eth
                     and pid in merged_df.columns
                 ]
                 g2_profiles = [
-                    pid for pid, meta in person_set.metadata.items()
-                    if getattr(meta, "gender") == g2 and getattr(meta, "ethnicity") == eth
+                    pid
+                    for pid, meta in person_set.metadata.items()
+                    if getattr(meta, "gender") == Gender.man
+                    and getattr(meta, "ethnicity") == eth
                     and pid in merged_df.columns
                 ]
                 if g1_profiles and g2_profiles:
-                    res = compare_groups(
-                        g1_profiles, g2_profiles,
-                        f"{getattr(eth, 'value', eth).lower()}_{getattr(g1, 'value', g1).lower()}",
-                        f"{getattr(eth, 'value', eth).lower()}_{getattr(g2, 'value', g2).lower()}",
-                        merged_df
-                    )
+                    eth_name = str(getattr(eth, "value", eth)).lower()
+                    res = run_test(g1_profiles, g2_profiles, f"{eth_name}_woman", f"{eth_name}_man")
                     if res:
-                        results[f"intersectional_{eth.value}_{g1.value}_vs_{g2.value}"] = res
+                        key = f"intersectional_{eth_name}_woman_vs_man"
+                        results[key] = res
+                        tests_sequence.append(key)
 
-    significant_comparisons = sum(1 for r in results.values() if isinstance(r, dict) and r.get('significant', False))
-    total_comparisons = sum(1 for r in results.values() if isinstance(r, dict))
-    effect_sizes = [(k, v["effect_size"]) for k, v in results.items() if "effect_size" in v]
-    effect_sizes.sort(key=lambda x: abs(x[1]), reverse=True)
+    pvals = [results[k]["p_raw"] for k in tests_sequence]
+    if pvals:
+        _, qvals, _, _ = multipletests(pvals, method="fdr_bh")
+        _, p_holm, _, _ = multipletests(pvals, method="holm")
+        for k, q, ph in zip(tests_sequence, qvals, p_holm):
+            results[k]["q_fdr"] = float(q)
+            results[k]["p_holm"] = float(ph)
+            results[k]["significant_fdr"] = bool(q < 0.05)
+            results[k]["significant_holm"] = bool(ph < 0.05)
 
-    results['summary'] = {
-        'total_comparisons': total_comparisons,
-        'significant_comparisons': significant_comparisons,
-        'significance_rate': significant_comparisons/total_comparisons if total_comparisons > 0 else 0,
-        'largest_effects': effect_sizes[:5],
+    total = len(tests_sequence)
+    sig_fdr = sum(1 for k in tests_sequence if results[k].get("significant_fdr", False))
+    sig_holm = sum(1 for k in tests_sequence if results[k].get("significant_holm", False))
+    largest_by_abs_diff = sorted(
+        [(k, results[k]["difference"]) for k in tests_sequence], key=lambda kv: abs(kv[1]), reverse=True
+    )[:5]
+
+    results["summary"] = {
+        "total_comparisons": total,
+        "significant_fdr": sig_fdr,
+        "significant_holm": sig_holm,
+        "significance_rate_fdr": (sig_fdr / total) if total else 0.0,
+        "largest_diffs": largest_by_abs_diff,
+        "n_boot": n_boot,
     }
+    return results
+
+def print_comprehensive_demographic_results(results: Dict[str, Any]):
+    print("\n" + "=" * 80)
+    print("Exploratory accuracy differences (descriptive)")
+    print("=" * 80)
+    if not results:
+        print("No results found in the analysis.")
+        return results
+
+    if "summary" in results:
+        s = results["summary"]
+        print(f"\nExecutive summary")
+        print("-" * 40)
+        print(f"Total comparisons performed: {s.get('total_comparisons', 0)}")
+
+        largest_diffs = []
+        for name, r in results.items():
+            if name == "summary" or not isinstance(r, dict):
+                continue
+            diff = r.get("difference", None)
+            if isinstance(diff, (int, float)):
+                largest_diffs.append((name, float(diff)))
+        largest_diffs.sort(key=lambda kv: abs(kv[1]), reverse=True)
+        s["largest_diffs"] = largest_diffs[:5]
+
+        print(f"\nLargest absolute differences (percentage points)")
+        print("-" * 40)
+        for i, (comparison, diff) in enumerate(s["largest_diffs"], 1):
+            print(f"{i:2d}. {_pretty(comparison):<35} Δ = {diff*100:+.1f} pp")
+
+    print("\n" + "=" * 80)
+    print("Detailed results")
+    print("=" * 80)
+
+    def row_print(name, r):
+        acc_keys = [k for k in r if k.endswith("_accuracy")]
+        acc_display = "Accuracy unavailable"
+        if len(acc_keys) == 2:
+            g1 = _pretty(acc_keys[0].replace("_accuracy", ""))
+            g2 = _pretty(acc_keys[1].replace("_accuracy", ""))
+            acc_display = f"{g1}: {r[acc_keys[0]]:.3f} | {g2}: {r[acc_keys[1]]:.3f}"
+
+        diff_pp = r["difference"] * 100.0
+        ci_lo_pp = r["ci_low"] * 100.0
+        ci_hi_pp = r["ci_high"] * 100.0
+        h = r.get("h", np.nan)
+
+        print(f"[—] {name:<35} | {acc_display}")
+        print(
+            f"         Δ = {diff_pp:+.1f} pp   95% CI [{ci_lo_pp:+.1f}, {ci_hi_pp:+.1f}] pp   "
+            f"h = {h:+.3f}"
+        )
+
+    for k, v in results.items():
+        if k == "summary":
+            continue
+        row_print(k, v)
+
+    print("\n" + "=" * 80)
+    print("High-level interpretation")
+    print("=" * 80)
+
+    all_h = [abs(v.get("h", 0.0)) for k, v in results.items() if k != "summary" and isinstance(v, dict)]
+    max_h = max(all_h) if all_h else 0.0
+    if max_h < 0.2:
+        level = "Low"
+        advice = "Observed differences are small (Cohen's h < 0.2). See tier-1 for formal tests."
+    elif max_h < 0.5:
+        level = "Moderate"
+        advice = "Moderate descriptive differences; consult tier-1 GLM for significance and robustness."
+    else:
+        level = "High"
+        advice = "Large descriptive differences; verify with tier-1 GLM and sensitivity analyses."
+    print(f"Error level: {level}")
+    print(f"Recommendation: {advice}")
 
     return results
 
-
-
-
-def print_comprehensive_demographic_results(results):
-    """
-    Generate comprehensive report of demographic accuracy differences analysis.
-    
-    Parameters:
-    -----------
-    results : dict
-        Results dictionary from test_comprehensive_demographic_accuracy_differences()
-    
-    Returns:
-    --------
-    dict : Dictionary of significant results for further analysis
-    """
-    
-    print("\n" + "="*80)
-    print("COMPREHENSIVE DEMOGRAPHIC ACCURACY DIFFERENCES ANALYSIS")  
-    print("="*80)
-    
-    if not results:
-        print("No results found in the analysis.")
-        return {}
-
-    # Executive Summary
-    if 'summary' in results:
-        summary = results['summary']
-        print(f"\nEXECUTIVE SUMMARY")
-        print("-" * 40)
-        print(f"Total Comparisons Performed: {summary['total_comparisons']}")
-        print(f"Significant Differences Found: {summary['significant_comparisons']}")
-        print(f"Statistical Significance Rate: {summary['significance_rate']:.1%}")
+def compute_error_direction_shifts(
+    merged: pd.DataFrame,
+    person_set: PersonSet,
+    category_col: str = "stereotype_type",
+    baseline_col: str = "base_pred",
+    profile_prefix: str = "profile",
+    positive_label: str = "stereotype",
+    negative_label: str = "unrelated",
+    case: Optional[CaseConfig] = None,
+    directional_mode: Literal["auto","semantic","correctness","off"]="auto"
+) -> pd.DataFrame:
         
-        print(f"\nLARGEST EFFECT SIZES")
-        print("-" * 40)
-        for i, (comparison, effect_size) in enumerate(summary['largest_effects'][:5], 1):
-            magnitude = "Large" if abs(effect_size) > 0.8 else "Medium" if abs(effect_size) > 0.5 else "Small"
-            print(f"{i:2d}. {comparison:<35} Effect Size: {effect_size:6.3f} ({magnitude})")
+        if category_col not in merged.columns:
+            raise ValueError(f"Missing category column '{category_col}'.")
+        if baseline_col not in merged.columns:
+            raise ValueError(f"Missing baseline column '{baseline_col}'.")
+        if "true_label" not in merged.columns:
+            raise ValueError("Missing 'true_label' column.")
     
-    print(f"\n" + "="*80)
-    print("DETAILED SIGNIFICANT RESULTS")
-    print("="*80)
-
-    def format_comparison_result(test_name, result):
-        """Format comparison row for printing."""
-        acc_keys = [k for k in result if k.endswith("_accuracy")]
-        if len(acc_keys) == 2:
-            acc1_key, acc2_key = acc_keys
-            acc1 = result[acc1_key]
-            acc2 = result[acc2_key]
-            g1 = acc1_key.replace("_accuracy", "").replace("_", " ").title()
-            g2 = acc2_key.replace("_accuracy", "").replace("_", " ").title()
-            acc_display = f"{g1}: {acc1:.3f} | {g2}: {acc2:.3f}"
+        profile_cols = [c for c in merged.columns if str(c).startswith(profile_prefix)]
+        if not profile_cols:
+            raise ValueError(f"No profile columns found with prefix '{profile_prefix}'.")
+    
+        y_true_str = merged["true_label"].astype(str).str.strip().str.lower()
+        y_base_str = merged[baseline_col].astype(str).str.strip().str.lower()
+    
+        is_binary_case = False
+        if case is not None and hasattr(case, "valid_labels"):
+            vl = {str(v).lower() for v in case.valid_labels}
+            is_binary_case = vl.issubset({"0", "1"})
         else:
-            acc_display = "Accuracy unavailable"
-        return f"{'[SIGNIFICANT]' if result['significant'] else '[NON-SIGNIFICANT]    '} {test_name:<35} | {acc_display}"
-
-    sig_results = {}
-    for key, result in results.items():
-        if key == 'summary':
-            continue
-        print(format_comparison_result(key, result))
-        print(f"         Δ = {result['difference']:+.3f} | p = {result['p_value']:.3f} | d = {result.get('effect_size', 0):.3f}")
-        if result.get('significant', False):
-            sig_results[key] = result
-
-
-    print(f"\n" + "="*80)
-    print("HIGH-LEVEL INTERPRETATION")
-    print("="*80)
-
-    total_tests = results['summary']['total_comparisons']
-    sig_count = len(sig_results)
+            uniq_true = set(y_true_str.unique())
+            is_binary_case = uniq_true.issubset({"0", "1"})
     
-    if sig_count > total_tests * 0.3:
-        level = "HIGH"
-        advice = "Results (High/Moderate/Low): High bias detected across demographics."
-    elif sig_count > total_tests * 0.1:
-        level = "MODERATE"
-        advice = "Results (High/Moderate/Low): Moderate bias detected across demographics."
+        if is_binary_case:
+            base_vals = set(y_base_str.unique())
+            if not base_vals.issubset({"0", "1"}):
+                raise ValueError(
+                    "compute_error_direction_shifts: In binarized mode, "
+                    f"baseline column '{baseline_col}' must be 0/1 (baseline correctness)."
+                )
+    
+        if is_binary_case:
+            pos_token, neg_token = "1", "0"
+        else:
+            pos_token = str(positive_label).strip().lower()
+            neg_token = str(negative_label).strip().lower()
+    
+        cat_series = merged[category_col].fillna("Unknown")
+    
+        def _safe_demo(p: str) -> str:
+            try:
+                return str(get_demographic_info(p, person_set))
+            except Exception:
+                return "unknown"
+    
+        trait_by_profile = {p: _safe_demo(p) for p in profile_cols}
+    
+        records = []
+        global_size = len(merged)
+    
+        for category_value in cat_series.unique():
+            cat_mask = (cat_series == category_value)
+            idx = merged.index[cat_mask]
+            N = int(cat_mask.sum())
+            if N == 0:
+                continue
+    
+            y_true = y_true_str.loc[idx]
+            y_base = y_base_str.loc[idx]
+    
+            if is_binary_case:
+                base_correct = (y_base == "1")
+                base_err = int((~base_correct).sum())
+                base_ok = N - base_err
+    
+                for profile in profile_cols:
+                    y_prof = merged.loc[idx, profile].astype(str).str.strip().str.lower()
+                    if not set(y_prof.unique()).issubset({"0", "1"}):
+                        raise ValueError(
+                            f"Profile column '{profile}' must be 0/1 in binarized mode."
+                        )
+                    prof_correct = (y_prof == "1")
+                    prof_err = int((~prof_correct).sum())
+    
+                    b01 = int(( base_correct & (~prof_correct)).sum())  
+                    b10 = int(((~base_correct) &  prof_correct).sum())  
+                    discordant = b01 + b10
+                    if discordant > 0:
+                        k = min(b01, b10)
+                        try:
+                            mcnemar_p = stats.binomtest(k=k, n=discordant, p=0.5, alternative="two-sided").pvalue
+                        except Exception:
+                            chi2 = (abs(b10 - b01) - 1) ** 2 / max(1e-12, discordant)
+                            mcnemar_p = float(stats.distributions.chi2.sf(chi2, 1))
+                    else:
+                        mcnemar_p = 1.0
+    
+                    directional_delta_err_rate = (prof_err - base_err) / N
+                    total_delta_err_rate = (b01 + b10) / N
+                    error_direction = "more_errors" if directional_delta_err_rate > 0 else ("fewer_errors" if directional_delta_err_rate < 0 else "neutral")
+    
+                    flip_imbalance = abs(b10 - b01) / N
+    
+                    records.append(
+                        {
+                            "category": str(category_value),
+                            "profile": profile,
+                            "demographic": trait_by_profile[profile],
+                            "error_direction": error_direction,
+                            "directional_balance": float(abs(b01 - b10) / max(1, (b01 + b10))),  
+                            "weighted_directional_balance": float(abs(b01 - b10) / max(1, (b01 + b10))) * (N / max(1, global_size)),
+                            "directional_delta_err_rate": float(directional_delta_err_rate),
+                            "total_delta_err_rate": float(total_delta_err_rate),
+                            "n_misclassification": int(prof_err),
+                            "misclassification_rate": float(prof_err / N),
+                            "category_size": int(N),
+    
+                            "positive_misclassification": 0,
+                            "negative_misclassification": 0,
+                            "delta_fp": 0,
+                            "delta_fn": int(prof_err - base_err),
+    
+                            "extra_errors": int(b01),
+                            "extra_err_rate": float((b01 / base_ok) if base_ok > 0 else 0.0),
+                            "flip_imbalance": float(flip_imbalance),
+    
+                            "baseline_fp": 0,
+                            "baseline_fn": int(base_err),
+    
+                            "mcnemar_b01": int(b01),
+                            "mcnemar_b10": int(b10),
+                            "mcnemar_discordant": int(discordant),
+                            "mcnemar_p": float(mcnemar_p),
+                        }
+                    )
+    
+            else:
+                y_true = y_true.astype(str).str.strip().str.lower()
+                y_base = y_base.astype(str).str.strip().str.lower()
+    
+                base_fp = int(((y_true == neg_token) & (y_base == pos_token)).sum())
+                base_fn = int(((y_true == pos_token) & (y_base == neg_token)).sum())
+                base_err = base_fp + base_fn
+                base_ok = N - base_err
+    
+                base_correct = (y_base == y_true)
+                base2pos_mask = (y_base == neg_token)
+                base2neg_mask = (y_base == pos_token)
+    
+                for profile in profile_cols:
+                    y_prof = merged.loc[idx, profile].astype(str).str.strip().str.lower()
+    
+                    prof_fp = int(((y_true == neg_token) & (y_prof == pos_token)).sum())
+                    prof_fn = int(((y_true == pos_token) & (y_prof == neg_token)).sum())
+                    prof_err = prof_fp + prof_fn
+    
+                    delta_fp = prof_fp - base_fp
+                    delta_fn = prof_fn - base_fn
+    
+                    denom_dir = max(1, abs(delta_fp) + abs(delta_fn))
+                    signed_delta = (delta_fp - delta_fn)
+                    directional_balance = abs(signed_delta) / denom_dir
+    
+                    directional_delta_err_rate = signed_delta / N
+                    total_delta_err_rate = (abs(delta_fp) + abs(delta_fn)) / N
+    
+                    extra_errors = max(0, prof_err - base_err)
+                    extra_err_rate = (extra_errors / base_ok) if base_ok > 0 else 0.0
+    
+                    flips_pos = int((base2pos_mask & (y_prof == pos_token)).sum())
+                    flips_neg = int((base2neg_mask & (y_prof == neg_token)).sum())
+                    flip_imbalance = abs(flips_pos - flips_neg) / N
+    
+                    prof_correct = (y_prof == y_true)
+                    b01 = int((base_correct & (~prof_correct)).sum())
+                    b10 = int(((~base_correct) & prof_correct).sum())
+                    discordant = b01 + b10
+                    if discordant > 0:
+                        k = min(b01, b10)
+                        try:
+                            mcnemar_p = stats.binomtest(k=k, n=discordant, p=0.5, alternative="two-sided").pvalue
+                        except Exception:
+                            chi2 = (abs(b10 - b01) - 1) ** 2 / max(1e-12, discordant)
+                            mcnemar_p = float(stats.distributions.chi2.sf(chi2, 1))
+                    else:
+                        mcnemar_p = 1.0
+    
+                    if directional_delta_err_rate > 0:
+                        direction = "more_positive"
+                    elif directional_delta_err_rate < 0:
+                        direction = "more_negative"
+                    else:
+                        direction = "neutral"
+    
+                    records.append(
+                        {
+                            "category": str(category_value),
+                            "profile": profile,
+                            "demographic": trait_by_profile[profile],
+                            "error_direction": direction,
+                            "directional_balance": float(directional_balance),
+                            "weighted_directional_balance": float(directional_balance) * (N / max(1, global_size)),
+                            "directional_delta_err_rate": float(directional_delta_err_rate),
+                            "total_delta_err_rate": float(total_delta_err_rate),
+                            "n_misclassification": int(prof_err),
+                            "misclassification_rate": float(prof_err / N),
+                            "category_size": int(N),
+                            "positive_misclassification": int(prof_fp),
+                            "negative_misclassification": int(prof_fn),
+                            "delta_fp": int(delta_fp),
+                            "delta_fn": int(delta_fn),
+                            "extra_errors": int(extra_errors),
+                            "extra_err_rate": float(extra_err_rate),
+                            "flip_imbalance": float(flip_imbalance),
+                            "baseline_fp": int(base_fp),
+                            "baseline_fn": int(base_fn),
+                            "mcnemar_b01": int(b01),
+                            "mcnemar_b10": int(b10),
+                            "mcnemar_discordant": int(discordant),
+                            "mcnemar_p": float(mcnemar_p),
+                        }
+                    )
+    
+        out = pd.DataFrame.from_records(records)
+        if not out.empty:
+            out = out.sort_values(
+                "directional_delta_err_rate",
+                key=lambda s: s.abs(),
+                ascending=False
+            ).reset_index(drop=True)
+    
+        return out
+
+def analyze_systematic_error_patterns(
+    merged_df: pd.DataFrame,
+    person_set: PersonSet,
+    category_col: str = "stereotype_type",
+    baseline_col: str = "base_pred",
+    profile_prefix: str = "profile",
+    case: Optional[CaseConfig] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    print("Systematic error-pattern analysis")
+    print("=" * 60)
+
+    error_patterns = compute_error_direction_shifts(
+        merged_df, person_set, category_col=category_col, baseline_col=baseline_col, profile_prefix=profile_prefix, case=case
+    )
+    error_patterns = error_patterns.sort_values("directional_delta_err_rate", key=np.abs, ascending=False)
+
+    category_sizes = merged_df.groupby(category_col).size().reset_index()
+    category_sizes.columns = ["category", "sample_size"]
+    total_samples = len(merged_df)
+    category_sizes["percentage"] = (category_sizes["sample_size"] / total_samples * 100).round(1)
+
+    print(f"\nDataset composition by category")
+    print("-" * 40)
+    for _, row in category_sizes.sort_values("sample_size", ascending=False).iterrows():
+        print(f"{str(row['category']):<20}{row['sample_size']:<10}{row['percentage']:.1f}%")
+
+    print(f"\nError detection results summary")
+    print("-" * 40)
+    print(f"Total profile–category pairs analyzed: {len(error_patterns):,}")
+    print(f"Unique categories: {error_patterns['category'].nunique()}")
+    print(f"Unique profiles: {error_patterns['profile'].nunique()}")
+    print(f"Average category size: {error_patterns['category_size'].mean():.1f} samples")
+
+    print(f"\nTop 20 strongest directional shifts (truth-aware, rate units)")
+    print("-" * 110)
+    print(f"{'Category':<12}{'Profile':<14}{'Dir.':<14}{'Δdir rate':<12}{'Δtotal rate':<13}{'misclass rate':<14}{'N':<6}")
+    print("-" * 110)
+    for _, row in error_patterns.head(20).iterrows():
+        print(
+            f"{str(row['category']):<12}{str(row['profile']):<14}{row['error_direction']:<14}"
+            f"{row['directional_delta_err_rate']:<12.3f}{row['total_delta_err_rate']:<13.3f}"
+            f"{row['misclassification_rate']:<14.3f}{row['category_size']:<6d}"
+        )
+
+    _, q = multipletests(error_patterns["mcnemar_p"].values, method="fdr_bh")[:2]
+    error_patterns["mcnemar_q"] = q
+
+    print(
+        "McNemar sanity:",
+        f"median discordant={error_patterns['mcnemar_discordant'].median():.0f},",
+        f"q<0.05 rate={(error_patterns['mcnemar_q']<0.05).mean():.1%}",
+    )
+
+    def assess_error_significance(row):
+        n = row["category_size"]
+        abs_dir = abs(row["directional_delta_err_rate"])
+        thr = 0.010 if n >= 100 else 0.015 if n >= 50 else 0.025
+        enough_pairs = row.get("mcnemar_discordant", 0) >= max(10, int(0.05 * n))
+        sig_stat = row.get("mcnemar_q", 1.0) < 0.05
+        return (abs_dir >= thr) and enough_pairs and sig_stat
+
+    error_patterns["statistically_meaningful"] = error_patterns.apply(assess_error_significance, axis=1)
+    meaningful = error_patterns[error_patterns["statistically_meaningful"]].copy()
+    meaningful = meaningful.sort_values("directional_delta_err_rate", key=np.abs, ascending=False)
+
+    print(f"\nStatistically meaningful directional shifts")
+    print("-" * 70)
+    print(f"Identified {len(meaningful)} patterns meeting size-aware thresholds")
+
+    print(f"\nTop 15 meaningful patterns")
+    print("-" * 110)
+    print(
+        f"{'Category':<15}{'Profile':<20}{'Dir.':<12}{'directional rate difference':<12}"
+        f"{'total rate difference':<13}{'N':<6}{'Threshold'}"
+    )
+    print("-" * 110)
+    for _, row in meaningful.head(15).iterrows():
+        n = row["category_size"]
+        threshold = "≥1.0%" if n >= 100 else "≥1.5%" if n >= 50 else "≥2.5%"
+        print(
+            f"{str(row['category']):<15}{str(row['profile']):<20}{row['error_direction']:<12}"
+            f"{row['directional_delta_err_rate']:<12.3f}{row['total_delta_err_rate']:<13.3f}"
+            f"{n:<6}{threshold}"
+        )
+
+    category_summary = (
+        error_patterns.groupby("category")
+        .agg(
+            {
+                "directional_delta_err_rate": ["mean", lambda s: s.abs().max(), "std"],
+                "total_delta_err_rate": "mean",
+                "n_misclassification": "sum",
+                "misclassification_rate": "mean",
+                "category_size": "first",
+            }
+        )
+        .round(3)
+    )
+    category_summary.columns = [
+        "avg_dir_delta_rate",
+        "max_abs_dir_delta_rate",
+        "dir_delta_rate_std",
+        "avg_total_delta_rate",
+        "total_misclassification",
+        "avg_misclassification_rate",
+        "sample_size",
+    ]
+
+    print(f"\nCategory-level summary (rate units)")
+    print("-" * 90)
+    print(
+        f"{'Category':<15}{'Avg Directional Difference':<10}{'Max |Directional Difference|':<12}"
+        f"{'Avg Total Difference':<10}{'Total Misclassification':<14}{'N'}"
+    )
+    print("-" * 90)
+    for cat in category_summary.sort_values("max_abs_dir_delta_rate", ascending=False).index:
+        row = category_summary.loc[cat]
+        print(
+            f"{cat:<15}{row['avg_dir_delta_rate']:<10.3f}{row['max_abs_dir_delta_rate']:<12.3f}"
+            f"{row['avg_total_delta_rate']:<10.3f}{int(row['total_misclassification']):<14}{int(row['sample_size'])}"
+        )
+
+    print(f"\nFinal assessment")
+    print("-" * 40)
+    if len(meaningful) > 0:
+        print(f"{len(meaningful)} size-aware directional shifts detected")
+        print(f"Affected categories: {meaningful['category'].nunique()}")
+        print(f"Affected profiles: {meaningful['profile'].nunique()}")
     else:
-        level = "LOW"
-        advice = "Results (High/Moderate/Low): Minimal bias observed across demographics."
+        print("No size-aware directional shifts reached the thresholds")
 
-    print(f"Bias Level: {level}")
-    print(f"Recommendation: {advice}")
-    
-    if summary := results.get("summary"):
-        if summary["largest_effects"]:
-            biggest = summary["largest_effects"][0]
-            magnitude = "Substantial" if abs(biggest[1]) > 0.8 else "Moderate" if abs(biggest[1]) > 0.5 else "Small"
-            print(f"\nLargest Detected Bias: {biggest[0]} (d = {biggest[1]:.3f}, {magnitude})")
+    return error_patterns, meaningful, category_summary
 
-    return sig_results
+def analyze_systematic_error_patterns_multi_category(
+    merged_df: pd.DataFrame,
+    person_set: PersonSet,
+    case: CaseConfig,
+    baseline_col: str = "base_pred",
+    profile_prefix: str = "profile",
+) -> Dict[str, Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
+    print("Multi-category systematic error pattern analysis")
+    print("=" * 80)
 
+    results = {}
 
+    for cat_col in case.category_cols:
+        if cat_col not in merged_df.columns:
+            print(f"  Category '{cat_col}' not found in data, skipping...")
+            continue
+
+        print(f"\n{'='*60}")
+        print(f"Analyzing category: {cat_col.upper()}")
+        print(f"{'='*60}")
+
+        category_counts = merged_df[cat_col].value_counts()
+        print(f"Category distribution for {cat_col}:")
+        for cat_val, count in category_counts.head(10).items():
+            print(f"  {cat_val}: {count} samples")
+
+        if len(category_counts) < 2:
+            print(f"  Category '{cat_col}' has insufficient variation, skipping...")
+            continue
+
+        try:
+            error_patterns, meaningful_patterns, category_summary = analyze_systematic_error_patterns(
+                merged_df,
+                person_set=person_set,
+                category_col=cat_col,
+                baseline_col=baseline_col,
+                profile_prefix=profile_prefix,
+                case=case,
+            )
+
+            results[cat_col] = (error_patterns, meaningful_patterns, category_summary)
+
+            print(f"\nSummary for {cat_col.upper()}:")
+            print(f"  - Total error patterns: {len(error_patterns)}")
+            print(f"  - Meaningful patterns: {len(meaningful_patterns)}")
+            print(f"  - Categories analyzed: {error_patterns['category'].nunique()}")
+            print(f"  - Profiles with error: {error_patterns['profile'].nunique()}")
+
+            if len(meaningful_patterns) > 0:
+                top_error = meaningful_patterns.iloc[0]
+                print(
+                    f"  - Strongest error pattern: {top_error['category']} | {top_error['profile']} | "
+                    f"{top_error['error_direction']} | mag={top_error['directional_balance']:.3f}"
+                )
+
+        except Exception as e:
+            print(f"Error analyzing category '{cat_col}': {e}")
+            continue
+
+    print(f"\n{'='*80}")
+    print("Multi-category analysis complete")
+    print(f"{'='*80}")
+    print(f"Successfully analyzed {len(results)} out of {len(case.category_cols)} categories")
+
+    return results
+
+def print_multi_category_error_summary(error_results: Dict[str, Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]):
+    print("\n" + "=" * 80)
+    print("Cross-category error analysis summary (truth-aware, rate units)")
+    print("=" * 80)
+
+    total_patterns = 0
+    total_meaningful = 0
+    category_stats = []
+
+    for cat_col, (error_patterns, meaningful_patterns, category_summary) in error_results.items():
+        total_patterns += len(error_patterns)
+        total_meaningful += len(meaningful_patterns)
+
+        max_abs_dir = float(error_patterns["directional_delta_err_rate"].abs().max()) if len(error_patterns) else 0.0
+        avg_abs_dir = float(error_patterns["directional_delta_err_rate"].abs().mean()) if len(error_patterns) else 0.0
+
+        category_stats.append(
+            {
+                "category_column": cat_col,
+                "total_patterns": len(error_patterns),
+                "meaningful_patterns": len(meaningful_patterns),
+                "meaningful_rate": (len(meaningful_patterns) / len(error_patterns)) if len(error_patterns) > 0 else 0.0,
+                "max_abs_dir_delta_rate": max_abs_dir,
+                "avg_abs_dir_delta_rate": avg_abs_dir,
+                "unique_category_values": error_patterns["category"].nunique() if len(error_patterns) > 0 else 0,
+            }
+        )
+
+    print(f"Overall statistics:")
+    print(f"  - Total category columns analyzed: {len(error_results)}")
+    print(f"  - Total profile–category pairs: {total_patterns:,}")
+    print(f"  - Total meaningful directional shifts: {total_meaningful:,}")
+    print(f"  - Overall meaningful rate: {(total_meaningful/total_patterns) if total_patterns else 0:.1%}")
+
+    print(f"\nPer-category column breakdown:")
+    print(
+        f"{'Category Column':<20}{'Pairs':<8}{'Meaningful':<12}{'Rate':<8}"
+        f"{'Max |Directional Difference|':<12}{'Avg |Directional Difference|':<12}{'Values'}"
+    )
+    print("-" * 96)
+    for stats in sorted(category_stats, key=lambda x: x["meaningful_patterns"], reverse=True):
+        print(
+            f"{stats['category_column']:<20}{stats['total_patterns']:<8}{stats['meaningful_patterns']:<12}"
+            f"{stats['meaningful_rate']:<8.1%}{stats['max_abs_dir_delta_rate']:<12.3f}"
+            f"{stats['avg_abs_dir_delta_rate']:<12.3f}{stats['unique_category_values']}"
+        )
+
+    print(f"\nCross-category insights:")
+    if len(error_results) == 0:
+        print("  - No results.")
+        return
+
+    all_meaningful = (
+        pd.concat(
+            [meaningful.assign(source_category_column=cat) for cat, (_, meaningful, _) in error_results.items()],
+            ignore_index=True,
+        )
+        if any(len(v[1]) for v in error_results.values())
+        else pd.DataFrame()
+    )
+
+    if len(all_meaningful) > 0:
+        profile_error_counts = all_meaningful["profile"].value_counts()
+        print(f"  - Profiles with most meaningful directional shifts:")
+        for profile, count in profile_error_counts.head(5).items():
+            print(f"    - {profile}: {count} occurrences")
+
+        if len(error_results) > 1:
+            cat_counts = all_meaningful["source_category_column"].value_counts()
+            print(f"  - Category columns with most meaningful shifts:")
+            for category, count in cat_counts.items():
+                print(f"    - {category}: {count}")
+        else:
+            value_counts = all_meaningful["category"].value_counts()
+            only_cat = list(error_results.keys())[0]
+            print(f"  - Category values with most meaningful shifts in {only_cat}:")
+            for val, count in value_counts.items():
+                print(f"    - {val}: {count}")
+    else:
+        print("  - No meaningful directional shifts identified.")
 
 def extract_high_disagreement_cases(
-    merged: pd.DataFrame, 
+    merged: pd.DataFrame,
     threshold: float = 0.7,
     sample_id_col: str = "sample_id",
     label_col: str = "true_label",
     baseline_col: str = "base_pred",
-    person_set: Optional[PersonSet] = None
+    person_set: Optional[PersonSet] = None,
 ) -> pd.DataFrame:
-    """
-    Identify cases with high disagreement among profile predictions.
-    
-    This function analyzes prediction consensus across profiles to identify
-    samples where profiles show substantial disagreement. High disagreement
-    cases often represent challenging or ambiguous samples that warrant
-    closer examination for bias analysis and model improvement.
-    
-    Parameters:
-    -----------
-    merged : pd.DataFrame
-        DataFrame containing profile predictions and metadata
-    threshold : float, default=0.7
-        Minimum disagreement score (0-1) to classify as high disagreement.
-        Score represents proportion of profiles disagreeing with modal prediction.
-    sample_id_col : str, default="sample_id"
-        Column name containing unique sample identifiers
-    label_col : str, default="true_label"
-        Column name containing ground truth labels
-    baseline_col : str, default="base_pred"
-        Column name containing baseline model predictions
-    
-    Returns:
-    --------
-    pd.DataFrame
-        DataFrame containing high disagreement cases with columns:
-        - sample_id: Unique identifier for the sample
-        - disagreement_score: Proportion of profiles disagreeing with mode (0-1)
-        - prediction_distribution: Counter object showing prediction frequency
-        - modal_prediction: Most common prediction across profiles
-        - minority_predictions: List of non-modal predictions
-        - true_label: Ground truth label
-        - base_pred: Baseline model prediction
-        - consensus_strength: Strength of modal prediction (inverse of disagreement)
-        - prediction_entropy: Information-theoretic measure of disagreement
-    
-    Raises:
-    -------
-    ValueError
-        If required columns are missing or no profile columns found
-    """
-    
     required_cols = [sample_id_col, label_col, baseline_col]
     missing = [col for col in required_cols if col not in merged.columns]
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
-    
-    # Use profile keys from PROFILE_META
+
     profile_cols = [col for col in merged.columns if col.startswith("profile")]
     if not profile_cols:
         raise ValueError("No valid profile prediction columns found in DataFrame.")
 
-    trait_by_profile =(
-        {p: get_demographic_info(p, person_set) for p in profile_cols} 
-        if person_set is not None else None
+    trait_by_profile = (
+        {p: get_demographic_info(p, person_set) for p in profile_cols} if person_set is not None else None
     )
 
     print(f"Analyzing disagreement across {len(profile_cols)} profiles...")
@@ -384,7 +906,7 @@ def extract_high_disagreement_cases(
 
     records = []
 
-    for idx, row in merged.iterrows():
+    for _, row in merged.iterrows():
         preds = [row[p] for p in profile_cols]
         counts = Counter(preds)
         total = len(preds)
@@ -400,63 +922,58 @@ def extract_high_disagreement_cases(
             modal_trait_dist = dict(Counter(modal_traits))
             minority_trait_dist = dict(Counter(minority_traits))
 
-        records.append({
-            "sample_id": row[sample_id_col],
-            "disagreement_score": disagreement,
-            "consensus_strength": modal_count / total,
-            "prediction_distribution": dict(counts),
-            "modal_prediction": modal,
-            "minority_predictions": [k for k in counts if k != modal],
-            "prediction_entropy": entropy,
-            "true_label": row[label_col],
-            "base_pred": row[baseline_col],
-            "total_profiles": total,
-            "modal_count": modal_count,
-            "minority_count": total - modal_count,
-            **({"modal_trait_distribution": modal_trait_dist,
-               "minority_trait_distribution": minority_trait_dist} if person_set is not None else {})
-        })
+        records.append(
+            {
+                "sample_id": row[sample_id_col],
+                "disagreement_score": disagreement,
+                "consensus_strength": modal_count / total,
+                "prediction_distribution": dict(counts),
+                "modal_prediction": modal,
+                "minority_predictions": [k for k in counts if k != modal],
+                "prediction_entropy": entropy,
+                "true_label": row[label_col],
+                "base_pred": row[baseline_col],
+                "total_profiles": total,
+                "modal_count": modal_count,
+                "minority_count": total - modal_count,
+                **(
+                    {
+                        "modal_trait_distribution": modal_trait_dist,
+                        "minority_trait_distribution": minority_trait_dist,
+                    }
+                    if person_set is not None
+                    else {}
+                ),
+            }
+        )
 
     df = pd.DataFrame(records)
     high_disagreement = df[df["disagreement_score"] > threshold].copy()
     high_disagreement.sort_values("disagreement_score", ascending=False, inplace=True)
 
-    print("\nDISAGREEMENT ANALYSIS SUMMARY")
+    print("\nDisagreement analysis summary")
     print("-" * 50)
     print(f"Total samples analyzed: {len(df)}")
     print(f"High disagreement cases (>{threshold}): {len(high_disagreement)}")
     print(f"High disagreement rate: {len(high_disagreement)/len(df):.1%}")
-    
+
     if len(high_disagreement):
         print(f"Average disagreement score: {high_disagreement['disagreement_score'].mean():.3f}")
         print(f"Max disagreement score: {high_disagreement['disagreement_score'].max():.3f}")
-        print(f"Average entropy: {high_disagreement['prediction_entropy'].mean():.3f}")
+        print(f"Average prediction entropy: {high_disagreement['prediction_entropy'].mean():.3f}")
 
     return high_disagreement.reset_index(drop=True)
 
-
 def print_disagreement_analysis(high_disagreement_df: pd.DataFrame, top_n: int = 10) -> None:
-    """
-    Print comprehensive analysis of high disagreement cases.
-    
-    Parameters:
-    -----------
-    high_disagreement_df : pd.DataFrame
-        Output from extract_high_disagreement_cases function
-    top_n : int, default=10
-        Number of top cases to display in detailed analysis
-    """
-    
     if high_disagreement_df.empty:
         print("No high disagreement cases found.")
         return
 
-    print("\n" + "="*80)
-    print("HIGH DISAGREEMENT CASES ANALYSIS")
-    print("="*80)
+    print("\n" + "=" * 80)
+    print("High disagreement cases analysis")
+    print("=" * 80)
 
-    # Summary
-    print("\nSUMMARY STATISTICS")
+    print("\nSummary statistics")
     print("-" * 40)
     print(f"Total high disagreement cases: {len(high_disagreement_df):,}")
     print(f"Average disagreement score: {high_disagreement_df['disagreement_score'].mean():.3f}")
@@ -464,20 +981,20 @@ def print_disagreement_analysis(high_disagreement_df: pd.DataFrame, top_n: int =
     print(f"Range: {high_disagreement_df['disagreement_score'].min():.3f} - {high_disagreement_df['disagreement_score'].max():.3f}")
     print(f"Average prediction entropy: {high_disagreement_df['prediction_entropy'].mean():.3f}")
 
-    # Top N disagreement samples
-    print(f"\nTOP {top_n} HIGHEST DISAGREEMENT CASES")
+    print(f"\nTop {top_n} highest disagreement cases")
     print("-" * 60)
     print(f"{'Rank':<6}{'Sample ID':<15}{'Disagreement':<13}{'Entropy':<10}{'Modal Pred':<12}{'True Label'}")
     print("-" * 80)
-    
-    for idx, (_, row) in enumerate(high_disagreement_df.head(top_n).iterrows(), 1):
-        print(f"{idx:<6}{str(row['sample_id']):<15}{row['disagreement_score']:<13.3f}"
-              f"{row['prediction_entropy']:<10.3f}{str(row['modal_prediction']):<12}{str(row['true_label'])}")
 
-    # Prediction distribution patterns
-    print("\nPREDICTION DISTRIBUTION PATTERNS")
+    for idx, (_, row) in enumerate(high_disagreement_df.head(top_n).iterrows(), 1):
+        print(
+            f"{idx:<6}{str(row['sample_id']):<15}{row['disagreement_score']:<13.3f}"
+            f"{row['prediction_entropy']:<10.3f}{str(row['modal_prediction']):<12}{str(row['true_label'])}"
+        )
+
+    print("\nPrediction distribution patterns")
     print("-" * 50)
-    all_distributions = high_disagreement_df['prediction_distribution'].tolist()
+    all_distributions = high_disagreement_df["prediction_distribution"].tolist()
     pattern_counts = Counter()
 
     for dist in all_distributions:
@@ -489,23 +1006,21 @@ def print_disagreement_analysis(high_disagreement_df: pd.DataFrame, top_n: int =
         pattern_str = ", ".join([f"{pred}: {cnt}" for pred, cnt in pattern])
         print(f"  {pattern_str} (appears {count} times)")
 
-    # Accuracy comparison
-    print("\nACCURACY ANALYSIS FOR HIGH DISAGREEMENT CASES")
+    print("\nAccuracy analysis for high disagreement cases")
     print("-" * 50)
-    modal_correct = high_disagreement_df['modal_prediction'] == high_disagreement_df['true_label']
-    baseline_correct = high_disagreement_df['base_pred'] == high_disagreement_df['true_label']
+    modal_correct = high_disagreement_df["modal_prediction"] == high_disagreement_df["true_label"]
+    baseline_correct = high_disagreement_df["base_pred"] == high_disagreement_df["true_label"]
     print(f"Modal prediction accuracy: {modal_correct.mean():.3f}")
     print(f"Baseline prediction accuracy: {baseline_correct.mean():.3f}")
     print(f"Correct modal predictions: {modal_correct.sum()} / {len(high_disagreement_df)}")
     print(f"Correct baseline predictions: {baseline_correct.sum()} / {len(high_disagreement_df)}")
 
-    # Consensus strength bins
-    print("\nCONSENSUS STRENGTH DISTRIBUTION")
+    print("\nConsensus strength distribution")
     print("-" * 40)
     consensus_bins = pd.cut(
-        high_disagreement_df['consensus_strength'], 
-        bins=[0, 0.3, 0.4, 0.5, 0.6, 1.0], 
-        labels=['Very Low (≤30%)', 'Low (30–40%)', 'Medium (40–50%)', 'High (50–60%)', 'Very High (>60%)']
+        high_disagreement_df["consensus_strength"],
+        bins=[0, 0.3, 0.4, 0.5, 0.6, 1.0],
+        labels=["Very Low (<30%)", "Low (30–40%)", "Medium (40–50%)", "High (50–60%)", "Very High (>60%)"],
     )
     consensus_dist = consensus_bins.value_counts().sort_index()
     for category, count in consensus_dist.items():
@@ -513,14 +1028,12 @@ def print_disagreement_analysis(high_disagreement_df: pd.DataFrame, top_n: int =
         print(f"  {category}: {count} cases ({pct:.1f}%)")
 
     if "modal_trait_distribution" in high_disagreement_df.columns:
-        print("\nTRAIT DISTRIBUTION FOR TOP DISAGREEMENT CASES")
+        print("\nTrait distribution for top disagreement cases")
         print("-" * 50)
-        for idx, row in high_disagreement_df.head(top_n).iterrows():
+        for _, row in high_disagreement_df.head(top_n).iterrows():
             print(f"Sample {row['sample_id']}:")
             print(f"  Modal group: {row['modal_trait_distribution']}")
             print(f"  Minority group: {row['minority_trait_distribution']}")
-
-
 
 def rescue_stats_by_category(
     merged: pd.DataFrame,
@@ -528,14 +1041,10 @@ def rescue_stats_by_category(
     baseline_col: str = "base_pred",
     label_col: str = "true_label",
     profile_prefix: str = "profile",
-    case: CaseConfig = None,
-    person_set=None,
-    **kwargs
+    person_set: Optional[PersonSet] = None,
+    case: Optional[CaseConfig] = None,
+    **kwargs,
 ) -> pd.DataFrame:
-    """
-    Dataset-agnostic rescue statistics analysis that handles any category values and None values
-    """
-    
     if category_col not in merged.columns:
         raise ValueError(f"Category column '{category_col}' not found in DataFrame")
 
@@ -545,30 +1054,25 @@ def rescue_stats_by_category(
     if label_col not in merged.columns:
         raise ValueError(f"Label column '{label_col}' not found in DataFrame")
 
-    # Handle None/NaN values in category column
     merged_clean = merged.copy()
     merged_clean[category_col] = merged_clean[category_col].fillna("Unknown")
-    
-    # Get unique category values (whatever they are for this dataset)
+
     unique_categories = merged_clean[category_col].dropna().unique()
     print(f"Found category values in {category_col}: {sorted(unique_categories)}")
 
-    # Standardize labels
     y_true = merged_clean[label_col].astype(str).str.strip().str.lower()
     y_base = merged_clean[baseline_col].astype(str).str.strip().str.lower()
 
-    # Get profile columns
     profile_cols: List[str] = [c for c in merged_clean.columns if c.startswith(profile_prefix)]
     if not profile_cols:
         raise ValueError(f"No profile columns found with prefix '{profile_prefix}'")
 
     output_records = []
 
-    # Iterate through ALL category values found in the data
     for category_value in unique_categories:
         category_df = merged_clean[merged_clean[category_col] == category_value]
         category_size = len(category_df)
-        
+
         if category_size == 0:
             continue
 
@@ -578,7 +1082,7 @@ def rescue_stats_by_category(
         base_correct_mask = y_base_cat == y_true_cat
         base_err_count = (~base_correct_mask).sum()
         base_ok_count = base_correct_mask.sum()
-        base_acc = base_ok_count/category_size if category_size > 0 else 0.0
+        base_acc = base_ok_count / category_size if category_size > 0 else 0.0
 
         for profile in profile_cols:
             y_prof_cat = category_df[profile].astype(str).str.strip().str.lower()
@@ -591,40 +1095,88 @@ def rescue_stats_by_category(
             extra_err_rate = extra_errors / base_ok_count if base_ok_count > 0 else 0.0
             prof_acc = prof_correct_mask.mean()
 
-            output_records.append({
-                'category': str(category_value),  # Ensure string for consistency
-                'profile': profile,
-                'N_cat': category_size,
-                'rescued': int(rescued),
-                'rescue_rate': rescue_rate,
-                'extra_errors': int(extra_errors),
-                'extra_err_rate': extra_err_rate,
-                'profile_acc': prof_acc,
-                'baseline_acc': base_acc
-            })
+            output_records.append(
+                {
+                    "category": str(category_value),
+                    "profile": profile,
+                    "N_cat": category_size,
+                    "rescued": int(rescued),
+                    "rescue_rate": rescue_rate,
+                    "extra_errors": int(extra_errors),
+                    "extra_err_rate": extra_err_rate,
+                    "profile_acc": prof_acc,
+                    "baseline_acc": base_acc,
+                }
+            )
 
     result_df = pd.DataFrame(output_records)
     if not result_df.empty:
         result_df = result_df.sort_values(["category", "rescued"], ascending=[True, False])
-    
+
     return result_df
+
+def analyze_rescue_performance(rescue_stats_df: pd.DataFrame) -> Dict[str, Any]:
+    if rescue_stats_df.empty:
+        return {"error": "Empty rescue statistics DataFrame provided"}
+
+    analysis = {}
+
+    dataset_samples = (
+        rescue_stats_df[["category", "N_cat"]].drop_duplicates(subset=["category"])["N_cat"].sum()
+    )
+    analysis["summary"] = {
+        "total_categories": rescue_stats_df["category"].nunique(),
+        "total_profiles": rescue_stats_df["profile"].nunique(),
+        "total_samples": int(dataset_samples),
+        "total_profile_exposures": int(rescue_stats_df["N_cat"].sum()),
+        "total_rescues": int(rescue_stats_df["rescued"].sum()),
+        "total_extra_errors": int(rescue_stats_df["extra_errors"].sum()),
+        "avg_rescue_rate": float(rescue_stats_df["rescue_rate"].mean()),
+        "avg_extra_error_rate": float(rescue_stats_df["extra_err_rate"].mean()),
+    }
+
+    analysis["top_rescue_performers"] = (
+        rescue_stats_df.nlargest(10, "rescue_rate")[["profile", "category", "rescue_rate", "rescued", "profile_acc"]]
+        .to_dict("records")
+    )
+
+    analysis["highest_error_risk"] = (
+        rescue_stats_df.nlargest(10, "extra_err_rate")[
+            ["profile", "category", "extra_err_rate", "extra_errors", "profile_acc"]
+        ].to_dict("records")
+    )
+
+    category_stats = (
+        rescue_stats_df.groupby("category")
+        .agg({"rescue_rate": ["mean", "std", "max"], "extra_err_rate": ["mean", "std", "max"], "profile_acc": ["mean", "std"], "N_cat": "first"})
+        .round(3)
+    )
+
+    analysis["category_performance"] = category_stats.to_dict("index")
+
+    profile_stats = (
+        rescue_stats_df.groupby("profile")
+        .agg({"rescue_rate": ["mean", "std"], "extra_err_rate": ["mean", "std"], "profile_acc": ["mean", "std"], "rescued": "sum", "extra_errors": "sum"})
+        .round(3)
+    )
+
+    analysis["profile_performance"] = profile_stats.to_dict("index")
+
+    return analysis
 
 
 def print_rescue_analysis_results(rescue_analysis: Dict[str, Any], category_name: str) -> None:
-    """
-    Updated rescue analysis results printer with better terminology
-    """
     if "error" in rescue_analysis:
         print(f"Error in rescue analysis for {category_name}: {rescue_analysis['error']}")
         return
-    
+
     print(f"\n{'='*60}")
-    print(f"RESCUE ANALYSIS FOR CATEGORY COLUMN: {category_name.upper()}")
+    print(f"Rescue Analysis for Category Column: {category_name.upper()}")
     print(f"{'='*60}")
-    
-    # Summary statistics
-    summary = rescue_analysis['summary']
-    print(f"\nSUMMARY STATISTICS:")
+    print("Note: Exploratory; uncertainty estimates are provided in Tier-1 analysis.")
+
+    summary = rescue_analysis["summary"]
+    print(f"\nSummary Statistics:")
     print(f"  Unique category values: {summary['total_categories']}")
     print(f"  Total profiles analyzed: {summary['total_profiles']}")
     print(f"  Total samples: {summary['total_samples']:,}")
@@ -633,807 +1185,423 @@ def print_rescue_analysis_results(rescue_analysis: Dict[str, Any], category_name
     print(f"  Average rescue rate: {summary['avg_rescue_rate']:.3f}")
     print(f"  Average extra error rate: {summary['avg_extra_error_rate']:.3f}")
     print(f"  Net rescue benefit: {summary['total_rescues'] - summary['total_extra_errors']}")
-    
-    # Interpretation
-    net_benefit = summary['total_rescues'] - summary['total_extra_errors']
+
+    net_benefit = summary["total_rescues"] - summary["total_extra_errors"]
     if net_benefit > 0:
         print(f"  -- Profiles provide net benefit (more rescues than extra errors)")
     elif net_benefit < 0:
         print(f"  -- Profiles cause net harm (more extra errors than rescues)")
     else:
         print(f"  -- Profiles have neutral impact")
-    
-    # Rest of the function remains the same...
-    print(f"\nTOP 10 RESCUE PERFORMERS:")
+
+    print(f"\nTop 10 Rescue Performers:")
     print(f"{'Profile':<12}{'Category Value':<20}{'Rescue Rate':<12}{'Rescues':<8}{'Accuracy':<10}")
     print("-" * 70)
-    for performer in rescue_analysis['top_rescue_performers']:
-        category_short = str(performer['category'])[:18]
-        print(f"{performer['profile']:<12}{category_short:<20}"
-              f"{performer['rescue_rate']:<12.3f}{performer['rescued']:<8}"
-              f"{performer['profile_acc']:<10.3f}")
-    
-    print(f"\nTOP 10 HIGHEST ERROR RISK PROFILES:")
+    for performer in rescue_analysis["top_rescue_performers"]:
+        category_short = str(performer["category"])[:18]
+        print(
+            f"{performer['profile']:<12}{category_short:<20}"
+            f"{performer['rescue_rate']:<12.3f}{performer['rescued']:<8}"
+            f"{performer['profile_acc']:<10.3f}"
+        )
+
+    print(f"\nTop 10 Higher Error-Risk Profiles:")
     print(f"{'Profile':<12}{'Category Value':<20}{'Error Rate':<12}{'Extra Errors':<12}{'Accuracy':<10}")
     print("-" * 75)
-    for risk_profile in rescue_analysis['highest_error_risk']:
-        category_short = str(risk_profile['category'])[:18]
-        print(f"{risk_profile['profile']:<12}{category_short:<20}"
-              f"{risk_profile['extra_err_rate']:<12.3f}{risk_profile['extra_errors']:<12}"
-              f"{risk_profile['profile_acc']:<10.3f}")
-    
-    print(f"\nPERFORMANCE BY CATEGORY VALUE:")
-    print(f"{'Category Value':<20}{'Avg Rescue':<12}{'Max Rescue':<12}{'Avg Extra Err':<15}{'Avg Accuracy':<12}{'Sample Size'}")
+    for risk_profile in rescue_analysis["highest_error_risk"]:
+        category_short = str(risk_profile["category"])[:18]
+        print(
+            f"{risk_profile['profile']:<12}{category_short:<20}"
+            f"{risk_profile['extra_err_rate']:<12.3f}{risk_profile['extra_errors']:<12}"
+            f"{risk_profile['profile_acc']:<10.3f}"
+        )
+
+    print(f"\nPerformance by Category Value:")
+    print(
+        f"{'Category Value':<20}{'Avg Rescue':<12}{'Max Rescue':<12}{'Avg Extra Err':<15}"
+        f"{'Avg Accuracy':<12}{'Sample Size'}"
+    )
     print("-" * 95)
-    for category, stats in rescue_analysis['category_performance'].items():
+    for category, stats in rescue_analysis["category_performance"].items():
         category_short = str(category)[:18]
-        sample_size = stats[('N_cat', 'first')] if ('N_cat', 'first') in stats else "N/A"
-        print(f"{category_short:<20}{stats[('rescue_rate', 'mean')]:<12.3f}"
-              f"{stats[('rescue_rate', 'max')]:<12.3f}{stats[('extra_err_rate', 'mean')]:<15.3f}"
-              f"{stats[('profile_acc', 'mean')]:<12.3f}{sample_size}")
+        sample_size = stats[("N_cat", "first")] if ("N_cat", "first") in stats else "N/A"
+        low_sample_flag = (
+            " (low sample)" if isinstance(sample_size, (int, np.integer)) and sample_size < 30 else ""
+        )
+        print(
+            f"{category_short:<20}{stats[('rescue_rate', 'mean')]:<12.3f}"
+            f"{stats[('rescue_rate', 'max')]:<12.3f}{stats[('extra_err_rate', 'mean')]:<15.3f}"
+            f"{stats[('profile_acc', 'mean')]:<12.3f}{sample_size}{low_sample_flag}"
+        )
 
-
-def analyze_rescue_performance(rescue_stats_df: pd.DataFrame) -> Dict[str, Any]:
-    """
-    Dataset-agnostic rescue performance analysis
-    """
-    if rescue_stats_df.empty:
-        return {"error": "Empty rescue statistics DataFrame provided"}
-
-    analysis = {}
-
-    # Overall summary metrics
-    analysis['summary'] = {
-        'total_categories': rescue_stats_df['category'].nunique(),
-        'total_profiles': rescue_stats_df['profile'].nunique(),
-        'total_samples': rescue_stats_df['N_cat'].sum(),
-        'total_rescues': rescue_stats_df['rescued'].sum(),
-        'total_extra_errors': rescue_stats_df['extra_errors'].sum(),
-        'avg_rescue_rate': rescue_stats_df['rescue_rate'].mean(),
-        'avg_extra_error_rate': rescue_stats_df['extra_err_rate'].mean()
-    }
-
-    # Top profiles by rescue rate
-    analysis['top_rescue_performers'] = (
-        rescue_stats_df.nlargest(10, 'rescue_rate')[
-            ['profile', 'category', 'rescue_rate', 'rescued', 'profile_acc']
-        ].to_dict('records')
-    )
-
-    # Profiles with highest extra error rate
-    analysis['highest_error_risk'] = (
-        rescue_stats_df.nlargest(10, 'extra_err_rate')[
-            ['profile', 'category', 'extra_err_rate', 'extra_errors', 'profile_acc']
-        ].to_dict('records')
-    )
-
-    # Category-level aggregation - works with any category values
-    category_stats = rescue_stats_df.groupby('category').agg({
-        'rescue_rate': ['mean', 'std', 'max'],
-        'extra_err_rate': ['mean', 'std', 'max'],
-        'profile_acc': ['mean', 'std'],
-        'N_cat': 'first'  # Sample size for each category
-    }).round(3)
-
-    analysis['category_performance'] = category_stats.to_dict('index')
-
-    # Profile-level aggregation
-    profile_stats = rescue_stats_df.groupby('profile').agg({
-        'rescue_rate': ['mean', 'std'],
-        'extra_err_rate': ['mean', 'std'],
-        'profile_acc': ['mean', 'std'],
-        'rescued': 'sum',
-        'extra_errors': 'sum'
-    }).round(3)
-
-    analysis['profile_performance'] = profile_stats.to_dict('index')
-
-    return analysis
 
 def print_all_rescue_analyses(rescue_analysis_all: Dict[str, Dict[str, Any]]) -> None:
-    """
-    Print rescue analyses for all category columns with cross-category summary
-    """
     print(f"\n{'='*80}")
     print("COMPREHENSIVE RESCUE STATISTICS ANALYSIS")
     print(f"{'='*80}")
-    
+
     if not rescue_analysis_all:
         print("No rescue analyses to display.")
         return
-    
-    # Print individual category column analyses
+
     for cat_col, rescue_analysis in rescue_analysis_all.items():
         print_rescue_analysis_results(rescue_analysis, cat_col)
-    
-    # Cross-category summary (if multiple category columns)
+
     if len(rescue_analysis_all) > 1:
         print(f"\n{'='*60}")
         print("CROSS-CATEGORY COLUMN SUMMARY")
         print(f"{'='*60}")
-        
+
         total_rescues = sum(
-            analysis['summary']['total_rescues'] 
-            for analysis in rescue_analysis_all.values() 
-            if 'summary' in analysis
+            analysis["summary"]["total_rescues"] for analysis in rescue_analysis_all.values() if "summary" in analysis
         )
         total_extra_errors = sum(
-            analysis['summary']['total_extra_errors'] 
-            for analysis in rescue_analysis_all.values() 
-            if 'summary' in analysis
+            analysis["summary"]["total_extra_errors"]
+            for analysis in rescue_analysis_all.values()
+            if "summary" in analysis
         )
-        avg_rescue_rate = np.mean([
-            analysis['summary']['avg_rescue_rate'] 
-            for analysis in rescue_analysis_all.values() 
-            if 'summary' in analysis
-        ])
-        avg_extra_error_rate = np.mean([
-            analysis['summary']['avg_extra_error_rate'] 
-            for analysis in rescue_analysis_all.values() 
-            if 'summary' in analysis
-        ])
-        
+        avg_rescue_rate = np.mean(
+            [analysis["summary"]["avg_rescue_rate"] for analysis in rescue_analysis_all.values() if "summary" in analysis]
+        )
+        avg_extra_error_rate = np.mean(
+            [
+                analysis["summary"]["avg_extra_error_rate"]
+                for analysis in rescue_analysis_all.values()
+                if "summary" in analysis
+            ]
+        )
+
         print(f"OVERALL STATISTICS ACROSS ALL CATEGORY COLUMNS:")
-        print(f"  • Total rescues: {total_rescues}")
-        print(f"  • Total extra errors: {total_extra_errors}")
-        print(f"  • Average rescue rate: {avg_rescue_rate:.3f}")
-        print(f"  • Average extra error rate: {avg_extra_error_rate:.3f}")
-        print(f"  • Net benefit: {total_rescues - total_extra_errors} (rescues - extra errors)")
-        
-        # Best performing category columns
+        print(f"  - Total rescues: {total_rescues}")
+        print(f"  - Total extra errors: {total_extra_errors}")
+        print(f"  - Average rescue rate: {avg_rescue_rate:.3f}")
+        print(f"  - Average extra error rate: {avg_extra_error_rate:.3f}")
+        print(f"  - Net benefit: {total_rescues - total_extra_errors} (rescues - extra errors)")
+
         category_rescue_rates = {
-            cat: analysis['summary']['avg_rescue_rate'] 
-            for cat, analysis in rescue_analysis_all.items() 
-            if 'summary' in analysis
+            cat: analysis["summary"]["avg_rescue_rate"] for cat, analysis in rescue_analysis_all.items() if "summary" in analysis
         }
-        
+
         if category_rescue_rates:
             best_rescue_category = max(category_rescue_rates, key=category_rescue_rates.get)
-            
+
             category_error_rates = {
-                cat: analysis['summary']['avg_extra_error_rate'] 
-                for cat, analysis in rescue_analysis_all.items() 
-                if 'summary' in analysis
+                cat: analysis["summary"]["avg_extra_error_rate"]
+                for cat, analysis in rescue_analysis_all.items()
+                if "summary" in analysis
             }
             safest_category = min(category_error_rates, key=category_error_rates.get)
-            
-            print(f"  • Best rescue category column: {best_rescue_category} ({category_rescue_rates[best_rescue_category]:.3f})")
-            print(f"  • Safest category column: {safest_category} ({category_error_rates[safest_category]:.3f})")
+
+            print(f"  - Best rescue category column: {best_rescue_category} ({category_rescue_rates[best_rescue_category]:.3f})")
+            print(f"  - Safest category column: {safest_category} ({category_error_rates[safest_category]:.3f})")
     else:
         print(f"\nSingle category column analysis complete.")
 
 
-def detect_systematic_biases(
+
+
+
+
+# Profile similarity & clustering
+
+def analyze_profile_similarity(
     merged: pd.DataFrame,
     person_set: PersonSet,
-    category_col: str = "stereotype_type",
-    baseline_col: str = "base_pred",
-    profile_prefix: str = "profile",
-    positive_label: str = "stereotype",
-    negative_label: str = "unrelated",
-    case: CaseConfig = None,
-) -> pd.DataFrame:
-    """
-    Fixed version using get_demographic_info_fixed
-    
-    Parameters:
-    -----------
-    merged : pd.DataFrame
-        DataFrame containing predictions and categories
-    person_set : PersonSet
-        PersonSet containing profile metadata
-    category_col : str, default="stereotype_type"
-        Column name containing category labels
-    baseline_col : str, default="base_pred"
-        Column name containing baseline predictions
-    profile_prefix : str, default="profile"
-        Prefix for identifying profile columns
-    positive_label : str, default="stereotype"
-        Label representing positive class
-    negative_label : str, default="unrelated"
-        Label representing negative class
-    
-    Returns:
-    --------
-    pd.DataFrame
-        DataFrame containing bias patterns with columns:
-        - category: Category value
-        - profile: Profile identifier
-        - demographic: Demographic information for profile
-        - bias_direction: Direction of bias (more_positive, more_negative, neutral)
-        - bias_magnitude: Magnitude of bias (0-1)
-        - weighted_bias_magnitude: Bias weighted by category size
-        - n_mislabelling: Total number of mislabeled instances
-        - mislabelling_rate: Rate of mislabeling in category
-        - category_size: Number of samples in category
-        - positive_mislabelling: Number of false positives
-        - negative_mislabelling: Number of false negatives
-    """
+    method: str = "average",          
+    max_clusters_extra: int = 2,     
+    group_keys: tuple = ("ethnicity", "gender"),
+) -> Dict[str, Any]:
 
-    required_cols = [category_col, baseline_col]
-    missing_cols = [c for c in required_cols if c not in merged.columns]
-    if missing_cols:
-        raise ValueError(f"Missing required columns: {missing_cols}")
+    def _merge_singletons(labels: np.ndarray, D: np.ndarray, min_size: int = 2) -> np.ndarray:
+        """Reassign clusters with size < min_size to the nearest non-singleton cluster."""
+        labels = labels.copy()
+        while True:
+            unique = np.unique(labels)
+            sizes = {lab: int(np.sum(labels == lab)) for lab in unique}
+            smalls = [lab for lab, s in sizes.items() if s < min_size]
+            if not smalls:
+                break
+            changed = False
+            for lab in smalls:
+                idx = np.where(labels == lab)[0]
+                if idx.size == 0:
+                    continue
+                i = idx[0]
+                dests = [l for l, s in sizes.items() if l != lab and s >= min_size] or [l for l in unique if l != lab]
+                best_lab, best_dist = None, np.inf
+                for l in dests:
+                    members = np.where(labels == l)[0]
+                    if members.size == 0:
+                        continue
+                    d = float(np.mean(D[i, members]))
+                    if d < best_dist:
+                        best_dist, best_lab = d, l
+                if best_lab is not None:
+                    labels[i] = best_lab
+                    changed = True
+            if not changed:
+                break
+        return labels
 
-    profile_cols = [c for c in merged.columns if c.startswith(profile_prefix)]
-    if not profile_cols:
-        raise ValueError(f"No columns found with prefix '{profile_prefix}'")
+    def _traits(pid: str) -> dict:
+        return person_set.get_traits(pid, group_keys=group_keys)
 
-    # Map profiles to demographics once using fixed function
-    trait_by_profile = {p: get_demographic_info(p, person_set) for p in profile_cols}
-
-    bias_patterns = []
-    global_size = len(merged)
-
-    for category_value in merged[category_col].dropna().unique():
-        category_data = merged[merged[category_col] == category_value]
-        baseline = category_data[baseline_col]
-        size = len(category_data)
-
-        for profile in profile_cols:
-            profile_preds = category_data[profile]
-            
-            # Count mislabeling in both directions
-            pos_mislabelling = ((baseline == negative_label) & (profile_preds == positive_label)).sum()
-            neg_mislabelling = ((baseline == positive_label) & (profile_preds == negative_label)).sum()
-
-            total_mislabelling = pos_mislabelling + neg_mislabelling
-            mislabelling_rate = total_mislabelling / size if size > 0 else 0
-
-            # Determine bias direction and magnitude
-            if pos_mislabelling > neg_mislabelling:
-                bias_direction = "more_positive"
-                bias_magnitude = (pos_mislabelling - neg_mislabelling) / size
-            elif neg_mislabelling > pos_mislabelling:
-                bias_direction = "more_negative"
-                bias_magnitude = (neg_mislabelling - pos_mislabelling) / size
-            else:
-                bias_direction = "neutral"
-                bias_magnitude = 0.0
-
-            # Weight bias by category size relative to total dataset
-            weighted_bias_magnitude = bias_magnitude * (size / global_size)
-
-            bias_patterns.append({
-                "category": category_value,
-                "profile": profile,
-                "demographic": trait_by_profile[profile],
-                "bias_direction": bias_direction,
-                "bias_magnitude": bias_magnitude,
-                "weighted_bias_magnitude": weighted_bias_magnitude,
-                "n_mislabelling": total_mislabelling,
-                "mislabelling_rate": mislabelling_rate,
-                "category_size": size,
-                "positive_mislabelling": pos_mislabelling,
-                "negative_mislabelling": neg_mislabelling,
-            })
-
-    bias_df = pd.DataFrame(bias_patterns)
-    bias_df = bias_df.sort_values("weighted_bias_magnitude", ascending=False, key=abs)
-    return bias_df
-
-
-def analyze_systematic_bias_patterns(
-    merged_df: pd.DataFrame,
-    person_set: PersonSet,
-    category_col: str = "stereotype_type",
-    baseline_col: str = "base_pred",
-    profile_prefix: str = "profile"
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """
-    Comprehensive analysis of systematic bias patterns with statistical rigor.
-    
-    Performs complete bias pattern analysis including sample size considerations,
-    reliability assessments, and meaningful pattern identification. Provides
-    comprehensive statistical analysis of prediction biases across demographic
-    profiles and content categories.
-    
-    Parameters:
-    -----------
-    merged_df : pd.DataFrame
-        DataFrame containing predictions, categories, and profile information
-    person_set : PersonSet
-        PersonSet containing profile metadata
-    category_col : str, default="stereotype_type"
-        Column name containing category labels
-    baseline_col : str, default="base_pred"
-        Column name containing baseline predictions
-    profile_prefix : str, default="profile"
-        Prefix for identifying profile columns
-    
-    Returns:
-    --------
-    Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
-        - bias_patterns: Complete bias analysis results
-        - meaningful_patterns: Statistically significant patterns only
-        - category_summary: Category-level aggregated statistics
-    """
-    
-    print("SYSTEMATIC BIAS PATTERN ANALYSIS")
-    print("=" * 60)
-
-    # Run bias detection with fixed function
-    bias_patterns = detect_systematic_biases(
-        merged_df,
-        person_set,
-        category_col=category_col,
-        baseline_col=baseline_col,
-        profile_prefix=profile_prefix
-    )
-    bias_patterns = bias_patterns.sort_values("weighted_bias_magnitude", ascending=False, key=abs)
-
-    # Dataset composition
-    category_sizes = merged_df.groupby(category_col).size().reset_index()
-    category_sizes.columns = ['category', 'sample_size']
-    total_samples = len(merged_df)
-    category_sizes['percentage'] = (category_sizes['sample_size'] / total_samples * 100).round(1)
-
-    print(f"\nDATASET COMPOSITION BY CATEGORY")
-    print("-" * 40)
-    for _, row in category_sizes.sort_values('sample_size', ascending=False).iterrows():
-        print(f"{str(row['category']):<20}{row['sample_size']:<10}{row['percentage']:.1f}%")
-
-    print(f"\nBIAS DETECTION RESULTS SUMMARY")
-    print("-" * 40)
-    print(f"Total bias patterns analyzed: {len(bias_patterns):,}")
-    print(f"Unique categories: {bias_patterns['category'].nunique()}")
-    print(f"Unique profiles: {bias_patterns['profile'].nunique()}")
-    print(f"Average category size: {bias_patterns['category_size'].mean():.1f} samples")
-
-    print(f"\nTOP 20 STRONGEST BIAS PATTERNS")
-    print("-" * 90)
-    print(f"{'Category':<15}{'Profile':<20}{'Direction':<15}{'Mag.':<10}{'Weighted':<10}{'Mislab.':<10}{'Cat.Size'}")
-    print("-" * 90)
-    for _, row in bias_patterns.head(20).iterrows():
-        print(f"{str(row['category']):<15}{str(row['profile']):<20}{row['bias_direction']:<15}"
-              f"{row['bias_magnitude']:<10.3f}{row['weighted_bias_magnitude']:<10.3f}{row['n_mislabelling']:<8}{row['category_size']}")
-
-    # Reliability analysis
-    large = bias_patterns[bias_patterns['category_size'] >= 100]
-    medium = bias_patterns[(bias_patterns['category_size'] >= 50) & (bias_patterns['category_size'] < 100)]
-    small = bias_patterns[bias_patterns['category_size'] < 50]
-
-    print(f"\nRELIABILITY ANALYSIS BY SAMPLE SIZE")
-    print("-" * 50)
-    print(f"Large categories (≥100): {large['category'].nunique()}")
-    print(f"Medium (50–99): {medium['category'].nunique()}")
-    print(f"Small (<50): {small['category'].nunique()}")
-
-    # Statistically meaningful bias detection
-    def assess_bias_significance(row):
-        if row['category_size'] >= 100:
-            return abs(row['bias_magnitude']) >= 0.02
-        elif row['category_size'] >= 50:
-            return abs(row['bias_magnitude']) >= 0.03
-        else:
-            return abs(row['bias_magnitude']) >= 0.05
-
-    bias_patterns['statistically_meaningful'] = bias_patterns.apply(assess_bias_significance, axis=1)
-    meaningful = bias_patterns[bias_patterns['statistically_meaningful']].copy()
-    meaningful = meaningful.sort_values("weighted_bias_magnitude", key=abs, ascending=False)
-
-    print(f"\nSTATISTICALLY MEANINGFUL BIAS PATTERNS")
-    print("-" * 70)
-    print(f"Identified {len(meaningful)} statistically meaningful patterns")
-
-    print(f"\nTOP 15 STATISTICALLY MEANINGFUL PATTERNS")
-    print("-" * 90)
-    print(f"{'Category':<15}{'Profile':<20}{'Direction':<15}{'Mag.':<10}{'Weighted':<10}{'Size':<8}{'Threshold'}")
-    print("-" * 90)
-    for _, row in meaningful.head(15).iterrows():
-        threshold = (
-            "≥2.0%" if row['category_size'] >= 100 else
-            "≥3.0%" if row['category_size'] >= 50 else
-            "≥5.0%"
-        )
-        print(f"{str(row['category']):<15}{str(row['profile']):<20}{row['bias_direction']:<15}"
-              f"{row['bias_magnitude']:<10.3f}{row['weighted_bias_magnitude']:<10.3f}{row['category_size']:<8}{threshold}")
-
-    # Category summary
-    category_summary = bias_patterns.groupby('category').agg({
-        'bias_magnitude': ['mean', 'max', 'std'],
-        'weighted_bias_magnitude': 'sum',
-        'n_mislabelling': 'sum',
-        'mislabelling_rate': 'mean',
-        'category_size': 'first'
-    }).round(3)
-    
-    category_summary.columns = [
-        'avg_bias_magnitude', 'max_bias_magnitude', 'bias_std',
-        'total_weighted_bias', 'total_mislabelling', 'avg_mislabelling_rate', 'sample_size'
-    ]
-
-    print(f"\nCATEGORY-LEVEL BIAS SUMMARY")
-    print("-" * 70)
-    print(f"{'Category':<15}{'Avg Bias':<12}{'Max Bias':<12}{'Weighted Bias':<15}{'Total Mislab.':<16}{'Sample Size'}")
-    print("-" * 70)
-    for category in category_summary.sort_values('max_bias_magnitude', ascending=False).index:
-        row = category_summary.loc[category]
-        print(f"{category:<15}{row['avg_bias_magnitude']:<12.3f}{row['max_bias_magnitude']:<12.3f}"
-              f"{row['total_weighted_bias']:<15.3f}{row['total_mislabelling']:<16.0f}{row['sample_size']:<12.0f}")
-
-    print(f"\nFINAL ASSESSMENT")
-    print("-" * 40)
-    if len(meaningful) > 0:
-        print(f"{len(meaningful)} statistically meaningful patterns detected")
-        print(f"Affected categories: {meaningful['category'].nunique()}")
-        print(f"Affected profiles: {meaningful['profile'].nunique()}")
-    else:
-        print("No statistically meaningful bias patterns detected")
-
-    return bias_patterns, meaningful, category_summary
-
-
-
-def analyze_systematic_bias_patterns_multi_category(
-    merged_df: pd.DataFrame,
-    person_set: PersonSet,
-    case: CaseConfig,
-    baseline_col: str = "base_pred",
-    profile_prefix: str = "profile"
-) -> Dict[str, Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
-    """
-    Analyze systematic bias patterns across all category columns in the case
-    
-    Returns:
-    --------
-    Dict mapping category_col -> (bias_patterns, meaningful_patterns, category_summary)
-    """
-    
-    print("MULTI-CATEGORY SYSTEMATIC BIAS PATTERN ANALYSIS")
-    print("=" * 80)
-    
-    results = {}
-    
-    for cat_col in case.category_cols:
-        if cat_col not in merged_df.columns:
-            print(f"  Category '{cat_col}' not found in data, skipping...")
-            continue
-            
-        print(f"\n{'='*60}")
-        print(f"ANALYZING CATEGORY: {cat_col.upper()}")
-        print(f"{'='*60}")
-        
-        # Check if this category has sufficient data
-        category_counts = merged_df[cat_col].value_counts()
-        print(f"Category distribution for {cat_col}:")
-        for cat_val, count in category_counts.head(10).items():
-            print(f"  {cat_val}: {count} samples")
-        
-        if len(category_counts) < 2:
-            print(f"  Category '{cat_col}' has insufficient variation, skipping...")
-            continue
-            
-        try:
-            bias_patterns, meaningful_patterns, category_summary = analyze_systematic_bias_patterns(
-                merged_df,
-                person_set=person_set,
-                category_col=cat_col,
-                baseline_col=baseline_col,
-                profile_prefix=profile_prefix
-            )
-            
-            results[cat_col] = (bias_patterns, meaningful_patterns, category_summary)
-            
-            # Print summary for this category
-            print(f"\nSUMMARY FOR {cat_col.upper()}:")
-            print(f"  • Total bias patterns: {len(bias_patterns)}")
-            print(f"  • Meaningful patterns: {len(meaningful_patterns)}")
-            print(f"  • Categories analyzed: {bias_patterns['category'].nunique()}")
-            print(f"  • Profiles with bias: {bias_patterns['profile'].nunique()}")
-            
-            if len(meaningful_patterns) > 0:
-                top_bias = meaningful_patterns.iloc[0]
-                print(f"  • Strongest bias: {top_bias['category']} | {top_bias['profile']} | "
-                      f"{top_bias['bias_direction']} | mag={top_bias['bias_magnitude']:.3f}")
-            
-        except Exception as e:
-            print(f"=== Error analyzing category '{cat_col}': {e}")
-            continue
-    
-    print(f"\n{'='*80}")
-    print("MULTI-CATEGORY ANALYSIS COMPLETE")
-    print(f"{'='*80}")
-    print(f"Successfully analyzed {len(results)} out of {len(case.category_cols)} categories")
-    
-    return results
-
-
-
-def print_multi_category_bias_summary(bias_results: Dict[str, Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]):
-    """
-    Print a comprehensive summary across all category columns with proper terminology
-    """
-    print("\n" + "="*80)
-    print("CROSS-CATEGORY BIAS ANALYSIS SUMMARY")
-    print("="*80)
-    
-    total_patterns = 0
-    total_meaningful = 0
-    category_stats = []
-    
-    for cat_col, (bias_patterns, meaningful_patterns, category_summary) in bias_results.items():
-        total_patterns += len(bias_patterns)
-        total_meaningful += len(meaningful_patterns)
-        
-        category_stats.append({
-            'category_column': cat_col,
-            'total_patterns': len(bias_patterns),
-            'meaningful_patterns': len(meaningful_patterns),
-            'meaningful_rate': len(meaningful_patterns) / len(bias_patterns) if len(bias_patterns) > 0 else 0,
-            'max_bias_magnitude': bias_patterns['bias_magnitude'].max() if len(bias_patterns) > 0 else 0,
-            'avg_bias_magnitude': bias_patterns['bias_magnitude'].mean() if len(bias_patterns) > 0 else 0,
-            'unique_category_values': bias_patterns['category'].nunique() if len(bias_patterns) > 0 else 0
-        })
-    
-    print(f"OVERALL STATISTICS:")
-    print(f"  • Total category columns analyzed: {len(bias_results)}")
-    print(f"  • Total bias patterns: {total_patterns:,}")
-    print(f"  • Total meaningful patterns: {total_meaningful:,}")
-    print(f"  • Overall meaningful rate: {total_meaningful/total_patterns:.1%}")
-    
-    print(f"\nPER-CATEGORY COLUMN BREAKDOWN:")
-    print(f"{'Category Column':<20}{'Patterns':<10}{'Meaningful':<12}{'Rate':<8}{'Max Bias':<10}{'Avg Bias':<10}{'Values'}")
-    print("-" * 85)
-    
-    for stats in sorted(category_stats, key=lambda x: x['meaningful_patterns'], reverse=True):
-        print(f"{stats['category_column']:<20}{stats['total_patterns']:<10}{stats['meaningful_patterns']:<12}"
-              f"{stats['meaningful_rate']:<8.1%}{stats['max_bias_magnitude']:<10.3f}"
-              f"{stats['avg_bias_magnitude']:<10.3f}{stats['unique_category_values']}")
-    
-    # Find cross-category patterns - Fixed terminology
-    print(f"\nCROSS-CATEGORY INSIGHTS:")
-    
-    # Most biased profiles across all category columns
-    all_meaningful = pd.concat([
-        meaningful.assign(source_category_column=cat) 
-        for cat, (_, meaningful, _) in bias_results.items()
-    ], ignore_index=True)
-    
-    if len(all_meaningful) > 0:
-        profile_bias_counts = all_meaningful['profile'].value_counts()
-        print(f"  • Most frequently biased profiles across category values:")
-        for profile, count in profile_bias_counts.head(5).items():
-            print(f"    - {profile}: appears in {count} category values")
-        
-        # Most problematic category columns
-        if len(bias_results) > 1:
-            category_bias_counts = all_meaningful['source_category_column'].value_counts()
-            print(f"  • Category columns with most bias patterns:")
-            for category, count in category_bias_counts.items():
-                print(f"    - {category}: {count} meaningful bias patterns")
-        else:
-            # Single category column - show breakdown by category values
-            category_value_counts = all_meaningful['category'].value_counts()
-            print(f"  • Category values with most bias patterns in {list(bias_results.keys())[0]}:")
-            for category_value, count in category_value_counts.items():
-                print(f"    - {category_value}: {count} meaningful bias patterns")
+    def _demo_key(pid: str) -> str:
+        tr = _traits(pid)
+        eth = str(tr.get("ethnicity", "unknown")).lower()
+        gen = str(tr.get("gender", "unknown")).lower()
+        age = tr.get("age", "Unknown")
+        age_str = f"age_{age}" if (age is not None and str(age).lower() != "unknown") else None
+        return "_".join([x for x in (eth, gen, age_str) if x])
 
 
 
 
-def analyze_persona_similarity(merged: pd.DataFrame, person_set: PersonSet) -> Dict[str, Any]:
-    """
-    Enhanced persona clustering analysis with demographic mapping and validation
-    """
-    
-    profile_cols = [col for col in merged.columns if col.startswith("profile")]
+    profile_cols = [c for c in merged.columns if c.startswith("profile")]
     if not profile_cols:
         return {"error": "No profile columns found"}
 
-    print(f"Analyzing similarity patterns across {len(profile_cols)} personas...")
-
-    # Map once
-    trait_by_profile = {p: get_demographic_info(p, person_set) for p in profile_cols}
-
     n_profiles = len(profile_cols)
-    distance_matrix = np.zeros((n_profiles, n_profiles))
-    for i, p1 in enumerate(profile_cols):
-        for j, p2 in enumerate(profile_cols):
-            if i != j:
-                distance_matrix[i, j] = np.mean(merged[p1] != merged[p2])
 
-    linkage_matrix = linkage(squareform(distance_matrix), method='ward')
-    n_ethnicities = len({traits.split("_")[0] for traits in trait_by_profile.values()})
-    max_clusters = min(n_profiles - 1, n_ethnicities + 2)
+    trait_by_profile = {p: _demo_key(p) for p in profile_cols}
 
-    cluster_quality = {}
-    
-    for n_clust in range(2, max_clusters + 1):
-        clusters = fcluster(linkage_matrix, t=n_clust, criterion='maxclust')
-        
-        if len(np.unique(clusters)) > 1:
-            sil_score = silhouette_score(distance_matrix, clusters, metric='precomputed')
-            cluster_quality[n_clust] = sil_score
-    
-    if cluster_quality:
-        optimal_n_clusters = max(cluster_quality, key=cluster_quality.get)
-        optimal_silhouette = cluster_quality[optimal_n_clusters]
+
+    if method.lower() == "ward":
+        y_true = merged["true_label"].values
+        X = np.column_stack([(merged[p].values == y_true).astype(float) for p in profile_cols]).T  
+        Z = linkage(X, method="ward")
+        D = squareform(pdist(X, metric="euclidean"))
+        sil_metric = "precomputed"
     else:
-        optimal_n_clusters = 3
-        optimal_silhouette = 0.0
-    
-    clusters = fcluster(linkage_matrix, t=optimal_n_clusters, criterion='maxclust')
-    
-    cluster_analysis = {}
-    demographic_distribution = {}
-    
-    for cluster_id in np.unique(clusters):
-        cluster_profiles = [prof for prof, c in zip(profile_cols, clusters) if c == cluster_id]
-        
-        demo_composition = {}
-        for prof in cluster_profiles:
-            demo = get_demographic_info(prof, person_set)
-            demo_composition[demo] = demo_composition.get(demo, 0) + 1
-        
-        if 'true_label' in merged.columns:
-            avg_accuracy = np.mean([
-                accuracy_score(merged["true_label"], merged[prof]) 
-                for prof in cluster_profiles
-            ])
-        else:
-            avg_accuracy = np.nan
-        
+        D = np.zeros((n_profiles, n_profiles), dtype=float)
+        for i, p1 in enumerate(profile_cols):
+            pi = merged[p1].values
+            for j in range(i + 1, n_profiles):
+                pj = merged[profile_cols[j]].values
+                D[i, j] = D[j, i] = np.mean(pi != pj)
+        valid = {"average", "complete", "single", "weighted", "median", "centroid"}
+        link_method = method.lower() if method.lower() in valid else "average"
+        Z = linkage(squareform(D), method=link_method)
+        sil_metric = "precomputed"
+
+
+    ethnicity_values = {
+        str(person_set.get_traits(p, group_keys=("ethnicity",)).get("ethnicity", "unknown")).lower() for p in profile_cols
+    }
+    n_ethnicities = len(ethnicity_values)
+    max_clusters = min(n_profiles - 1, max(2, n_ethnicities + max_clusters_extra))
+
+    cluster_quality: Dict[int, float] = {}
+    best_k, best_score, best_labels = None, -np.inf, None
+
+    for k in range(2, max_clusters + 1):
+        labels_raw = fcluster(Z, t=k, criterion="maxclust")
+        labels_fixed = _merge_singletons(labels_raw, D, min_size=2)
+        if len(np.unique(labels_fixed)) < 2:
+            continue
+        try:
+            score = silhouette_score(D, labels_fixed, metric=sil_metric) if D is not None else np.nan
+        except Exception:
+            score = np.nan
+        cluster_quality[k] = float(score) if np.isfinite(score) else np.nan
+        if np.isfinite(score) and score > best_score:
+            best_score = float(score)
+            best_k = int(k)
+            best_labels = labels_fixed
+
+    if best_labels is None:
+        fewest_singletons = np.inf
+        for k in range(2, max_clusters + 1):
+            labels_raw = fcluster(Z, t=k, criterion="maxclust")
+            sizes = np.bincount(labels_raw)[1:]
+            n_singletons = int(np.sum(sizes < 2))
+            if n_singletons < fewest_singletons:
+                fewest_singletons = n_singletons
+                best_k = int(k)
+                best_labels = _merge_singletons(labels_raw, D, min_size=2)
+        best_score = np.nan
+
+    unique_labs = np.unique(best_labels)
+    lab_map = {lab: i + 1 for i, lab in enumerate(unique_labs)}
+    clusters = np.array([lab_map[l] for l in best_labels], dtype=int)
+    observed_k = int(len(unique_labs))
+
+
+
+    cluster_analysis: Dict[str, Any] = {}
+    for cid in np.unique(clusters):
+        cluster_profiles = [p for p, c in zip(profile_cols, clusters) if c == cid]
+
+        demo_counts = Counter([trait_by_profile[p] for p in cluster_profiles])
+        top_demo = dict(demo_counts.most_common(5))
+
+        eth_counts, gen_counts = Counter(), Counter()
+        for p in cluster_profiles:
+            tr = person_set.get_traits(p, group_keys=("ethnicity", "gender"))
+            eth = str(tr.get("ethnicity", "unknown")).lower()
+            gen = str(tr.get("gender", "unknown")).lower()
+            eth_counts[eth] += 1
+            gen_counts[gen] += 1
+
+        avg_acc = (
+            float(np.mean([(merged[p] == merged["true_label"]).mean() for p in cluster_profiles]))
+            if "true_label" in merged.columns
+            else np.nan
+        )
+
         if len(cluster_profiles) > 1:
-            internal_agreement = np.mean([
-                np.mean(merged[p1] == merged[p2]) 
-                for p1, p2 in combinations(cluster_profiles, 2)
-            ])
+            pairs = list(combinations(cluster_profiles, 2))
+            internal_agreement = float(np.mean([np.mean(merged[a] == merged[b]) for a, b in pairs]))
+            avg_ag = [
+                np.mean([np.mean(merged[p] == merged[q]) for q in cluster_profiles if q != p]) for p in cluster_profiles
+            ]
+            centroid_profile = cluster_profiles[int(np.argmax(avg_ag))]
         else:
             internal_agreement = 1.0
-        
-        if len(cluster_profiles) > 1:
-            avg_agreements = []
-            for prof in cluster_profiles:
-                agreements = [np.mean(merged[prof] == merged[other]) 
-                            for other in cluster_profiles if other != prof]
-                avg_agreements.append(np.mean(agreements))
-            centroid_idx = np.argmax(avg_agreements)
-            centroid_profile = cluster_profiles[centroid_idx]
-        else:
             centroid_profile = cluster_profiles[0]
-        
-        cluster_analysis[f"cluster_{cluster_id}"] = {
+
+        cluster_analysis[f"cluster_{cid}"] = {
             "profiles": cluster_profiles,
             "size": len(cluster_profiles),
-            "avg_accuracy": avg_accuracy,
+            "avg_accuracy": avg_acc,
             "internal_agreement": internal_agreement,
-            "demographic_composition": demo_composition,
+            "top_demographics": top_demo,
+            "top_ethnicities": dict(eth_counts.most_common(3)),
+            "top_genders": dict(gen_counts.most_common(3)),
             "centroid_profile": centroid_profile,
-            "dominant_demographic": max(demo_composition, key=demo_composition.get) if demo_composition else "unknown"
+            "dominant_demographic": max(top_demo, key=top_demo.get) if top_demo else "unknown",
         }
-        
-        for demo, count in demo_composition.items():
-            if demo not in demographic_distribution:
-                demographic_distribution[demo] = []
-            demographic_distribution[demo].extend([cluster_id] * count)
-    
 
-    demo_cluster_summary = {}
-    for demo, cluster_assignments in demographic_distribution.items():
+    demo_cluster_summary: Dict[str, Any] = {}
+    for demo in {trait_by_profile[p] for p in profile_cols}:
+        assigned = [cl for p, cl in zip(profile_cols, clusters) if trait_by_profile[p] == demo]
+        if not assigned:
+            continue
+        counts = Counter(assigned)
+        primary = max(counts, key=counts.get)
         demo_cluster_summary[demo] = {
-            "primary_cluster": max(set(cluster_assignments), key=cluster_assignments.count),
-            "cluster_distribution": {cid: cluster_assignments.count(cid) for cid in set(cluster_assignments)},
-            "clustering_consistency": max(set(cluster_assignments), key=cluster_assignments.count) / len(cluster_assignments)
+            "primary_cluster": int(primary),
+            "clustering_consistency": float(counts[primary] / sum(counts.values())),
+            "n": int(sum(counts.values())),
         }
-    
 
-    cluster_distances = {}
-    for i, cluster_i in enumerate(np.unique(clusters)):
-        for j, cluster_j in enumerate(np.unique(clusters)):
-            if i < j:
-                profiles_i = [prof for prof, c in zip(profile_cols, clusters) if c == cluster_i]
-                profiles_j = [prof for prof, c in zip(profile_cols, clusters) if c == cluster_j]
-                
-                distances = []
-                for pi in profiles_i:
-                    for pj in profiles_j:
-                        pi_idx = profile_cols.index(pi)
-                        pj_idx = profile_cols.index(pj)
-                        distances.append(distance_matrix[pi_idx, pj_idx])
-                
-                cluster_distances[f"cluster_{cluster_i}_vs_cluster_{cluster_j}"] = np.mean(distances)
-    
+    inter: Dict[str, float] = {}
+    uniq = np.unique(clusters)
+    for i in range(len(uniq)):
+        for j in range(i + 1, len(uniq)):
+            ci, cj = uniq[i], uniq[j]
+            Pi = [idx for idx, c in enumerate(clusters) if c == ci]
+            Pj = [idx for idx, c in enumerate(clusters) if c == cj]
+            inter[f"cluster_{ci}_vs_cluster_{cj}"] = float(np.mean(D[np.ix_(Pi, Pj)]))
+
     return {
         "clusters": cluster_analysis,
-        "linkage_matrix": linkage_matrix,
-        "distance_matrix": distance_matrix,
-        "optimal_n_clusters": optimal_n_clusters,
-        "optimal_silhouette_score": optimal_silhouette,
+        "linkage_matrix": Z,
+        "distance_matrix": D,
+        "method": method,
+        "optimal_n_clusters": observed_k,
+        "requested_k_winner": int(best_k) if best_k else None,
+        "optimal_silhouette_score": float(best_score) if np.isfinite(best_score) else float("nan"),
         "cluster_quality_scores": cluster_quality,
         "demographic_clustering": demo_cluster_summary,
-        "inter_cluster_distances": cluster_distances,
+        "inter_cluster_distances": inter,
         "summary": {
-            "total_profiles": len(profile_cols),
-            "n_clusters_found": len(np.unique(clusters)),
-            "avg_cluster_size": np.mean([len(cluster_analysis[f"cluster_{cid}"]["profiles"]) for cid in np.unique(clusters)]),
-            "most_cohesive_cluster": max(cluster_analysis, key=lambda x: cluster_analysis[x]["internal_agreement"]),
-            "most_accurate_cluster": max(cluster_analysis, key=lambda x: cluster_analysis[x]["avg_accuracy"]) if not np.isnan(avg_accuracy) else None
-        }
+            "total_profiles": n_profiles,
+            "n_clusters_found": observed_k,
+            "avg_cluster_size": float(np.mean([v["size"] for v in cluster_analysis.values()])),
+            "most_cohesive_cluster": max(cluster_analysis, key=lambda k: cluster_analysis[k]["internal_agreement"]),
+            "most_accurate_cluster": (
+                max(cluster_analysis, key=lambda k: cluster_analysis[k]["avg_accuracy"])
+                if not np.isnan(list(cluster_analysis.values())[0]["avg_accuracy"])
+                else None
+            ),
+        },
     }
 
 
-
-def print_persona_similarity_analysis(similarity_results: Dict[str, Any]):
-    """Print comprehensive persona similarity analysis"""
-
+def print_profile_similarity_analysis(
+    similarity_results: Dict[str, Any], top_k_demo: int = 5, show_demo_consistency: bool = False
+):
     if "error" in similarity_results:
         print(f"Error: {similarity_results['error']}")
         return
 
-    print("\n" + "="*80)
-    print("PERSONA SIMILARITY & CLUSTERING ANALYSIS")
-    print("="*80)
+    print("\n" + "=" * 80)
+    print("Profile Similarity and Clustering Analysis")
+    print("=" * 80)
 
     summary = similarity_results["summary"]
     clusters = similarity_results["clusters"]
     demo_clustering = similarity_results["demographic_clustering"]
 
-    print(f"\nSUMMARY:")
-    print(f"  • Total personas analyzed: {summary['total_profiles']}")
-    print(f"  • Optimal number of clusters: {similarity_results['optimal_n_clusters']}")
-    print(f"  • Clustering quality (silhouette): {similarity_results['optimal_silhouette_score']:.3f}")
-    print(f"  • Average cluster size: {summary['avg_cluster_size']:.1f}")
+    print(f"\nSummary:")
+    print(f"  - Total profiles analyzed: {summary['total_profiles']}")
+    print(f"  - Linkage method: {similarity_results.get('method', 'average')}")
+    print(f"  - Optimal number of clusters: {similarity_results['optimal_n_clusters']}")
+    print(f"  - Clustering quality (silhouette): {similarity_results['optimal_silhouette_score']:.3f}")
+    print(f"  - Average cluster size: {summary['avg_cluster_size']:.1f}")
 
-    print(f"\nCLUSTER COMPOSITION:")
-    for cluster_name, cluster_info in clusters.items():
-        print(f"\n{cluster_name.upper()} ({cluster_info['size']} personas):")
-        print(f"  • Dominant demographic: {cluster_info['dominant_demographic']}")
-        print(f"  • Internal agreement: {cluster_info['internal_agreement']:.3f}")
-        print(f"  • Average accuracy: {cluster_info['avg_accuracy']:.3f}")
-        print(f"  • Centroid profile: {cluster_info['centroid_profile']}")
-        print(f"  • Demographic breakdown: {cluster_info['demographic_composition']}")
+    print(f"\nCluster Composition:")
+    for cname, info in clusters.items():
+        demo_items = sorted(info["top_demographics"].items(), key=lambda kv: kv[1], reverse=True)[:top_k_demo]
+        demo_str = (
+            "{ "
+            + ", ".join([f"{k}: {v}" for k, v in demo_items])
+            + (" …" if len(info["top_demographics"]) > top_k_demo else "")
+            + " }"
+        )
+        print(f"\n{cname.upper()} ({info['size']} profiles):")
+        print(f"  - Dominant demographic: {info['dominant_demographic']}")
+        print(f"  - Internal agreement: {info['internal_agreement']:.3f}")
+        print(f"  - Average accuracy: {info['avg_accuracy']:.3f}")
+        print(f"  - Centroid profile: {info['centroid_profile']}")
+        print(f"  - Top demographics: {demo_str}")
+        if info.get("top_ethnicities"):
+            print(f"  - Top ethnicities: {info['top_ethnicities']}")
+        if info.get("top_genders"):
+            print(f"  - Top genders: {info['top_genders']}")
 
-    print(f"\nDEMOGRAPHIC CLUSTERING PATTERNS:")
-    for demo, demo_info in demo_clustering.items():
-        consistency = demo_info['clustering_consistency']
-        primary_cluster = demo_info['primary_cluster']
-        label = "High" if consistency > 0.8 else "Medium" if consistency > 0.6 else "Low"
-        print(f"{demo}: {consistency:.1%} in cluster_{primary_cluster} ({label} consistency)")
+    if show_demo_consistency:
+        highs = sum(v["clustering_consistency"] >= 0.80 for v in demo_clustering.values())
+        meds = sum(0.60 <= v["clustering_consistency"] < 0.80 for v in demo_clustering.values())
+        lows = sum(v["clustering_consistency"] < 0.60 for v in demo_clustering.values())
+        print(f"\nDemographic consistency summary:")
+        print(f"  - High (≥80% in one cluster): {highs}")
+        print(f"  - Medium (60–80%): {meds}")
+        print(f"  - Low (<60%): {lows}")
 
-    print(f"\nINTER-CLUSTER DISTANCES:")
-    for comparison, distance in similarity_results["inter_cluster_distances"].items():
-        print(f"{comparison}: {distance:.3f}")
+    print(f"\nInter-Cluster Distances:")
+    for comp, dist in similarity_results["inter_cluster_distances"].items():
+        print(f"{comp}: {dist:.3f}")
 
-    print(f"\nANALYSIS FINDINGS:")
-    high_consistency_demos = [
-        demo for demo, info in demo_clustering.items()
-        if info['clustering_consistency'] > 0.8
-    ]
-    if high_consistency_demos:
-        print(f"Strong demographic clustering observed: {', '.join(high_consistency_demos)}")
-    else:
-        print("Weak demographic clustering - personas group by factors other than demographics")
-
-    score = similarity_results['optimal_silhouette_score']
+    score = similarity_results["optimal_silhouette_score"]
     if score > 0.5:
-        print("High clustering quality - distinct persona groups identified")
+        qual = "High clustering quality - distinct profile groups identified"
     elif score > 0.3:
-        print("Moderate clustering quality - some persona groupings exist")
+        qual = "Moderate clustering quality - some profile groupings exist"
     else:
-        print("Low clustering quality - personas show similar behavior patterns")
+        qual = "Low clustering quality - profiles show similar behavior patterns"
+    print(qual)
 
-    most_cohesive = summary['most_cohesive_cluster']
+    most_cohesive = summary["most_cohesive_cluster"]
     print(f"Most cohesive cluster: {most_cohesive} (agreement: {clusters[most_cohesive]['internal_agreement']:.3f})")
 
 
 
-
+# Plots
 
 def plot_accuracy_deltas_with_ci(
-    merged_df,
+    merged_df: pd.DataFrame,
     person_set: PersonSet,
     group_keys=("gender", "ethnicity"),
     colormap: str = "tab10",
     figsize=(14, 6),
     savepath: str = None,
+    full_scale_axis: bool = True,
+    error_style: str = "none",
 ):
     """
-    Accuracy plot (NeurIPS-friendly):
-      • Far-left bar = baseline accuracy (base_pred if present else zero_shot)
-      • Remaining bars = absolute accuracy per Ethnicity×Gender (mean over profiles) with 95% CI
-      • Consensus line = global mean across all profiles
-      • Y-axis is zoomed so the bottom starts at 80% of the lowest accuracy (baseline + groups)
+    Tier-0 bar plot of accuracy by (ethnicity, gender) groups.
     """
     try:
         apply_neurips_figure_style()
@@ -1444,234 +1612,227 @@ def plot_accuracy_deltas_with_ci(
     if not profile_cols:
         raise ValueError("No profile columns found for plotting")
 
-    # Global consensus across profiles
-    consensus_accuracy_global = float(np.mean([
-        (merged_df[p] == merged_df["true_label"]).mean()
-        for p in profile_cols
-    ]))
+    consensus_accuracy_global = float(
+        np.mean([(merged_df[p] == merged_df["true_label"]).mean() for p in profile_cols])
+    )
 
-    # Baseline accuracy (leftmost bar)
-    baseline_label = "Baseline"
     if "base_pred" in merged_df.columns:
         baseline_acc = float((merged_df["base_pred"] == merged_df["true_label"]).mean())
     elif "zero_shot" in merged_df.columns:
         baseline_acc = float((merged_df["zero_shot"] == merged_df["true_label"]).mean())
     else:
         baseline_acc = np.nan
+    include_baseline = not np.isnan(baseline_acc)
 
-    # Traits
     all_genders, all_ethnicities = set(), set()
     profile_demographics = {}
     for p in profile_cols:
-        traits = person_set.get_traits(p, group_keys=["gender", "ethnicity"])
+        traits = person_set.get_traits(p, group_keys=group_keys)
         gender = str(traits.get("gender", "unknown")).lower()
         ethnicity = str(traits.get("ethnicity", "unknown")).lower()
-        all_genders.add(gender); all_ethnicities.add(ethnicity)
+        all_genders.add(gender)
+        all_ethnicities.add(ethnicity)
         profile_demographics[p] = (ethnicity, gender)
 
     genders = sorted(all_genders)
     ethnicities = sorted(all_ethnicities)
-
-    # Ordered combinations (ethnicity × gender)
     ordered_combinations = [(e, g) for e in ethnicities for g in genders]
 
-    # Group profiles by combo
     demo_groups = {combo: [] for combo in ordered_combinations}
     for p, (e, g) in profile_demographics.items():
         if (e, g) in demo_groups:
             demo_groups[(e, g)].append(p)
 
-    # Accuracy & 95% CI per group (across profiles)
     group_stats = {}
     for combo in ordered_combinations:
         profs = demo_groups[combo]
-        prof_accs = [(merged_df[p] == merged_df["true_label"]).mean()
-                     for p in profs if p in merged_df.columns]
+        prof_accs = [(merged_df[p] == merged_df["true_label"]).mean() for p in profs if p in merged_df.columns]
         n = len(prof_accs)
         if n == 0:
-            mean_acc, ci = np.nan, 0.0
+            mean_acc, disp = np.nan, 0.0
         elif n == 1:
-            mean_acc, ci = float(prof_accs[0]), 0.0
+            mean_acc, disp = float(prof_accs[0]), 0.0
         else:
             mean_acc = float(np.mean(prof_accs))
-            ci = float(sem(prof_accs) * t.ppf(0.975, n - 1))
-        group_stats[combo] = {"mean_acc": mean_acc, "ci": ci, "n": n}
+            if error_style == "sd":
+                disp = float(np.std(prof_accs, ddof=1))
+            elif error_style == "t":
+                disp = float(sem(prof_accs) * t.ppf(0.975, n - 1))
+            else:
+                disp = 0.0
+        group_stats[combo] = {"mean_acc": mean_acc, "disp": disp, "n": n}
 
-    # Colors: same color per ethnicity
     cmap = plt.get_cmap(colormap)
-    ethnicity_colors = {
-        e: cmap(i / max(1, len(ethnicities) - 1)) for i, e in enumerate(ethnicities)
-    }
+    ethnicity_colors = {e: cmap(i / max(1, len(ethnicities) - 1)) for i, e in enumerate(ethnicities)}
 
-    # Build arrays (baseline first if available)
-    labels, means, ci_err, colors = [], [], [], []
-    include_baseline = not np.isnan(baseline_acc)
+    labels, means, disp_err, colors = [], [], [], []
     if include_baseline:
-        labels.append(baseline_label)
+        labels.append("Baseline")
         means.append(baseline_acc)
-        ci_err.append(0.0)
-        colors.append("0.5")  # grey baseline
+        disp_err.append(0.0)
+        colors.append("0.5")
 
     abbrev_gender = {"man": "M", "woman": "W", "nonbinary": "NB"}
     for e, g in ordered_combinations:
         st = group_stats[(e, g)]
         labels.append(f"{e.replace('_','-').title()}\n{abbrev_gender.get(g, g[:1].upper())}")
         means.append(st["mean_acc"])
-        ci_err.append(st["ci"])
-        colors.append(ethnicity_colors[e])
+        disp_err.append(st["disp"])
+        colors.append(ethnicity_colors.get(e, "0.7"))
 
     means_arr = np.array(means, dtype=float)
-    ci_arr = np.array(ci_err, dtype=float)
+    disp_arr = np.array(disp_err, dtype=float)
 
-    # ---------------------------
-    # Y-AXIS ZOOM (your request):
-    # bottom starts at 80% of the lowest accuracy (baseline + groups)
-    # ---------------------------
-    finite_means = means_arr[np.isfinite(means_arr)]
-    if finite_means.size == 0:
-        raise ValueError("All group accuracies are NaN; cannot plot.")
-
-    min_acc = float(np.min(finite_means))
-    ymin = max(0.0, 0.9 * min_acc)
-    ymax = min(1.0, float(np.nanmax(means_arr + ci_arr)) + 0.03)
-    if ymin >= ymax:
-        ymax = ymin + 0.05  # fallback to a small visible range
-
-    # Plot
-    x = np.arange(len(labels))
     fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
-    width = 0.65  # slightly thinner bars
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
 
-    bars = ax.bar(
-        x, means_arr, yerr=ci_arr, width=width, capsize=3,
-        color=colors, edgecolor="black", linewidth=0.8, alpha=0.9, rasterized=True
+    x = np.arange(len(labels))
+    width = 0.65
+    yerr = None if error_style == "none" else disp_arr
+    ax.bar(
+        x,
+        means_arr,
+        yerr=yerr,
+        width=width,
+        capsize=3 if yerr is not None else 0,
+        color=colors,
+        edgecolor="black",
+        linewidth=0.8,
+        alpha=0.9,
+        rasterized=True,
     )
 
-    # Vertical separators between ethnicities (skip baseline slot)
     if len(ethnicities) > 1:
         offset = 1 if include_baseline else 0
         for i in range(1, len(ethnicities)):
             pos = offset + i * len(genders) - 0.5
             ax.axvline(pos, color="0.6", linestyle=":", linewidth=1, alpha=0.8)
 
-    # Consensus line
-    ax.axhline(consensus_accuracy_global, color="0.2", linestyle="--", linewidth=1.2,
-               label="Consensus accuracy")
+    ax.axhline(consensus_accuracy_global, color="0.2", linestyle="--", linewidth=1.2, label="Consensus accuracy")
 
-    # Δ annotations (relative to consensus), above top + error
     EPS = 0.002
     for i, m in enumerate(means_arr):
         if not np.isfinite(m):
             continue
-        ax.text(x[i], m + ci_arr[i] + EPS, f"{(m - consensus_accuracy_global):+0.3f}",
-                ha="center", va="bottom", fontsize=8)
+        d = m - consensus_accuracy_global
+        up = (0 if yerr is None else yerr[i]) + EPS
+        ax.text(x[i], m + up, f"{d:+0.3f}", ha="center", va="bottom", fontsize=8)
 
     ax.set_xticks(x)
     ax.set_xticklabels(labels, fontsize=8, ha="center")
-
     ax.set_ylabel("Accuracy")
-    ax.set_title("accuracy by ethnicity × gender (95% CI)", fontsize=9)
-    ax.grid(axis="y", linestyle=":", alpha=0.35)
-    ax.set_facecolor("white")
-    ax.set_ylim(ymin, ymax)
 
-    # Legend (ethnicity colors + baseline)
+    bar_title = "Accuracy by ethnicity–gender pair"
+    if error_style == "sd":
+        bar_title += " (±1 SD across profiles)"
+    elif error_style == "t":
+        bar_title += " (±95% t-interval across profiles)"
+    ax.set_title(bar_title, fontsize=9)
+
+    ax.grid(axis="y", linestyle=":", alpha=0.35)
+
+    if full_scale_axis:
+        ax.set_ylim(0.0, 1.0)
+    else:
+        finite_means = means_arr[np.isfinite(means_arr)]
+        if finite_means.size:
+            min_acc = float(np.min(finite_means))
+            ymin = max(0.0, 0.9 * min_acc)
+            ymax = min(1.0, float(np.nanmax(means_arr + (disp_arr if yerr is not None else 0))) + 0.03)
+            if ymin >= ymax:
+                ymax = ymin + 0.05
+            ax.set_ylim(ymin, ymax)
+
     legend_handles, legend_labels = [], []
     if include_baseline:
-        legend_handles.append(plt.Rectangle((0,0),1,1,color="0.5",ec="black"))
+        legend_handles.append(plt.Rectangle((0, 0), 1, 1, color="0.5", ec="black"))
         legend_labels.append("Baseline")
     for e in ethnicities:
-        legend_handles.append(plt.Rectangle((0,0),1,1,color=ethnicity_colors[e],ec="black"))
-        legend_labels.append(e.replace("_","-").title())
+        legend_handles.append(plt.Rectangle((0, 0), 1, 1, color=ethnicity_colors.get(e, "0.7"), ec="black"))
+        legend_labels.append(e.replace("_", "-").title())
     ax.legend(legend_handles, legend_labels, title="Groups", loc="upper right", framealpha=0.9)
 
     if savepath:
         os.makedirs(os.path.dirname(savepath), exist_ok=True)
         fig.savefig(savepath, bbox_inches="tight")
+        plt.close(fig)
 
-    # Tidy summary
     rows = []
     if include_baseline:
-        rows.append({
-            "combination": "baseline",
-            "ethnicity": None, "gender": None,
-            "mean_accuracy": baseline_acc,
-            "delta_from_consensus": baseline_acc - consensus_accuracy_global,
-            "ci": 0.0, "n_profiles": None
-        })
-    for (e,g), st in group_stats.items():
-        rows.append({
-            "combination": f"{e}_{g}",
-            "ethnicity": e, "gender": g,
-            "mean_accuracy": st["mean_acc"],
-            "delta_from_consensus": (st["mean_acc"] - consensus_accuracy_global) if np.isfinite(st["mean_acc"]) else np.nan,
-            "ci": st["ci"], "n_profiles": st["n"]
-        })
+        rows.append(
+            {
+                "combination": "baseline",
+                "ethnicity": None,
+                "gender": None,
+                "mean_accuracy": baseline_acc,
+                "delta_from_consensus": baseline_acc - consensus_accuracy_global,
+                "ci": 0.0,
+                "n_profiles": None,
+                "error_style": error_style,
+            }
+        )
+    for (e, g), st in group_stats.items():
+        rows.append(
+            {
+                "combination": f"{e}_{g}",
+                "ethnicity": e,
+                "gender": g,
+                "mean_accuracy": st["mean_acc"],
+                "delta_from_consensus": (st["mean_acc"] - consensus_accuracy_global)
+                if np.isfinite(st["mean_acc"])
+                else np.nan,
+                "ci": st["disp"],
+                "n_profiles": st["n"],
+                "error_style": error_style,
+            }
+        )
     return pd.DataFrame(rows)
 
 
-def _profile_cols(df):
-    return [c for c in df.columns if str(c).startswith("profile")]
 
-def _traits_for_profile(person_set, profile, keys=("ethnicity", "gender")):
-    t = person_set.get_traits(profile, group_keys=list(keys))
-    return {k: ("" if t.get(k) is None else str(t[k]).lower()) for k in keys}
 
-def _group_profiles_by_trait(merged_df, person_set, trait="ethnicity", min_profiles=1):
-    groups = {}
-    for p in _profile_cols(merged_df):
-        tr = _traits_for_profile(person_set, p)
-        g = tr.get(trait, "unknown") or "unknown"
-        groups.setdefault(g, []).append(p)
-    return {g: profs for g, profs in groups.items() if len(profs) >= min_profiles}
-
-def _profile_accuracies(df, profiles):
-    return np.array([(df[p] == df["true_label"]).mean() for p in profiles])
-
-def _cohens_d(a, b):
-    a = np.asarray(a); b = np.asarray(b)
-    n1, n2 = len(a), len(b)
-    if n1 < 2 or n2 < 2:
-        return 0.0
-    s1, s2 = np.var(a, ddof=1), np.var(b, ddof=1)
-    sp = np.sqrt(((n1 - 1) * s1 + (n2 - 1) * s2) / max(1, (n1 + n2 - 2)))
-    if sp == 0:
-        return 0.0
-    return (np.mean(a) - np.mean(b)) / sp
 
 def compute_pairwise_demographic_diffs(
-    merged_df,
-    person_set,
+    merged_df: pd.DataFrame,
+    person_set: PersonSet,
     trait="ethnicity",
     min_profiles=2,
-    p_adjust="fdr_bh"
+    p_adjust="fdr_bh",
+    n_boot: int = 2000,
+    random_state: int = 0,
 ):
-    """
-    Returns a DataFrame with columns:
-      group1, group2, mean1, mean2, diff, p, p_adj, d, n1, n2, neglog10_p, neglog10_p_adj
-    """
-    from scipy.stats import ttest_ind
-    import pandas as pd
-
     groups = _group_profiles_by_trait(merged_df, person_set, trait=trait, min_profiles=min_profiles)
     keys = sorted(groups.keys())
     rows = []
     for i in range(len(keys)):
         for j in range(i + 1, len(keys)):
             g1, g2 = keys[i], keys[j]
-            a1 = _profile_accuracies(merged_df, groups[g1])
-            a2 = _profile_accuracies(merged_df, groups[g2])
-            if len(a1) < 2 or len(a2) < 2:
+            p1, p2 = groups[g1], groups[g2]
+            if len(p1) < 1 or len(p2) < 1:
                 continue
-            _, p = ttest_ind(a1, a2, equal_var=False)
-            diff = float(np.mean(a1) - np.mean(a2))
-            d = float(_cohens_d(a1, a2))
-            rows.append({
-                "group1": g1, "group2": g2,
-                "mean1": float(np.mean(a1)), "mean2": float(np.mean(a2)),
-                "diff": diff, "p": float(p), "d": d,
-                "n1": int(len(a1)), "n2": int(len(a2)),
-            })
+            boot = _bootstrap_group_accuracy_diff(
+                merged_df, p1, p2, label_col="true_label", n_boot=n_boot, random_state=random_state
+            )
+            if not boot["ok"]:
+                continue
+            mean1, mean2 = boot["acc1"], boot["acc2"]
+            diff, lo, hi, p = boot["diff"], boot["ci_low"], boot["ci_high"], boot["p_raw"]
+            rows.append(
+                {
+                    "group1": g1,
+                    "group2": g2,
+                    "mean1": float(mean1),
+                    "mean2": float(mean2),
+                    "diff": float(diff),
+                    "ci_low": float(lo),
+                    "ci_high": float(hi),
+                    "p": float(p),
+                    "h": float(_cohens_h(mean1, mean2)),
+                    "n1": int(len(p1)),
+                    "n2": int(len(p2)),
+                }
+            )
     out = pd.DataFrame(rows)
     if len(out):
         _, p_adj, _, _ = multipletests(out["p"].values, method=p_adjust)
@@ -1681,19 +1842,19 @@ def compute_pairwise_demographic_diffs(
     return out.sort_values("diff", key=lambda s: np.abs(s), ascending=False).reset_index(drop=True)
 
 
-
 def plot_volcano_demographic_diffs(
-    pair_df,
+    pair_df: pd.DataFrame,
     ax=None,
-    title="(a) Volcano — Difference vs −log10(p)",
-    rank_by="diff",         
+    title="Volcano — Difference vs −log10(p) (exploratory)",
+    rank_by="diff",
     top_n=5,
     alpha_sig=0.05,
     figsize=(10, 6),
-    label_style="halo",  
+    label_style="halo",
     label_fontsize=9,
+    show_alpha_line=False,
+    guide_label=True,
 ):
-    
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
     if pair_df is None or len(pair_df) == 0:
@@ -1705,65 +1866,73 @@ def plot_volcano_demographic_diffs(
     sig = (pair_df["p_adj"].values < alpha_sig) if "p_adj" in pair_df else (pair_df["p"].values < alpha_sig)
 
     ax.scatter(x[~sig], y[~sig], s=26, alpha=0.7, edgecolors="none", rasterized=True)
-    ax.scatter(x[sig],  y[sig],  s=36, alpha=0.9, edgecolors="black", linewidths=0.4, rasterized=True, zorder=3)
+    ax.scatter(x[sig], y[sig], s=36, alpha=0.9, edgecolors="black", linewidths=0.4, rasterized=True, zorder=3)
 
-    # annotate top-N by |Δ| or |d|
     rank_col = "d" if rank_by == "d" else "diff"
-    top_idx = np.argsort(-np.abs(pair_df[rank_col].values))[:min(top_n, len(pair_df))]
+    top_idx = np.argsort(-np.abs(pair_df[rank_col].values))[: min(top_n, len(pair_df))]
     for idx in top_idx:
         row = pair_df.iloc[idx]
         txt = ax.annotate(
             f"{row['group1']} vs {row['group2']}",
             (row["diff"], row["neglog10_p"]),
-            xytext=(6, 6), textcoords="offset points", fontsize=9
+            xytext=(6, 6),
+            textcoords="offset points",
+            fontsize=label_fontsize,
         )
         if label_style == "halo":
             txt.set_path_effects([pe.withStroke(linewidth=3, foreground="white")])
         elif label_style == "box":
             txt.set_bbox(dict(boxstyle="round,pad=0.15", fc="white", ec="0.6", lw=0.6, alpha=0.95))
-        # "none" => plain text
 
     ax.axvline(0, ls="--", lw=1, color="0.4")
-    ax.axhline(-np.log10(alpha_sig), ls=":", lw=1, color="0.4")
+    if show_alpha_line:
+        ax.axhline(-np.log10(alpha_sig), ls=":", lw=1, color="0.4")
+        if guide_label:
+            ax.text(0.99, -np.log10(alpha_sig) + 0.03, "exploratory guide", ha="right", va="bottom", fontsize=8, color="0.4")
 
     ax.set_xlabel("Accuracy difference (group1 - group2)")
-    ax.set_ylabel("Statistical significance (-log10 of p-value)")
-    ax.set_title("Group differences vs. statistical significance", fontsize=10)
+    ax.set_ylabel("Statistical signal (−log10 p)")
+    ax.set_title(title, fontsize=10)
     ax.grid(axis="y", ls=":", alpha=0.35)
     ax.set_facecolor("white")
     ax.margins(x=0.05)
 
     ax.text(
-    1.02, 1.02,
-    "Note: positive = group1 higher",
-    transform=ax.transAxes,
-    ha="left", va="bottom",
-    fontsize=8, color="0.3"
+        1.02,
+        1.02,
+        "Exploratory view; Tier-1 reports formal tests",
+        transform=ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=8,
+        color="0.3",
     )
     return ax
 
 
 def plot_effect_size_heatmap(
-    pair_df,
+    pair_df: pd.DataFrame,
     ax=None,
-    title="(b) effect size — ethnicity × ethnicity",
+    title="Effect size — trait pairs",
     cmap="coolwarm",
     figsize=(10, 6),
 ):
-    """Diverging heatmap of Cohen's d, centered at 0 (standalone figure)."""
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
     if pair_df is None or len(pair_df) == 0:
-        ax.text(0.5, 0.5, "No effect sizes", ha="center", va="center"); 
+        ax.text(0.5, 0.5, "No effect sizes", ha="center", va="center")
         return ax, 0.0
+
+    use_h = "h" in pair_df.columns and pair_df["h"].notna().any()
+    val_col = "h" if use_h else "d"
 
     groups = sorted(set(pair_df["group1"]).union(set(pair_df["group2"])))
     idx = {g: i for i, g in enumerate(groups)}
     M = np.zeros((len(groups), len(groups)))
     for _, r in pair_df.iterrows():
         i, j = idx[r["group1"]], idx[r["group2"]]
-        M[i, j] = r["d"]
-        M[j, i] = -r["d"]
+        M[i, j] = r[val_col]
+        M[j, i] = -r[val_col]
     np.fill_diagonal(M, 0.0)
 
     vmax = max(1e-6, np.max(np.abs(M)))
@@ -1777,42 +1946,43 @@ def plot_effect_size_heatmap(
     if M.size <= 30:
         for i in range(len(groups)):
             for j in range(len(groups)):
-                if i == j: 
+                if i == j:
                     continue
                 ax.text(j, i, f"{M[i, j]:+0.2f}", ha="center", va="center", fontsize=8)
 
     cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.set_label("Cohen's d (signed)")
+    cbar.set_label("Cohen's h (signed)" if use_h else "Cohen's d (signed)")
     ax.set_facecolor("white")
     return ax, vmax
 
 
 def plot_intersectional_accuracy_heatmap(
-    merged_df,
-    person_set,
+    merged_df: pd.DataFrame,
+    person_set: PersonSet,
     ax=None,
-    title="(c) intersectional — ethnicity × gender",
-    normalize=True,    # Δ from global mean for diverging scale compatibility
+    title="Intersectional — (ethnicity, gender)",
+    normalize=True,
     cmap="coolwarm",
     figsize=(10, 6),
 ):
-    """Heatmap of accuracy or Δ-accuracy per (ethnicity, gender) (standalone figure)."""
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
 
     profiles = _profile_cols(merged_df)
     if not profiles:
-        ax.text(0.5, 0.5, "No profiles", ha="center", va="center"); 
+        ax.text(0.5, 0.5, "No profiles", ha="center", va="center")
         return ax, 0.0
 
     eth_set, gen_set, by_combo = set(), set(), {}
     for p in profiles:
         tr = _traits_for_profile(person_set, p, keys=("ethnicity", "gender"))
         eth, gen = tr["ethnicity"], tr["gender"]
-        eth_set.add(eth); gen_set.add(gen)
+        eth_set.add(eth)
+        gen_set.add(gen)
         by_combo.setdefault((eth, gen), []).append(p)
 
-    eth_list = sorted(eth_set); gen_list = sorted(gen_set)
+    eth_list = sorted(eth_set)
+    gen_list = sorted(gen_set)
     A = np.full((len(eth_list), len(gen_list)), np.nan)
     per_prof_acc = {p: (merged_df[p] == merged_df["true_label"]).mean() for p in profiles}
     global_mean = float(np.mean(list(per_prof_acc.values())))
@@ -1831,26 +2001,34 @@ def plot_intersectional_accuracy_heatmap(
         im = ax.imshow(A, vmin=np.nanmin(A), vmax=np.nanmax(A), cmap=cmap, rasterized=True)
         vmax = float(np.nanmax(np.abs(A - global_mean))) if np.isfinite(A).any() else 0.0
 
-    ax.set_xticks(range(len(gen_list))); ax.set_xticklabels([g.title() for g in gen_list], fontsize=9)
-    ax.set_yticks(range(len(eth_list))); ax.set_yticklabels([e.replace("_","-").title() for e in eth_list], fontsize=9)
+    ax.set_xticks(range(len(gen_list)))
+    ax.set_xticklabels([g.title() for g in gen_list], fontsize=9)
+    ax.set_yticks(range(len(eth_list)))
+    ax.set_yticklabels([e.replace("_", "-").title() for e in eth_list], fontsize=9)
     ax.set_title(title, fontsize=10)
 
     if np.isfinite(A).sum() <= 30:
         for i in range(len(eth_list)):
             for j in range(len(gen_list)):
                 if np.isfinite(A[i, j]):
-                    ax.text(j, i, f"{A[i, j]:+0.3f}" if normalize else f"{A[i, j]:0.3f}",
-                            ha="center", va="center", fontsize=8)
+                    ax.text(
+                        j,
+                        i,
+                        f"{A[i, j]:+0.3f}" if normalize else f"{A[i, j]:0.3f}",
+                        ha="center",
+                        va="center",
+                        fontsize=8,
+                    )
 
     cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.set_label("Δ accuracy" if normalize else "Accuracy")
+    cbar.set_label("Difference in accuracy" if normalize else "Accuracy")
     ax.set_facecolor("white")
     return ax, vmax
 
 
 def plot_demographic_accuracy_composite(
-    merged_df,
-    person_set,
+    merged_df: pd.DataFrame,
+    person_set: PersonSet,
     trait="ethnicity",
     top_n=5,
     normalize_intersectional=True,
@@ -1858,76 +2036,58 @@ def plot_demographic_accuracy_composite(
     figsize=(15, 4.5),
     use_neurips_style=True,
 ):
-    """
-    Builds the 3-panel composite figure:
-      (A) Volcano Δ vs −log10 p
-      (B) Effect size heatmap (Cohen's d)
-      (C) Intersectional accuracy (Ethnicity × Gender)
-    Notes:
-      • Calls NeurIPS rcParams when use_neurips_style=True (default).
-      • No suptitle (caption goes below the figure in LaTeX).
-    """
     if use_neurips_style:
         try:
             apply_neurips_figure_style()
         except Exception:
-            # If the helper is missing, silently continue with defaults
             pass
 
     pair = compute_pairwise_demographic_diffs(merged_df, person_set, trait=trait, min_profiles=2)
 
     fig, axs = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
 
-    # (A) Volcano
     plot_volcano_demographic_diffs(pair, ax=axs[0], top_n=top_n)
-
-    # (B) Effect size heatmap
     _, vmax_d = plot_effect_size_heatmap(pair, ax=axs[1])
-
-    # (C) Intersectional heatmap
     _, vmax_acc = plot_intersectional_accuracy_heatmap(
         merged_df, person_set, ax=axs[2], normalize=normalize_intersectional
     )
+    for ax, tag in zip(axs, ["(a)", "(b)", "(c)"]):
+        ax.text(0.01, 0.98, tag, transform=ax.transAxes, ha="left", va="top", fontsize=9, fontweight="bold")
+    for a in axs:
+        a.set_title(a.get_title().split(") ", 1)[-1] if ") " in a.get_title() else a.get_title())
 
-    # No suptitle; figure caption will be in LaTeX
     if savepath:
         os.makedirs(os.path.dirname(savepath), exist_ok=True)
-        fig.savefig(savepath, bbox_inches="tight")  # PDF will embed fonts via rcParams
+        fig.savefig(savepath, bbox_inches="tight")
+        plt.close(fig)
 
     return fig, {"pairwise": pair, "vmax_effect": vmax_d, "vmax_intersectional": vmax_acc}
 
+
 def save_demographic_figures_individual(
-    merged_df,
-    person_set,
-    out_dir,
+    merged_df: pd.DataFrame,
+    person_set: PersonSet,
+    out_dir: str,
     figsize=(10, 6),
     normalize_intersectional=True,
     top_n=5,
 ):
     os.makedirs(out_dir, exist_ok=True)
 
-    # Pairwise table once
-    pair = compute_pairwise_demographic_diffs(
-        merged_df, person_set=person_set, trait="ethnicity", min_profiles=2
-    )
+    pair = compute_pairwise_demographic_diffs(merged_df, person_set=person_set, trait="ethnicity", min_profiles=2)
 
-    # Volcano
     fig_v, ax_v = plt.subplots(figsize=figsize, constrained_layout=True)
     plot_volcano_demographic_diffs(pair, ax=ax_v, top_n=top_n, figsize=figsize, label_style="halo")
     fig_v.savefig(os.path.join(out_dir, "volcano_demographic.pdf"), bbox_inches="tight")
     plt.close(fig_v)
 
-    # Effect size heatmap
     fig_h, ax_h = plt.subplots(figsize=figsize, constrained_layout=True)
     plot_effect_size_heatmap(pair, ax=ax_h, figsize=figsize)
     fig_h.savefig(os.path.join(out_dir, "effect_size_heatmap.pdf"), bbox_inches="tight")
     plt.close(fig_h)
 
-    # Intersectional heatmap
     fig_i, ax_i = plt.subplots(figsize=figsize, constrained_layout=True)
-    plot_intersectional_accuracy_heatmap(
-        merged_df, person_set, ax=ax_i, normalize=normalize_intersectional, figsize=figsize
-    )
+    plot_intersectional_accuracy_heatmap(merged_df, person_set, ax=ax_i, normalize=normalize_intersectional, figsize=figsize)
     fig_i.savefig(os.path.join(out_dir, "intersectional_heatmap.pdf"), bbox_inches="tight")
     plt.close(fig_i)
 
@@ -1937,85 +2097,90 @@ def save_demographic_figures_individual(
         "intersectional": os.path.join(out_dir, "intersectional_heatmap.pdf"),
     }
 
-def print_token_economics_summary(token_econ: dict, top_n: int = 10):
-    perf = token_econ.get("per_profile", pd.DataFrame())
-    overall = token_econ.get("overall", {}) or {}
 
-    print("\n\n=== TOKEN ECONOMICS ===")
+
+# Token analysis
+
+def print_token_analysis_summary(token_stats: dict, top_n: int = 10):
+    perf = token_stats.get("per_profile", pd.DataFrame())
+    overall = token_stats.get("overall", {}) or {}
+
+    print("\n\n=== Token Economics ===")
     if overall:
         def fmt(x):
             return "—" if (x is None or (isinstance(x, float) and (np.isnan(x) or np.isinf(x)))) else f"{x:.3f}" if isinstance(x, float) else str(x)
-        print("OVERALL:")
-        print(f"  • Total calls: {overall.get('total_calls', '—')}")
-        print(f"  • Total tokens: {fmt(overall.get('total_tokens', np.nan))}")
-        print(f"  • Mean tokens/sample: {fmt(overall.get('tokens_per_sample_mean', np.nan))}")
+        print("Overall:")
+        print(f"  - Total calls: {overall.get('total_calls', '—')}")
+        print(f"  - Total tokens: {fmt(overall.get('total_tokens', np.nan))}")
+        print(f"  - Mean tokens/sample: {fmt(overall.get('tokens_per_sample_mean', np.nan))}")
         if "total_cost" in overall and not pd.isna(overall["total_cost"]):
-            print(f"  • Total cost: ${fmt(overall.get('total_cost', np.nan))}")
-            print(f"  • Mean cost/sample: ${fmt(overall.get('cost_per_sample_mean', np.nan))}")
+            print(f"  - Total cost: ${fmt(overall.get('total_cost', np.nan))}")
+            print(f"  - Mean cost/sample: ${fmt(overall.get('cost_per_sample_mean', np.nan))}")
             if "cost_per_correct" in overall and not pd.isna(overall["cost_per_correct"]):
-                print(f"  • Cost per correct: ${fmt(overall.get('cost_per_correct', np.nan))}")
+                print(f"  - Cost per correct: ${fmt(overall.get('cost_per_correct', np.nan))}")
         if "baseline_accuracy" in overall and not pd.isna(overall["baseline_accuracy"]):
-            print(f"  • Baseline accuracy: {overall['baseline_accuracy']:.3f}")
+            print(f"  - Baseline accuracy: {overall['baseline_accuracy']:.3f}")
 
     if perf is None or perf.empty:
         print("No per-profile token metrics available.")
         return
 
-    # Top by accuracy-per-1k-tokens
     if "efficiency_acc_per_1k_tokens" in perf.columns:
-        tmp = perf[["profile","accuracy","tokens_per_sample","efficiency_acc_per_1k_tokens"]].dropna()
+        tmp = perf[["profile", "accuracy", "tokens_per_sample", "efficiency_acc_per_1k_tokens"]].dropna()
         tmp = tmp.sort_values("efficiency_acc_per_1k_tokens", ascending=False).head(top_n)
         print("\nTop profiles by efficiency (accuracy per 1k tokens):")
         for _, r in tmp.iterrows():
-            print(f"  {r['profile']:<12} eff={r['efficiency_acc_per_1k_tokens']:.2f} | acc={r['accuracy']:.3f} | tok/sample={r['tokens_per_sample']:.1f}")
+            print(
+                f"  {r['profile']:<12} eff={r['efficiency_acc_per_1k_tokens']:.2f} | "
+                f"acc={r['accuracy']:.3f} | tok/sample={r['tokens_per_sample']:.1f}"
+            )
 
-    # Top by cost-per-correct (if pricing provided)
     if "cost_per_correct" in perf.columns and perf["cost_per_correct"].notna().any():
-        tmp = perf[["profile","cost_per_correct","accuracy","tokens_per_sample"]].dropna()
+        tmp = perf[["profile", "cost_per_correct", "accuracy", "tokens_per_sample"]].dropna()
         tmp = tmp.sort_values("cost_per_correct", ascending=True).head(top_n)
         print("\nBest (lowest) cost per correct:")
         for _, r in tmp.iterrows():
-            print(f"  {r['profile']:<12} ${r['cost_per_correct']:.4f} | acc={r['accuracy']:.3f} | tok/sample={r['tokens_per_sample']:.1f}")
+            print(
+                f"  {r['profile']:<12} ${r['cost_per_correct']:.4f} | acc={r['accuracy']:.3f} | tok/sample={r['tokens_per_sample']:.1f}"
+            )
 
 
-def plot_token_economics_figures(perf: pd.DataFrame, out_dir: str, have_pricing: bool = False):
-    """
-    Creates a couple of quick visuals:
-      1) tokens_per_sample vs accuracy (scatter)
-      2) cost_per_sample vs accuracy (scatter) [only if pricing]
-      3) rescue vs extra error colored by RAE (optional if those cols exist)
-    Saves PDFs into out_dir.
-    """
-    import matplotlib.pyplot as plt
+def plot_token_analysis_figures(perf: pd.DataFrame, out_dir: str, have_pricing: bool = False):
     os.makedirs(out_dir, exist_ok=True)
 
-    # 1) tokens vs accuracy
-    if {"tokens_per_sample","accuracy"}.issubset(perf.columns):
+    try:
+        apply_neurips_figure_style()
+    except Exception:
+        pass
+
+    if {"tokens_per_sample", "accuracy"}.issubset(perf.columns):
         x = perf["tokens_per_sample"].astype(float)
         y = perf["accuracy"].astype(float) * 100.0
         fig, ax = plt.subplots(figsize=(7.5, 5.0))
-        fig.set_layout_engine("constrained")  # NEW: use new layout engine
+        fig.set_layout_engine("constrained")
         ax.scatter(x, y, alpha=0.7, edgecolor="k", linewidth=0.3)
         ax.set_xlabel("Tokens per sample")
         ax.set_ylabel("Accuracy (%)")
         ax.set_title("Tokens vs Accuracy (per profile)")
         pth = os.path.join(out_dir, "tokens_vs_accuracy.pdf")
-        plt.savefig(pth); plt.close()
+        plt.savefig(pth)
+        plt.close()
 
-    # 2) cost vs accuracy (if pricing)
-    if have_pricing and {"cost_per_sample","accuracy"}.issubset(perf.columns) and perf["cost_per_sample"].notna().any():
+    if have_pricing and {"cost_per_sample", "accuracy"}.issubset(perf.columns) and perf["cost_per_sample"].notna().any():
         x = perf["cost_per_sample"].astype(float)
         y = perf["accuracy"].astype(float) * 100.0
         fig, ax = plt.subplots(figsize=(7.5, 5.0))
-        fig.set_layout_engine("constrained")  # NEW
+        fig.set_layout_engine("constrained")
         ax.scatter(x, y, alpha=0.7, edgecolor="k", linewidth=0.3)
         ax.set_xlabel("Cost per sample ($)")
         ax.set_ylabel("Accuracy (%)")
         ax.set_title("Cost vs Accuracy (per profile)")
         pth = os.path.join(out_dir, "cost_vs_accuracy.pdf")
-        plt.savefig(pth); plt.close()
+        plt.savefig(pth)
+        plt.close()
 
 
+# Main function
 
 def run_full_preliminary_analysis(
     merged_df: pd.DataFrame,
@@ -2027,91 +2192,69 @@ def run_full_preliminary_analysis(
     strategy: Optional[str] = None,
     stage: str = "preliminary",
     per_figure_subdirs: Optional[Dict[str, str]] = None,
+    sub_case: Optional[str] = None,
 ) -> Dict[str, Any]:
 
     if person_set is None:
         raise ValueError("person_set is required for analysis")
 
-    # NeurIPS style once
     try:
         apply_neurips_figure_style()
     except Exception:
         pass
 
-    results = {}
+    results: Dict[str, Any] = {}
 
-    # Ensure baseline column
     if "base_pred" not in merged_df.columns:
         if "zero_shot" in merged_df.columns:
             merged_df["base_pred"] = merged_df["zero_shot"]
         else:
             raise ValueError("Need either base_pred or zero_shot in merged_df.")
 
-    # Merge missing category cols if any
     if df is not None and "sample_id" in merged_df.columns and "sample_id" in df.columns:
         missing_cols = [col for col in case.category_cols if col not in merged_df.columns]
         if missing_cols:
             print(f"Merging missing category columns: {missing_cols}")
-            merged_df = merged_df.merge(
-                df[["sample_id"] + missing_cols],
-                on="sample_id",
-                how="left"
-            )
+            merged_df = merged_df.merge(df[["sample_id"] + missing_cols], on="sample_id", how="left")
         else:
             print("All category columns already present in merged_df")
 
     group_keys = get_analysis_group_keys(person_set)
 
     print("\n\n=== DEMOGRAPHIC ACCURACY DIFFERENCES ===")
-    demographic_results = test_comprehensive_demographic_accuracy_differences(
-        merged_df,
-        person_set=person_set
-    )
+    demographic_results = test_comprehensive_demographic_accuracy_differences(merged_df, person_set=person_set)
     print_comprehensive_demographic_results(demographic_results)
     results["demographic"] = demographic_results
 
-    # SYSTEMATIC BIAS PATTERNS
-    print("\n\n=== SYSTEMATIC BIAS PATTERNS (AUTOMATIQUE) ===")
-    bias_results = guarded_labelspace_analysis(
-        analyze_systematic_bias_patterns_multi_category,
-        merged_df,
-        case,
-        person_set=person_set
+    print("\n\n=== SYSTEMATIC ERROR PATTERNS ===")
+    error_results = guarded_labelspace_analysis(
+        analyze_systematic_error_patterns_multi_category, merged_df, case, person_set=person_set
     )
-    bias_patterns_all = {}
-    meaningful_patterns_all = {}
-    category_summary_all = {}
-    for cat_col, (bias_patterns, meaningful_patterns, category_summary) in bias_results.items():
-        bias_patterns_all[cat_col] = bias_patterns
+    error_patterns_all: Dict[str, pd.DataFrame] = {}
+    meaningful_patterns_all: Dict[str, pd.DataFrame] = {}
+    category_summary_all: Dict[str, pd.DataFrame] = {}
+    for cat_col, (error_patterns, meaningful_patterns, category_summary) in error_results.items():
+        error_patterns_all[cat_col] = error_patterns
         meaningful_patterns_all[cat_col] = meaningful_patterns
         category_summary_all[cat_col] = category_summary
-        print(f"Found {len(bias_patterns)} bias patterns, {len(meaningful_patterns)} meaningful for {cat_col}")
-    print_multi_category_bias_summary(bias_results)
-    results["bias_patterns"] = bias_patterns_all
-    results["meaningful_bias_patterns"] = meaningful_patterns_all
+        print(f"Found {len(error_patterns)} error patterns, {len(meaningful_patterns)} meaningful for {cat_col}")
+    print_multi_category_error_summary(error_results)
+    results["error_patterns"] = error_patterns_all
+    results["meaningful_error_patterns"] = meaningful_patterns_all
     results["category_summary"] = category_summary_all
 
     print("\n\n=== HIGH DISAGREEMENT CASES ===")
-    disagreement_df = extract_high_disagreement_cases(
-        merged_df,
-        threshold=threshold_disagreement,
-        person_set=person_set
-    )
+    disagreement_df = extract_high_disagreement_cases(merged_df, threshold=threshold_disagreement, person_set=person_set)
     print(f"Found {len(disagreement_df)} high disagreement cases")
     results["disagreement"] = disagreement_df
 
     print("\n\n=== RESCUE STATISTICS BY CATEGORY ===")
-    rescue_stats_all = {}
-    rescue_analysis_all = {}
+    rescue_stats_all: Dict[str, pd.DataFrame] = {}
+    rescue_analysis_all: Dict[str, Dict[str, Any]] = {}
     for cat_col in case.category_cols:
         if cat_col in merged_df.columns:
             print(f"\nAnalyzing rescue statistics for category column: {cat_col}")
-            rescue_df = guarded_labelspace_analysis(
-                rescue_stats_by_category,
-                merged_df,
-                case=case,
-                category_col=cat_col
-            )
+            rescue_df = guarded_labelspace_analysis(rescue_stats_by_category, merged_df, case=case, category_col=cat_col)
             rescue_analysis = analyze_rescue_performance(rescue_df)
             rescue_stats_all[cat_col] = rescue_df
             rescue_analysis_all[cat_col] = rescue_analysis
@@ -2122,23 +2265,25 @@ def run_full_preliminary_analysis(
     results["rescue_stats"] = rescue_stats_all
     results["rescue_analysis"] = rescue_analysis_all
 
-    print("\n\n=== PERSONA SIMILARITY CLUSTERING ===")
-    persona_similarity = analyze_persona_similarity(merged_df, person_set=person_set)
-    print_persona_similarity_analysis(persona_similarity)
-    results["persona_similarity"] = persona_similarity
-
+    print("\n\n=== Profile Similarity Clustering ===")
+    profile_similarity = analyze_profile_similarity(merged_df, person_set=person_set)
+    print_profile_similarity_analysis(profile_similarity)
+    results["profile_similarity"] = profile_similarity
 
     print("\n\n=== FIGURES ===")
     subdirs = per_figure_subdirs or {}
-    stage_dir = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage)
-    
-    acc_dir    = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage,
-                                  extra_subdir=subdirs.get("accuracy_by_group") or "accuracy_by_group")
-    demo_dir   = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage,
-                                  extra_subdir=subdirs.get("demographic") or "demographic")
-    tokens_dir = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage,
-                                  extra_subdir=subdirs.get("token_econ") or "token_econ")
-        
+    _stage_dir = resolve_plot_dir(case, plots_root=plots_root, strategy=strategy, stage=stage, sub_case=sub_case)  # just to ensure root exists
+
+    acc_dir = resolve_plot_dir(
+        case, plots_root=plots_root, strategy=strategy, stage=stage, extra_subdir=subdirs.get("accuracy_by_group") or "accuracy_by_group", sub_case=sub_case
+    )
+    demo_dir = resolve_plot_dir(
+        case, plots_root=plots_root, strategy=strategy, stage=stage, extra_subdir=subdirs.get("demographic") or "demographic", sub_case=sub_case
+    )
+    tokens_dir = resolve_plot_dir(
+        case, plots_root=plots_root, strategy=strategy, stage=stage, extra_subdir=subdirs.get("token_stats") or "token_stats", sub_case=sub_case
+    )
+
     try:
         acc_summary = plot_accuracy_deltas_with_ci(
             merged_df,
@@ -2147,35 +2292,26 @@ def run_full_preliminary_analysis(
             figsize=(10, 6),
             savepath=os.path.join(acc_dir, "accuracy_by_group.pdf"),
         )
+
+        paths = save_demographic_figures_individual(
+            merged_df,
+            person_set=person_set,
+            out_dir=demo_dir,
+            figsize=(10, 6),
+            normalize_intersectional=True,
+            top_n=5,
+        )
+
+        results["figure_paths"] = {"accuracy_by_group": os.path.join(acc_dir, "accuracy_by_group.pdf"), **paths}
         results["accuracy_summary"] = acc_summary
         print("Saved:", os.path.join(acc_dir, "accuracy_by_group.pdf"))
     except Exception as e:
-        print(f"Error generating accuracy plot: {e}")
-        results["accuracy_summary"] = None
-    
-    try:
-        acc_summary = plot_accuracy_deltas_with_ci(
-            merged_df, person_set=person_set, group_keys=group_keys, figsize=(10, 6),
-            savepath=os.path.join(acc_dir, "accuracy_by_group.pdf"),
-        )
-        
-        paths = save_demographic_figures_individual(
-            merged_df, person_set=person_set, out_dir=demo_dir, figsize=(10, 6),
-            normalize_intersectional=True, top_n=5,
-        )
-        
-        results["figure_paths"] = {
-            "accuracy_by_group": os.path.join(acc_dir, "accuracy_by_group.pdf"),
-            **paths
-        }
-
-    except Exception as e:
         print(f"Error saving individual demographic figures: {e}")
 
-    pricing = None  # keep tokens-only unless you set pricing above
-    token_econ = None  # ensure defined even if compute fails
+    pricing = None
+    token_stats = None
     try:
-        token_econ = compute_token_economics(
+        token_stats = compute_token_analysis(
             merged_df,
             pricing=pricing,
             rescue_stats_all=rescue_stats_all,
@@ -2185,17 +2321,16 @@ def run_full_preliminary_analysis(
     except Exception as e:
         print(f"Error computing token economics: {e}")
 
-    results["token_economics"] = token_econ
+    results["token_analysis"] = token_stats
 
-    if isinstance(token_econ, dict):
-        perf = token_econ.get("per_profile", pd.DataFrame())
+    if isinstance(token_stats, dict):
+        perf = token_stats.get("per_profile", pd.DataFrame())
         if perf is not None and not perf.empty:
-            print_token_economics_summary(token_econ)
-            tok_csv = os.path.join(tokens_dir, "token_economics_per_profile.csv")
+            print_token_analysis_summary(token_stats)
+            tok_csv = os.path.join(tokens_dir, "token_analysis_per_profile.csv")
             perf.to_csv(tok_csv, index=False)
-            plot_token_economics_figures(perf, tokens_dir, have_pricing=(pricing is not None))
+            plot_token_analysis_figures(perf, tokens_dir, have_pricing=(pricing is not None))
 
-    # ---------- SUMMARY ----------
     print(f"\n\n=== ANALYSIS SUMMARY ===")
     print(f"Dataset: {case.case_name}")
     print(f"Category columns analyzed: {[col for col in case.category_cols if col in merged_df.columns]}")

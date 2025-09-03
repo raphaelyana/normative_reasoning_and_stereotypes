@@ -13,14 +13,13 @@ import pandas as pd
 from dotenv import load_dotenv
 import openai
 
-# Project imports
+
 from chain_of_thought import ChainOfThoughts
 from profiles.profile_message import make_system_message
 from profiles.profile_sets import PERSON_ETHNICS
 from cases.cases_config import CaseConfig
 
 
-# --------------------------- small utils ---------------------------
 
 def _timestamp() -> str:
     return datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
@@ -33,6 +32,7 @@ def _slug_for_id(s: str) -> str:
     s = (s or "").strip().lower()
     s = s.replace(":", "_")
     return re.sub(r'[^a-z0-9]+', '-', s).strip("-") or "case"
+
 
 def _parse_cid(custom_id: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[int]]:
     """
@@ -55,7 +55,9 @@ def _parse_cid(custom_id: str) -> Tuple[Optional[str], Optional[str], Optional[s
         return None, None, None, None
 
 
-# --------------------------- runner ---------------------------
+
+
+
 
 class RoleplayBatchRunner:
     """
@@ -130,7 +132,6 @@ class RoleplayBatchRunner:
             return self.case_filename_tag_map[case_name]
         return _slug_for_id(case_name)
 
-    # -------------------- prompt builders --------------------
 
     def _build_user_prompt(self, case: CaseConfig, text: str, case_type: Optional[str]) -> str:
         tmp = ChainOfThoughts(
@@ -145,7 +146,6 @@ class RoleplayBatchRunner:
             return sm["content"] if isinstance(sm, dict) and "content" in sm else str(sm)
         return f"You are an expert classifier for {case_name}. Think carefully and follow the prompt."
 
-    # -------------------- case_type inference --------------------
 
     def _infer_case_type_for_row(
         self,
@@ -157,36 +157,30 @@ class RoleplayBatchRunner:
         case_type_default: Optional[str],
         case_type_from_row: Optional[Callable[[pd.Series, CaseConfig], Optional[str]]],
     ) -> Optional[str]:
-        # 1) explicit callable wins
+        
         if case_type_from_row:
             ct = case_type_from_row(row, case)
             if ct:
                 return ct
 
-        # 2) explicit column if provided
         ct = None
         if case_type_col and case_type_col in row.index:
             raw = row[case_type_col]
             ct = None if pd.isna(raw) else str(raw)
 
-        # 3) else try the CaseConfig.category_cols in order
         if not ct and getattr(case, "category_cols", None):
             for col in case.category_cols:
                 if col in row.index and pd.notna(row[col]):
                     ct = str(row[col])
                     break
 
-        # 4) normalize via map if supplied
         if ct and case_type_map:
             ct = case_type_map.get(ct, ct)
 
-        # 5) final fallback to case.case_type or provided default
         if not ct:
             ct = case_type_default or getattr(case, "case_type", None)
 
         return ct
-
-    # -------------------- submit --------------------
 
     def submit_batches(
         self,
@@ -199,12 +193,10 @@ class RoleplayBatchRunner:
         completion_window: str = "24h",
         metadata_extra: Optional[Dict[str, str]] = None,
         *,
-        # case_type controls
         case_type_col: Optional[str] = None,
         case_type_map: Optional[Dict[Any, str]] = None,
         case_type_default: Optional[str] = None,
         case_type_from_row: Optional[Callable[[pd.Series, CaseConfig], Optional[str]]] = None,
-        # custom_id tag override
         custom_id_case_tag: Optional[str] = None,
     ) -> List[Dict[str, str]]:
         """
@@ -215,7 +207,7 @@ class RoleplayBatchRunner:
           - case.case_type (default), case.category_cols (optional list)
           - case.valid_labels, case.label_map used later when collecting
         """
-        # sanity checks
+
         for col in [case.input_col]:
             if col not in df.columns:
                 raise ValueError(f"DataFrame missing required column: {col!r} for case {case.case_name!r}")
@@ -260,7 +252,6 @@ class RoleplayBatchRunner:
                     }
                 })
 
-        # chunk & submit
         chunk_size = chunk_size or len(req_lines)
         chunks = [req_lines[i:i+chunk_size] for i in range(0, len(req_lines), chunk_size)]
 
@@ -273,7 +264,7 @@ class RoleplayBatchRunner:
                     f.write(json.dumps(line, ensure_ascii=False) + "\n")
 
             file_obj = self.client.files.create(file=open(jsonl_path, "rb"), purpose="batch")
-            meta = {"case": case_tag, "role": role, "chunk": str(ci)}  # store tag in metadata
+            meta = {"case": case_tag, "role": role, "chunk": str(ci)} 
             if metadata_extra:
                 meta.update(metadata_extra)
 
@@ -288,8 +279,8 @@ class RoleplayBatchRunner:
             manifest = {
                 "batch_id": batch.id,
                 "jsonl_path": jsonl_path,
-                "case_name": case_name,                  # human name
-                "case_tag": case_tag,                    # tag used in custom_id
+                "case_name": case_name,                
+                "case_tag": case_tag,                   
                 "role": role,
                 "model": self.model,
                 "strategy": self.strategy,
@@ -307,7 +298,7 @@ class RoleplayBatchRunner:
 
         return submissions
 
-    # -------------------- collect --------------------
+
 
     @staticmethod
     def _parse_success_choice_text(item: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any], str]:
@@ -402,7 +393,7 @@ class RoleplayBatchRunner:
                 })
                 continue
 
-            # Parse with correct case_type (falls back to case.case_type if None)
+
             final_label = cot_parser._extract_label(text, case.valid_labels,
                                                    case_type=case_type or getattr(case, "case_type", None))
             mapped_label = case.label_map.get(str(final_label).strip(), list(case.label_map.values())[-1])
@@ -445,11 +436,11 @@ class RoleplayBatchRunner:
 
         return pd.DataFrame(failures)
 
-    # -------------------- failures --------------------
+
 
     def get_failed_samples_from_batch(self, batch_id: str) -> pd.DataFrame:
         """
-        Read error_file_id (and rare HTTP errors in output) and return failures WITH case_type.
+        Read error_file_id (and rare HTTP errors in output) and return failures with case_type.
         """
         b = self.client.batches.retrieve(batch_id)
         if b.status != "completed":
@@ -458,7 +449,6 @@ class RoleplayBatchRunner:
 
         failures: List[Dict[str, Any]] = []
 
-        # primary: error_file_id
         err_id = getattr(b, "error_file_id", None)
         if err_id:
             err_text = self.client.files.content(err_id).read().decode("utf-8")
@@ -480,7 +470,6 @@ class RoleplayBatchRunner:
                     "reason": reason
                 })
 
-        # fallback: scan output for http errors
         out_id = getattr(b, "output_file_id", None)
         if out_id:
             out_text = self.client.files.content(out_id).read().decode("utf-8")
@@ -518,7 +507,7 @@ class RoleplayBatchRunner:
         print(f"[REPORT] Saved failed samples → {out_path} (n={len(out)})")
         return out
 
-    # -------------------- re-run failed (online) --------------------
+
 
     def rerun_failed_samples(
         self,
@@ -593,7 +582,6 @@ class RoleplayBatchRunner:
                 print(f"[RETRY FAIL] {case_name}:{profile}:sample_{sample_id} -> {e}")
 
 
-# --------------------------- manifest helpers ---------------------------
 
 def manifest_meta_role(manifests_dir: str, batch_id: str, default: str = "passive") -> str:
     path = os.path.join(manifests_dir, f"{batch_id}.manifest.json")

@@ -1,0 +1,2 @@
+ensemble,acc_base,acc_ens,delta_acc,rescue_rate,extra_error_rate,net_benefit,b01,b10,mcnemar_p,rescue_gt_extra_p,extra_gt_rescue_p,acc_ens_ci,delta_acc_ci,rescue_rate_ci,extra_error_rate_ci,net_benefit_ci,n_boot,delta_acc_p_boot
+man_indian,0.8507462686567164,0.8656716417910447,0.01492537313432829,0.3,0.03508771929824561,1.0,2,3,1.0,0.5,0.8125,"(0.7761194029850746, 0.9402985074626866)","(-0.04477611940298509, 0.07499999999999807)","(0.0, 0.625)","(0.0, 0.08620689655172414)","(-3.0, 5.024999999999864)",2000,0.866

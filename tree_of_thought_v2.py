@@ -5,13 +5,18 @@ import openai
 import time
 from utils.call_llm import call_llm
 import pandas as pd
+from pydantic import BaseModel, Field
 from collections import defaultdict
-from cases.cases_config import CaseConfig, ThoughtOutput
+from cases.cases_config import CaseConfig
 import json
 
 DEFAULT_MODEL_DICT = {
     'default': 'gpt-4o-mini',
 }
+
+class ThoughtOutput(BaseModel):
+    thought: str = Field(..., description="The reasoning step or reflection")
+    label: Optional[str] = Field(None, description="Optional label (e.g., 'Yes' or 'No')")
 
 class ThoughtState(Enum):
     PENDING = "pending"

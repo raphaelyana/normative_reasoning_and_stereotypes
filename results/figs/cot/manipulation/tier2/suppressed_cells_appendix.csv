@@ -1,0 +1,50 @@
+category,value,n,hw_95pp
+technique,Intimidation,18,23.098821518760552
+technique,Accusation,17,23.76849125356063
+technique,Shaming or Belittlement,17,23.76849125356063
+technique,Rationalization,9,32.666666666666664
+technique,"Shaming or Belittlement,Accusation",9,32.666666666666664
+technique,Denial,5,43.826932358995876
+technique,"Intimidation,Persuasion or Seduction",4,49.0
+technique,"Rationalization,Persuasion or Seduction",4,49.0
+technique,Brandishing Anger,4,49.0
+technique,Evasion,4,49.0
+technique,Playing Victim Role,3,56.58032638058332
+technique,Feigning Innocence,3,56.58032638058332
+technique,"Shaming or Belittlement,Brandishing Anger",3,56.58032638058332
+technique,"Rationalization,Intimidation",2,69.29646455628166
+technique,"Intimidation,Accusation",2,69.29646455628166
+technique,"Persuasion or Seduction,Accusation",2,69.29646455628166
+technique,"Accusation,Persuasion or Seduction",2,69.29646455628166
+technique,"Brandishing Anger,Persuasion or Seduction",2,69.29646455628166
+technique,"Evasion,Accusation",1,98.0
+technique,"Rationalization,Shaming or Belittlement,Accusation",1,98.0
+technique,"Shaming or Belittlement,Persuasion or Seduction,Accusation",1,98.0
+technique,"Playing Victim Role,Feigning Innocence",1,98.0
+technique,"Denial,Feigning Innocence",1,98.0
+technique,"Rationalization,Playing Victim Role",1,98.0
+technique,"Playing Servant Role,Accusation,Shaming or Belittlement",1,98.0
+technique,"Brandishing Anger,Accusation",1,98.0
+technique,"Shaming or Belittlement,Persuasion or Seduction",1,98.0
+technique,"Persuasion or Seduction,Rationalization",1,98.0
+technique,"Evasion,Intimidation",1,98.0
+technique,"Intimidation,Brandishing Anger",1,98.0
+technique,"Playing Servant Role,Shaming or Belittlement",1,98.0
+technique,"Shaming or Belittlement,Denial",1,98.0
+technique,"Persuasion or Seduction,Shaming or Belittlement",1,98.0
+technique,Playing Servant Role,1,98.0
+technique,"Denial,Accusation",1,98.0
+technique,"Persuasion or Seduction,Intimidation",1,98.0
+technique,"Accusation,Evasion",1,98.0
+technique,"Accusation,Rationalization",1,98.0
+technique,"Shaming or Belittlement,Intimidation",1,98.0
+technique,"Playing Victim Role,Brandishing Anger,Accusation",1,98.0
+technique,"Feigning Innocence,Evasion",1,98.0
+vulnerability,Dependency,19,22.482741919315053
+vulnerability,Low self-esteem,16,24.5
+vulnerability,Naivete,8,34.64823227814083
+vulnerability,Over-responsibility,6,40.00833246545857
+vulnerability,Over-intellectualization,2,69.29646455628166
+vulnerability,"Dependency,Low self-esteem",1,98.0
+vulnerability,"Dependency,Naivete",1,98.0
+vulnerability,"Naivete,Dependency",1,98.0

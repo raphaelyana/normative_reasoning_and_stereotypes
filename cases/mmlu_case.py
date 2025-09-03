@@ -26,10 +26,19 @@ mmlu_case = CaseConfig(
 
     example_template_fewshots=lambda row: f"Question: {row['question']}\nChoices: {row['choices']}\nAnswer: {row['answer']}",
 
-    example_template_tot=lambda row: "",
+    example_template_tot=lambda row: (
+        f"### Thought\n"
+        f"- Thought: {row['question']} Choices: {row['choices']}\n"
+        f"- Label: {row['answer']}"
+    ),
 
-    category_cols=["subject"],       # will actually be updated depending on the chosen categories
-                            # in the implementation part, so to leave empty    
+    label_instructions_tot={
+    True: "At the end of each thought, add a field 'label' with a value of either 'A', 'B', 'C', or 'D'.",
+    False: "Do not include any 'label' field — just output the 'thought' reasoning steps."
+    },
+
+    category_cols=["subject"],  # will actually be updated depending on the chosen categories
+                                # in the implementation part, so to leave empty    
 
     # Not sure yet these work for the CoT using MMLU but it is worth trying it.
     cot_focus="key facts, definitions, and logical eliminations",
