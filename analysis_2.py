@@ -224,10 +224,10 @@ def pareto_prespecified_devselect(
             boot_row = test_boot_df[test_boot_df["ensemble"] == chosen]
             if not boot_row.empty:
                 b = boot_row.iloc[0]
-                rec["delta_acc_p_boot"]   = float(b.get("delta_acc_p_boot", np.nan))
-                rec["rescue_gt_extra_p"]  = float(b.get("rescue_gt_extra_p", np.nan))
-                rec["extra_gt_rescue_p"]  = float(b.get("extra_gt_rescue_p", np.nan))
-                rec["mcnemar_p"]          = float(b.get("mcnemar_p", np.nan))
+                rec["delta_acc_p_boot"] = float(b.get("delta_acc_p_boot", np.nan))
+                rec["rescue_gt_extra_p"] = float(b.get("rescue_gt_extra_p", np.nan))
+                rec["extra_gt_rescue_p"] = float(b.get("extra_gt_rescue_p", np.nan))
+                rec["mcnemar_p"] = float(b.get("mcnemar_p", np.nan))
 
         rows.append(rec)
 
@@ -598,7 +598,7 @@ def ensemble_by_trait_analysis(
     """
     
     print("="*80)
-    print("ENSEMBLE BY TRAIT ANALYSIS - PERSONSET VERSION")
+    print("ENSEMBLE BY TRAIT ANALYSIS")
     print("="*80)
     print(f"Group keys: {group_keys}")
 

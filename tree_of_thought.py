@@ -1,4 +1,4 @@
-from typing import List, Optional, Callable, Literal
+from typing import List, Optional
 from dataclasses import dataclass
 from enum import Enum
 import openai
@@ -8,10 +8,7 @@ import re
 import pandas as pd
 from collections import defaultdict
 from pydantic import BaseModel, Field
-from cases.get_case_config import get_case_config
 from cases.cases_config import CaseConfig
-from cases.stereotypes_case import stereotypes_case
-from cases.manipulation_case import manipulation_case
 import json
 
 DEFAULT_MODEL_DICT = {

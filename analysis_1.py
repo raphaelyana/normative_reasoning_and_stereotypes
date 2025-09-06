@@ -393,11 +393,7 @@ def fit_tier1_profiles_only(
         cov_type = "cluster"
 
     model = smf.glm(formula, data=long, family=sm.families.Binomial())
-    try:
-        res = model.fit(cov_type=cov_type, cov_kwds=cov_kw)
-    except np.linalg.LinAlgError:
-        res = model.fit_regularized(alpha=1e-6, L1_wt=0.0)
-        res.cov_params = lambda: pd.DataFrame(np.nan, index=res.params.index, columns=res.params.index)
+    res = model.fit(cov_type=cov_type, cov_kwds=cov_kw)
 
     summ = res.summary2().tables[1].copy()
     summ["term"] = summ.index.astype(str)
