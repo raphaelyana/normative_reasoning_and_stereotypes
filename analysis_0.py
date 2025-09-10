@@ -453,13 +453,19 @@ def compute_error_direction_shifts(
     
                     b01 = int(( base_correct & (~prof_correct)).sum())  
                     b10 = int(((~base_correct) &  prof_correct).sum())  
+
+                    extra_errors = b01
+                    extra_err_rate = (b01/base_ok) if base_ok>0 else 0.0
+                    error_correction_rate = (b10/base_err) if base_err>0 else 0.0
+                    net_accuracy_delta = (b10-b01)/N
+
                     discordant = b01 + b10
                     if discordant > 0:
                         k = min(b01, b10)
                         try:
                             mcnemar_p = stats.binomtest(k=k, n=discordant, p=0.5, alternative="two-sided").pvalue
                         except Exception:
-                            chi2 = (abs(b10 - b01) - 1) ** 2 / max(1e-12, discordant)
+                            chi2 = (abs(b10-b01)-1)**2/max(1e-12,discordant)
                             mcnemar_p = float(stats.distributions.chi2.sf(chi2, 1))
                     else:
                         mcnemar_p = 1.0
@@ -489,8 +495,10 @@ def compute_error_direction_shifts(
                             "delta_fp": 0,
                             "delta_fn": int(prof_err - base_err),
     
-                            "extra_errors": int(b01),
-                            "extra_err_rate": float((b01 / base_ok) if base_ok > 0 else 0.0),
+                            "extra_errors": int(extra_errors),
+                            "extra_err_rate": float(extra_err_rate),
+                            "error_correction_rate": float(error_correction_rate),
+                            "net_accuracy_delta": float(net_accuracy_delta),
                             "flip_imbalance": float(flip_imbalance),
     
                             "baseline_fp": 0,
@@ -530,12 +538,9 @@ def compute_error_direction_shifts(
                     signed_delta = (delta_fp - delta_fn)
                     directional_balance = abs(signed_delta) / denom_dir
     
-                    directional_delta_err_rate = signed_delta / N
-                    total_delta_err_rate = (abs(delta_fp) + abs(delta_fn)) / N
-    
-                    extra_errors = max(0, prof_err - base_err)
-                    extra_err_rate = (extra_errors / base_ok) if base_ok > 0 else 0.0
-    
+                    directional_delta_err_rate = signed_delta/N
+                    total_delta_err_rate = (abs(delta_fp) + abs(delta_fn))/N
+                   
                     flips_pos = int((base2pos_mask & (y_prof == pos_token)).sum())
                     flips_neg = int((base2neg_mask & (y_prof == neg_token)).sum())
                     flip_imbalance = abs(flips_pos - flips_neg) / N
@@ -543,6 +548,12 @@ def compute_error_direction_shifts(
                     prof_correct = (y_prof == y_true)
                     b01 = int((base_correct & (~prof_correct)).sum())
                     b10 = int(((~base_correct) & prof_correct).sum())
+                    
+                    extra_errors = b01
+                    extra_err_rate = (b01/base_ok) if base_ok>0 else 0.0
+                    error_correction_rate = (b10/base_err) if base_err>0 else 0.0
+                    net_accuracy_delta = (b10 - b01)/N
+
                     discordant = b01 + b10
                     if discordant > 0:
                         k = min(b01, b10)
@@ -571,6 +582,7 @@ def compute_error_direction_shifts(
                             "weighted_directional_balance": float(directional_balance) * (N / max(1, global_size)),
                             "directional_delta_err_rate": float(directional_delta_err_rate),
                             "total_delta_err_rate": float(total_delta_err_rate),
+                            "net_accuracy_delta": float(net_accuracy_delta),
                             "n_misclassification": int(prof_err),
                             "misclassification_rate": float(prof_err / N),
                             "category_size": int(N),
@@ -580,6 +592,7 @@ def compute_error_direction_shifts(
                             "delta_fn": int(delta_fn),
                             "extra_errors": int(extra_errors),
                             "extra_err_rate": float(extra_err_rate),
+                            "error_correction_rate": float(error_correction_rate),
                             "flip_imbalance": float(flip_imbalance),
                             "baseline_fp": int(base_fp),
                             "baseline_fn": int(base_fn),

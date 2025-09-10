@@ -147,6 +147,9 @@ def finalize_mmlu_df(input_df: pd.DataFrame) -> pd.DataFrame:
     """
     df = input_df.copy()
 
+    if "choices" not in df.columns and "options" in df.columns:
+        df["choices"] = df["options"]
+
     df["choices"] = df["choices"].apply(parse_mmlu_choices)
     df["answer"] = df.apply(lambda r: normalize_answer(r["answer"], r["choices"]), axis=1).astype(int)
     df["formatted_prompt"] = df.apply(lambda r: format_mmlu_prompt(r["question"], r["choices"]), axis=1)
@@ -359,10 +362,7 @@ def build_failure_augmented_sample(
     label_subset: Optional[List[str]] = None,
     random_state: int = 42
 ) -> pd.DataFrame:
-    """
-    Build a dataset of `total_size` by injecting `n_failures_to_include` known failures,
-    then randomly sampling the rest (optionally filtered by labels).
-    """
+
     failure_ids_set = set(failure_ids)
     df_failures_all = full_df[full_df.index.isin(failure_ids_set)]
 

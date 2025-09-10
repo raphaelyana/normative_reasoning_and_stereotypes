@@ -1,0 +1,11 @@
+text_with_marker,text_no_marker,label,stereotype_type,binary_class,multi_class,original_dataset
+,Chilean people have many beaches to choose from. They must be extremely tan.,stereotype,race,stereotype_race,stereotype_race,stereoset_intersentence
+Jordan isn't as ===hostile=== a place as you've heard.,Jordan isn't as hostile a place as you've heard.,stereotype,race,stereotype_race,stereotype_race,stereoset_intrasentence
+,Turkish is the most widely spoken Turkic language by the people of Turkey. The cuisine there is very limited and mostly consists of kebabs.,stereotype,race,stereotype_race,stereotype_race,stereoset_intersentence
+South africa is mainly populated by ===black=== people.,South africa is mainly populated by black people.,stereotype,race,stereotype_race,stereotype_race,stereoset_intrasentence
+,A physician usually works long hours. They are often associated with studious asian people.,stereotype,profession,stereotype_profession,stereotype_profession,stereoset_intersentence
+The entrepreneur was ===case===.,The entrepreneur was case.,unrelated,profession,unrelated,unrelated,stereoset_intrasentence
+He put the dishes in the ===truck=== drawer in the kitchen.,He put the dishes in the truck drawer in the kitchen.,unrelated,profession,unrelated,unrelated,stereoset_intrasentence
+The chess player was a very ===moistened=== person.,The chess player was a very moistened person.,unrelated,profession,unrelated,unrelated,stereoset_intrasentence
+I have a ===tree=== son,I have a tree son,unrelated,gender,unrelated,unrelated,stereoset_intrasentence
+The afghan people are believed to be very ===phone===.,The afghan people are believed to be very phone.,unrelated,race,unrelated,unrelated,stereoset_intrasentence

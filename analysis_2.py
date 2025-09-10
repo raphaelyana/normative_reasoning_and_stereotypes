@@ -579,7 +579,8 @@ def ensemble_by_trait_analysis(
     person_set: PersonSet, 
     case: CaseConfig,
     group_keys=("gender", "ethnicity", "age"),
-    perf_df: Optional[pd.DataFrame] = None
+    perf_df: Optional[pd.DataFrame] = None,
+    print_indications: bool = True,
 ) -> Dict[str, Any]:
     """
     Selective Ensemble Performance Analysis - Updated for PersonSet Framework
@@ -597,10 +598,11 @@ def ensemble_by_trait_analysis(
     - dict with ensemble results, category analysis, and recommendations
     """
     
-    print("="*80)
-    print("ENSEMBLE BY TRAIT ANALYSIS")
-    print("="*80)
-    print(f"Group keys: {group_keys}")
+    if print_indications:
+        print("="*80)
+        print("ENSEMBLE BY TRAIT ANALYSIS")
+        print("="*80)
+        print(f"Group keys: {group_keys}")
 
     tokens_map, cost_map = {}, {}
     if perf_df is not None and not perf_df.empty:
@@ -615,10 +617,11 @@ def ensemble_by_trait_analysis(
     true_labels = merged_df['true_label']
     baseline_preds = merged_df['base_pred']
     baseline_accuracy = accuracy_score(true_labels, baseline_preds)
-    
-    print(f"Baseline accuracy: {baseline_accuracy:.4f}")
-    print("\nEnsemble Performance by Trait Group:")
-    print("-" * 50)
+
+    if print_indications:
+        print(f"Baseline accuracy: {baseline_accuracy:.4f}")
+        print("\nEnsemble Performance by Trait Group:")
+        print("-" * 50)
 
     ensemble_results = {}
     
@@ -684,9 +687,10 @@ def ensemble_by_trait_analysis(
         else:
             print(f"{group_name:30s}: No valid predictions")
     
-    print(f"\n{'='*60}")
-    print("CATEGORY-SPECIFIC ENSEMBLE PERFORMANCE")
-    print(f"{'='*60}")
+    if print_indications:
+        print(f"\n{'='*60}")
+        print("CATEGORY-SPECIFIC ENSEMBLE PERFORMANCE")
+        print(f"{'='*60}")
     
     category_results = {}
     category_cols = getattr(case, "category_cols", None) or ["stereotype_type"]
@@ -707,9 +711,10 @@ def ensemble_by_trait_analysis(
             cat_baseline = cat_subset['base_pred']
             cat_baseline_acc = accuracy_score(cat_true, cat_baseline)
 
-            print(f"\n{cat_col.upper()} = {str(category).upper()} (n={len(cat_subset)}):")
-            print(f"Baseline accuracy: {cat_baseline_acc:.4f}")
-            print("-" * 40)
+            if print_indications:
+                print(f"\n{cat_col.upper()} = {str(category).upper()} (n={len(cat_subset)}):")
+                print(f"Baseline accuracy: {cat_baseline_acc:.4f}")
+                print("-" * 40)
 
             category_key = f"{cat_col}:{category}"
             category_results[category_key] = {
@@ -750,21 +755,22 @@ def ensemble_by_trait_analysis(
             for i, (name, r) in enumerate(ranked_eff[:5], 1):
                 print(f"  {i}. {name}: {r['improvement_per_1k_tokens']:.4f}  | tokens={r.get('tokens_per_sample_sum', np.nan):.1f}")
     
-        print(f"\n{'='*60}")
-        print("ENSEMBLE RANKINGS")
-        print(f"{'='*60}")
+        if print_indications:
+            print(f"\n{'='*60}")
+            print("ENSEMBLE RANKINGS")
+            print(f"{'='*60}")
 
-        print("\nTop 5 Performing Ensembles (Accuracy):")
-        for i, (name, res) in enumerate(sorted_ensembles[:5]):
-            print(f"  {i+1}. {name}: {res['accuracy']:.4f} (+{res['improvement']:.4f})")
+            print("\nTop 5 Performing Ensembles (Accuracy):")
+            for i, (name, res) in enumerate(sorted_ensembles[:5]):
+                print(f"  {i+1}. {name}: {res['accuracy']:.4f} (+{res['improvement']:.4f})")
 
-        print("\nSafest Ensembles (Lowest Extra Error Rate):")
-        for i, (name, res) in enumerate(sorted_by_safety[:5]):
-            print(f"  {i+1}. {name}: {res['extra_error_rate']:.3f} | Accuracy: {res['accuracy']:.4f}")
+            print("\nSafest Ensembles (Lowest Extra Error Rate):")
+            for i, (name, res) in enumerate(sorted_by_safety[:5]):
+                print(f"  {i+1}. {name}: {res['extra_error_rate']:.3f} | Accuracy: {res['accuracy']:.4f}")
 
-        print("\nMost Effective Rescue Ensembles:")
-        for i, (name, res) in enumerate(sorted_by_rescue[:5]):
-            print(f"  {i+1}. {name}: Rescue Rate {res['rescue_rate']:.3f} | Accuracy: {res['accuracy']:.4f}")
+            print("\nMost Effective Rescue Ensembles:")
+            for i, (name, res) in enumerate(sorted_by_rescue[:5]):
+                print(f"  {i+1}. {name}: Rescue Rate {res['rescue_rate']:.3f} | Accuracy: {res['accuracy']:.4f}")
 
         safety_performance_scores = {
             name: 0.6 * res['improvement'] + 0.4 * (1 - res['extra_error_rate'])
@@ -772,17 +778,19 @@ def ensemble_by_trait_analysis(
         }
         best_balanced = max(safety_performance_scores.items(), key=lambda x: x[1])
 
-        print(f"\n{'='*60}")
-        print("RECOMMENDED ENSEMBLE")
-        print(f"{'='*60}")
+        if print_indications:
+            print(f"\n{'='*60}")
+            print("RECOMMENDED ENSEMBLE")
+            print(f"{'='*60}")
         best_name = best_balanced[0]
         best = ensemble_results[best_name]
-        print(f"Best Accuracy/Safety Tradeoff: {best_name}")
-        print(f"  Accuracy: {best['accuracy']:.4f}")
-        print(f"  Improvement: +{best['improvement']:.4f}")
-        print(f"  Rescue Rate: {best['rescue_rate']:.3f}")
-        print(f"  Extra Error Rate: {best['extra_error_rate']:.3f}")
-        print(f"  Number of profiles: {best['n_profiles']}")
+        if print_indications:
+            print(f"Best Accuracy/Safety Tradeoff: {best_name}")
+            print(f"  Accuracy: {best['accuracy']:.4f}")
+            print(f"  Improvement: +{best['improvement']:.4f}")
+            print(f"  Rescue Rate: {best['rescue_rate']:.3f}")
+            print(f"  Extra Error Rate: {best['extra_error_rate']:.3f}")
+            print(f"  Number of profiles: {best['n_profiles']}")
 
         recommendations = {
             'best_overall': sorted_ensembles[0],
@@ -1410,7 +1418,8 @@ def pareto_frontier_for_ensembles(
     case: Any,
     lambda_tok: float = 5e-4,
     lambda_extra: float = 2.0,
-    out_dir: Optional[str] = None
+    out_dir: Optional[str] = None,
+    print_indications: bool = False,
 ) -> Dict[str, Any]:
     os.makedirs(out_dir, exist_ok=True) if out_dir else None
 
