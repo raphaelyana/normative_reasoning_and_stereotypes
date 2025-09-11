@@ -56,7 +56,6 @@ class TreeOfThought:
                     },
                 n_shots: int = 1,
                 examples_df: Optional[pd.DataFrame] = None,
-                reasoning_budget: Optional[dict] = None
                  ):
 
 
@@ -88,7 +87,6 @@ class TreeOfThought:
         self.max_tie_group = 0
 
         self.max_tokens_dict = max_tokens_dict
-        self.reasoning_budget = reasoning_budget
 
     def _select_formatted_examples(self) -> List[str]:
             label_col = self.case.label_col
@@ -213,7 +211,6 @@ Do NOT add text before or after the JSON."""
             prompt=user_message["content"],
             system_message=system_message["content"],
             max_tokens=self.max_tokens_dict["generation"],
-            reasoning_budget=self.reasoning_budget
         )
         elapsed = time.time() - start_time
 

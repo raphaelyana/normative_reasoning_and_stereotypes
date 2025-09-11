@@ -37,13 +37,11 @@ def add_text_clusters(
     Returns:
       merged_df_with_best_k_cluster, best_perf_for_k, detailed_results_by_k
     """
-    print(f"\n{'='*80}\nCLUSTERING ANALYSIS: k={min_k}..{max_k}\n{'='*80}")
+    print(f"\n{'='*30}\nClustering analysis for k={min_k} to {max_k}\n{'='*30}")
 
-    # Ensure sample_id exists in sample_df
     if "sample_id" not in sample_df.columns:
         sample_df = sample_df.reset_index().rename(columns={"index": "sample_id"})
 
-    # Attach input text if missing
     if case.input_col not in merged_df.columns:
         merged_df = merged_df.merge(
             sample_df[["sample_id", case.input_col]],
@@ -51,7 +49,6 @@ def add_text_clusters(
             how="left",
         )
 
-    # Build embeddings
     print(f"\nGenerating embeddings for {len(merged_df)} items using {model} …")
     embedding_model = SentenceTransformer(model)
     texts = merged_df[case.input_col].astype(str).tolist()
@@ -82,10 +79,8 @@ def add_text_clusters(
             sil_score = np.nan
         print(f"Silhouette Score: {sil_score:.4f}" if np.isfinite(sil_score) else "Silhouette Score: N/A")
 
-        # (1) Routing: choose best single profile per cluster
         routing_perf = evaluate_cluster_routing(merged_df, cluster_col=col_k)
 
-        # (2) Tier-2 ensembles per cluster (uses analysis_2 internals)
         ensemble_perf = evaluate_cluster_with_tier2_ensembles(
             merged_df,
             person_set=person_set,
@@ -331,7 +326,6 @@ def select_best_k(
 
     best_k, best_perf, _ = max(scored, key=lambda x: x[2])
 
-    # Elbow hints (optional logging)
     if len(scored) > 2:
         scores = [s[2] for s in scored]
         improvements = [scores[i + 1] - scores[i] for i in range(len(scores) - 1)]

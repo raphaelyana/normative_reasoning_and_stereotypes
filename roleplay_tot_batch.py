@@ -208,7 +208,6 @@ class TreeOfThoughtBatchRunner:
                 client=self.client,
                 model=self.model,
                 task_definition="",
-                examples_df=None,
                 **(solver_kwargs or {})
             )
             best_path = tot_solver.solve(initial_prompt=input_text)
@@ -443,7 +442,6 @@ class TreeOfThoughtExplorerBatchRunner:
                 client=self.client,
                 model=self.model,
                 task_definition="",
-                examples_df=None,
                 **(solver_kwargs or {})
             )
             paths = explorer.solve(initial_prompt=input_text)
