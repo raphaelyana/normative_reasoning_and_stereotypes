@@ -24,6 +24,7 @@ class ReflexionSingleRetry:
         person_seeds: Optional[Dict[str, str]] = PERSON_SEEDS,
         judge: Optional[NormativeJudge] = None,
         detection_type: Literal["stereotype", "manipulation"] = "stereotype",
+        provider: Optional[str] = None,
     ):
         self.case = case
         self.client = client
@@ -35,6 +36,7 @@ class ReflexionSingleRetry:
         self.person_seeds = person_seeds
         self.detection_type = detection_type
         self.judge = judge or NormativeJudge(client=client, model=self.model)
+        self.provider = provider
 
     def _build_system_message(self) -> str:
         if self.person_key and self.role_playing == "passive":
@@ -79,7 +81,8 @@ Please reflect on the error. What was likely misunderstood? What should be done 
             model=self.model,
             prompt=prompt,
             system_message="You are a careful analyst who reflects on misclassifications.",
-            max_tokens=150
+            max_tokens=150,
+            provider=self.provider
         )
         return response.choices[0].message.content.strip()
     
@@ -100,7 +103,8 @@ Suggest what you could re-evaluate to improve your answer."""
             model=self.model,
             prompt=prompt,
             system_message="You are a thoughtful analyst reflecting on possible reasoning flaws.",
-            max_tokens=150
+            max_tokens=150,
+            provider=self.provider
         )
         return response.choices[0].message.content.strip()
 
@@ -115,7 +119,8 @@ Suggest what you could re-evaluate to improve your answer."""
             model=self.model,
             prompt=initial_prompt,
             system_message=system_message,
-            max_tokens=self.max_tokens
+            max_tokens=self.max_tokens,
+            provider=self.provider,
         )
         t1 = time.time()
 
@@ -150,7 +155,8 @@ Suggest what you could re-evaluate to improve your answer."""
             model=self.model,
             prompt=retry_prompt,
             system_message=system_message,
-            max_tokens=self.max_tokens
+            max_tokens=self.max_tokens,
+            provider=self.provider,
         )
         t3 = time.time()
 

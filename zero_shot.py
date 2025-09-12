@@ -23,7 +23,8 @@ class ZeroShot:
             task_definition: Optional[str] = None,
             person_key: Optional[str] = None,
             role_playing: Literal["passive", "active", "none"] = "none",
-            person_set: Optional[PersonSet] = None
+            person_set: Optional[PersonSet] = None,
+            provider: Optional[str] = None,
         ):
         
         self.case = case
@@ -32,6 +33,7 @@ class ZeroShot:
 
         self.client = client
         self.model = model if model else DEFAULT_MODEL_DICT["default"]
+        self.provider = provider
         self.max_tokens = max_tokens
         self.person_key = person_key
         self.role_playing = role_playing
@@ -85,7 +87,7 @@ class ZeroShot:
                 Labeling rules:
                 {rules}
 
-                Return only the label contained in this list: {label_list}.
+                Output format: {label_list}  (exactly one of these, no punctuation, no quotes, no extra text).
                 """)
 
         user_message = {
@@ -101,6 +103,7 @@ class ZeroShot:
             prompt=user_message["content"],
             system_message=system_message["content"],
             max_tokens=self.max_tokens,
+            provider=self.provider,
         )
 
         elapsed = time.time() - start_time

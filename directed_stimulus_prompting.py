@@ -34,6 +34,7 @@ class DSPClassifier:
         examples_df: Optional[pd.DataFrame] = None,
         use_rl: bool = False,
         stimulus_type: StimulusType = StimulusType.LINGUISTIC_MARKERS,
+        provider: Optional[str] = None,
     ):
         self.case = case
         self.client = client
@@ -44,6 +45,7 @@ class DSPClassifier:
         self.examples_df = examples_df
         self.use_rl = use_rl
         self.stimulus_type = stimulus_type
+        self.provider = provider
         
         self.policy_stats = {
             "total_tokens": 0,
@@ -112,6 +114,7 @@ class DSPClassifier:
             prompt=prompt,
             system_message=f"You are generating classification hints for {self.case.case_name}.",
             max_tokens=150,
+            provider=self.provider
         )
         
         elapsed = time.time() - start_time
@@ -165,6 +168,7 @@ Return only one of: {label_list}."""
             prompt=prompt,
             system_message=f"You are a classifier for {self.case.case_name}. Use the provided hints to guide your decision.",
             max_tokens=self.max_tokens,
+            provider=self.provider
         )
         
         elapsed = time.time() - start_time

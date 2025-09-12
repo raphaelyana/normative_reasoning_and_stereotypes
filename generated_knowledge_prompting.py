@@ -28,7 +28,8 @@ class GeneratedKnowledgePrompting:
         role_playing: Literal["passive", "active", "none"] = "none",
         person_seeds: Optional[dict[str, str]] = PERSON_SEEDS,
         knowledge_type: Literal["general", "contextual", "definitional"] = "contextual",
-        examples_per_label: int = 1
+        examples_per_label: int = 1,
+        provider: Optional[str] = None,
     ):
         self.case = case
         self.client = client
@@ -43,6 +44,7 @@ class GeneratedKnowledgePrompting:
         self.knowledge_type = knowledge_type
         self.examples_df = examples_df
         self.examples_per_label = examples_per_label
+        self.provider = provider
 
         self.total_tokens = 0
         self.total_prompt_tokens = 0
@@ -96,6 +98,7 @@ Generate {self.n_knowledge_pieces} definitional insights (one per line, numbered
             prompt=knowledge_prompt,
             system_message=system_message,
             max_tokens=self.knowledge_max_tokens,
+            provider=self.provider
         )
 
         elapsed = time.time() - start_time
@@ -186,6 +189,7 @@ Return only one of: {label_list}."""
             prompt=classification_prompt,
             system_message=system_message,
             max_tokens=self.max_tokens,
+            provider=self.provider,
         )
 
         elapsed = time.time() - start_time

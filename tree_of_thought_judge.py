@@ -19,6 +19,7 @@ class PathSelectionJudge:
         person_key: Optional[str] = None,
         role_playing: Literal["passive", "active", "none"] = "none",
         person_set: Optional[PersonSet] = None,
+        provider: Optional[str] = None,
     ) -> None:
 
         self.client = client
@@ -28,6 +29,7 @@ class PathSelectionJudge:
         self.person_key = person_key
         self.role_playing = role_playing
         self.person_set = person_set if person_set is not None else PERSON_ETHNICS
+        self.provider = provider
 
     def _system_message(self, case_name: str) -> str:
 
@@ -88,6 +90,7 @@ class PathSelectionJudge:
             system_message=self._system_message(case.case_name),
             max_tokens=self.max_tokens,
             temperature=self.temperature,
+            provider=self.provider,
         )
         raw = (resp.choices[0].message.content or "").strip()
         try:

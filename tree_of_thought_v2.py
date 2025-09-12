@@ -50,12 +50,13 @@ class TreeOfThoughtExplorer:
         },
         n_shots: int = 1,
         examples_df: Optional[pd.DataFrame] = None,
-        reasoning_budget: Optional[dict] = None
+        provider: Optional[str] = None,
     ):
         self.case = case
         self.case_name = self.case.case_name
         self.client = client
         self.model = model if model else DEFAULT_MODEL_DICT['default']
+        self.provider = provider
         self.max_branching_factor = max_branching_factor
         self.max_depth = max_depth
         self.task_definition = task_definition
@@ -70,7 +71,6 @@ class TreeOfThoughtExplorer:
         self.total_calls = 0
         self.id_counter = 0
         self.max_tokens_dict = max_tokens_dict
-        self.reasoning_budget = reasoning_budget
 
     def _select_formatted_examples(self) -> List[str]:
         if self.examples_df is None:
@@ -172,7 +172,7 @@ Do NOT add text before or after the JSON."""
             prompt=user_prompt,
             system_message=system_message["content"],
             max_tokens=self.max_tokens_dict["generation"],
-            reasoning_budget=self.reasoning_budget
+            provider=self.provider,
         )
         elapsed = time.time() - start_time
         self.total_latency += elapsed

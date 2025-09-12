@@ -37,6 +37,7 @@ class ChainOfThoughts:
         person_key: Optional[str] = None,
         role_playing: Literal["active", "passive", "none"] = "none",
         person_set: Optional[PersonSet] = None,
+        provider: Optional[str] = None,
     ):
         self.case = case
         self.case_name = case.case_name
@@ -47,6 +48,7 @@ class ChainOfThoughts:
         self.person_key = person_key
         self.role_playing = role_playing
         self.person_set = PERSON_ETHNICS if person_set is None else person_set
+        self.provider = provider
 
         self.total_tokens = 0
         self.total_prompt_tokens = 0
@@ -129,6 +131,7 @@ Answer: <LABEL>
             prompt=user_prompt,
             system_message=system_message["content"],
             max_tokens=self.max_tokens,
+            provider=self.provider,
         )
         elapsed = time.time() - start_time
     

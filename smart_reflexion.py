@@ -60,11 +60,13 @@ class SmartReflexion:
         random_threshold: float = 0.5,
         n_shots: int = 0,
         examples_df: Optional[pd.DataFrame] = None,
+        provider: Optional[str] = None,
     ):
         self.case = case
         self.case_name = case.case_name
         self.client = client
         self.model = model if model else DEFAULT_MODEL_DICT["default"]
+        self.provider = provider
         self.max_tokens = max_tokens
         self.task_definition = task_definition
         self.person_key = person_key
@@ -245,6 +247,7 @@ Final classification: {label_1} or {label_2}
             prompt=initial_prompt,
             system_message=system_message,
             max_tokens=self.max_tokens,
+            provider=self.provider,
         )
         stage1_time = time.time() - start_time
         
@@ -306,6 +309,7 @@ Final classification: {label_1} or {label_2}
             prompt=reflection_prompt,
             system_message=system_message,
             max_tokens=self.max_tokens,
+            provider=self.provider,
         )
         stage2_time = time.time() - start_time
         

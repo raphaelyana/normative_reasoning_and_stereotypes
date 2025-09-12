@@ -65,11 +65,13 @@ class _BaseJudge:
         model: str = "gpt-4o-mini",
         temperature: float = 0.0,
         max_tokens: int = 1024,
+        provider: Optional[str] = None,
     ) -> None:
         self.client = client
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.provider = provider
 
     def evaluate(self, text: str) -> Dict[str, Any]:
         prompt = self._prompt(text)
@@ -99,7 +101,8 @@ class _BaseJudge:
             prompt=prompt,
             system_message=system_msg,
             max_tokens=self.max_tokens,
-            temperature=self.temperature
+            temperature=self.temperature,
+            provider=self.provider,
         )
         return response.choices[0].message.content.strip()
 
@@ -172,6 +175,7 @@ class _BaseJudge:
                 system_message=system_msg,
                 max_tokens=self.max_tokens,
                 temperature=self.temperature,
+                provider=self.provider,
             ).choices[0].message.content.strip()
         )
     
@@ -388,6 +392,7 @@ class PipelineEvaluator:
                 system_message="You are an expert evaluator for normative reasoning systems. Follow the rubric precisely.",
                 max_tokens=800,
                 temperature=0.0,
+                provider=self.provider,
             ).choices[0].message.content.strip()
         )
         

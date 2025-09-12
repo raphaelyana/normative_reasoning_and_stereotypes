@@ -27,7 +27,8 @@ class FewShot:
         examples_df: Optional[pd.DataFrame] = None,
         person_key: Optional[str] = None, 
         role_playing: Literal["passive", "active", "none"] = "none",
-        person_set: Optional[PersonSet] = None
+        person_set: Optional[PersonSet] = None,
+        provider: Optional[str] = None,
     ):
         self.case = case
         self.client = client
@@ -42,6 +43,7 @@ class FewShot:
             self.person_set = PersonSet(seeds=PERSON_SEEDS, metadata={})
         else:
             self.person_set = person_set
+        self.provider = provider
 
         self.total_tokens = 0
         self.total_prompt_tokens = 0
@@ -149,6 +151,7 @@ class FewShot:
             prompt=user_message["content"],
             system_message=system_message["content"],
             max_tokens=self.max_tokens,
+            provider=self.provider,
         )
 
         elapsed = time.time() - start_time

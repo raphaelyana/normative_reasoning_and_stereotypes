@@ -56,6 +56,7 @@ class TreeOfThought:
                     },
                 n_shots: int = 1,
                 examples_df: Optional[pd.DataFrame] = None,
+                provider: Optional[str] = None,
                  ):
 
 
@@ -64,6 +65,7 @@ class TreeOfThought:
         
         self.client = client
         self.model = model if model else DEFAULT_MODEL_DICT['default']
+        self.provider = provider
         self.max_branching_factor = max_branching_factor
         self.max_depth = max_depth
         self.task_definition = task_definition
@@ -211,6 +213,7 @@ Do NOT add text before or after the JSON."""
             prompt=user_message["content"],
             system_message=system_message["content"],
             max_tokens=self.max_tokens_dict["generation"],
+            provider=self.provider,
         )
         elapsed = time.time() - start_time
 
@@ -304,7 +307,8 @@ Do NOT add text before or after the JSON."""
             model=self.model,
             prompt=user_prompt,
             system_message=system_message["content"],
-            max_tokens=self.max_tokens_dict["evaluation"]
+            max_tokens=self.max_tokens_dict["evaluation"],
+            provider=self.provider,
         )
         elapsed = time.time() - start_time
     
