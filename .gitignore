@@ -44,6 +44,10 @@ batch_jobs/
 results/deepseek_v3/
 results/openai_4.1_mini/
 results/openai_4o_mini/
+results/mistral_small_2506/
+results/mistral_small_2503/
+resyults/anthropic_sonnet/
+results/gemini_2.5_flash/
 # Keep results/figs/ folder
 #!results/figs/
 zero_shot_basic.py

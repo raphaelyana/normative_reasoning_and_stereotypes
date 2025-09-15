@@ -177,12 +177,31 @@ def call_llm(client,
     # Grok models
     if (provider == "xai") or ("xai_sdk" in fingerprint) or ("x.ai" in fingerprint) or ("xai" in fingerprint):
         from xai_sdk.chat import user as x_user, system as x_system
+        import inspect
+
         chat = client.chat.create(model=model)
         if system_message:
             chat.append(x_system(system_message))
         chat.append(x_user(prompt))
-        r = chat.sample(temperature=temperature, max_output_tokens=max_tokens)
-        content = getattr(r, "output_text", None) or getattr(r, "text", None) or getattr(getattr(r, "message", None), "text", None) or str(r)
+
+        sig = inspect.signature(chat.sample)
+        kwargs = {}
+        if "max_output_tokens" in sig.parameters:
+            kwargs["max_output_tokens"] = max_tokens
+        elif "max_tokens" in sig.parameters:
+            kwargs["max_tokens"] = max_tokens
+        if "temperature" in sig.parameters:
+            kwargs["temperature"] = temperature
+        elif "temp" in sig.parameters:
+            kwargs["temp"] = temperature
+
+        r = chat.sample(**kwargs) if kwargs else chat.sample()
+        content = (
+            getattr(r, "output_text", None)
+            or getattr(r, "text", None)
+            or getattr(getattr(r, "message", None), "text", None)
+            or str(r)
+        )
         return _pack_response(content, None, None, raw=r)
 
     raise ValueError(f"Unsupported client/provider for call_llm (fingerprint='{fingerprint}', provider='{provider}')")
