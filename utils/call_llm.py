@@ -92,13 +92,38 @@ def call_llm(client,
         except Exception:
             from google import genai as genai
     
-        # Build a model; include system instruction if provided
-        model_obj = genai.GenerativeModel(
-            model if model else "gemini-2.5-flash",
-            system_instruction=system_message if system_message else None
-        )
+        #model_obj = genai.GenerativeModel(
+        #    model if model else "gemini-2.5-flash",
+        #    system_instruction=system_message if system_message else None
+        #)
+
+        #safety_settings = [
+        #    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+        #    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+        #    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+        #    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+        #]
     
-        # MGSD contains flagged terms → relax thresholds
+        #r = model_obj.generate_content(
+        #    prompt,
+        #    generation_config={
+        #        "max_output_tokens": max_tokens,
+        #        "temperature": temperature,
+        #        "candidate_count": 1,
+        #        "response_mime_type": "text/plain",
+        #    },
+        #    safety_settings=safety_settings,
+        #)
+    
+        # Reuse the model object if caller passed one
+        if hasattr(client, "generate_content"):
+            model_obj = client
+        else:
+            model_obj = genai.GenerativeModel(
+                model if model else "gemini-2.5-flash",
+                system_instruction=system_message if system_message else None
+            )
+    
         safety_settings = [
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -109,7 +134,7 @@ def call_llm(client,
         r = model_obj.generate_content(
             prompt,
             generation_config={
-                "max_output_tokens": max_tokens,
+                "max_output_tokens": 50,
                 "temperature": temperature,
                 "candidate_count": 1,
                 "response_mime_type": "text/plain",
@@ -140,14 +165,13 @@ def call_llm(client,
         return _pack_response(content, pu, cu, raw=r)
 
 
-    # cohere v2
+    # cohere
     if (provider == "cohere") or ("cohere" in fingerprint):
         messages = with_sys([{"role": "user", "content": prompt}])
         r = client.chat(
             model=model, messages=messages,
             max_tokens=max_tokens, temperature=temperature
         )
-
         msg = getattr(r, "message", None)
         parts = getattr(msg, "content", []) if msg else []
         content = ""
@@ -162,7 +186,7 @@ def call_llm(client,
 
     # Qwen models
     if (provider == "dashscope") or ("dashscope" in fingerprint) or ("tongyi" in fingerprint) or ("alibaba" in fingerprint):
-        from dashscope import Generation  # type: ignore
+        from dashscope import Generation
         messages = with_sys([{"role": "user", "content": prompt}])
         r = Generation.call(model=model, messages=messages, result_format="message")
         out = getattr(r, "output", None)
