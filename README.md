@@ -145,10 +145,9 @@ plot_accuracy_deltas_with_ci(merged_df, person_set, group_keys)
 
 ## Development Status
 
-- ✅ **Preliminary Analysis, Tier 1**: Complete and tested
+- ✅ **Preliminary Analysis, Tier 1/2/3**: Complete and tested
 - ✅ **Profile System**: Fully implemented with dynamic trait detection
 - ✅ **Visualization Pipeline**: Comprehensive plotting functions
-- 🚧 **Tier 2-3 Analysis**: In active development
 - 🚧 **MoP Implementation**: In active development
 
 
