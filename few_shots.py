@@ -3,7 +3,6 @@ from utils.call_llm import call_llm
 import re
 import pandas as pd
 from cases.cases_config import CaseConfig
-from enum import Enum
 from typing import Literal
 from typing import List, Optional
 from collections import defaultdict

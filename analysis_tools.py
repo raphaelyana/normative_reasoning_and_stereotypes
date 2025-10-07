@@ -5,7 +5,6 @@ import re
 import pandas as pd
 import numpy as np
 
-from enum import Enum
 from profiles.schema import PersonSet
 from cases.cases_config import CaseConfig
 from typing import Tuple, List, Optional
