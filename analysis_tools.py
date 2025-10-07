@@ -22,7 +22,7 @@ def load_and_merge_profiles(
     extra_sample_cols: Optional[List[str]] = None,
 ) -> pd.DataFrame:
 
-    # ---------- BASE (baseline) ----------
+
     df_base = pd.read_csv(base_file_path)
 
     base_keep = [c for c in [sample_id_col, label_col, pred_col,
@@ -131,7 +131,6 @@ def get_demographic_info(profile_name: str, person_set: PersonSet) -> str:
     Fixed version that works with your PersonSet.get_traits method
     """
     try:
-        # Use your existing get_traits method
         traits = person_set.get_traits(profile_name, group_keys=("gender", "ethnicity", "cognitive_style", "age"))
         
         def normalize_trait(value):
@@ -141,7 +140,6 @@ def get_demographic_info(profile_name: str, person_set: PersonSet) -> str:
         
         parts = []
         
-        # Always include ethnicity and gender first
         ethnicity = normalize_trait(traits.get("ethnicity"))
         gender = normalize_trait(traits.get("gender"))
         
@@ -150,7 +148,6 @@ def get_demographic_info(profile_name: str, person_set: PersonSet) -> str:
         if gender:
             parts.append(gender)
         
-        # Add cognitive style or age if available
         cognitive_style = normalize_trait(traits.get("cognitive_style"))
         age = normalize_trait(traits.get("age"))
         
@@ -188,12 +185,11 @@ def get_available_traits(person_set: PersonSet) -> Tuple[List[str], List[str]]:
     Dynamically detect available traits from PersonMeta dataclass
     
     Returns:
-    --------
     Tuple[List[str], List[str]]
         - required_keys: Always present traits (gender, ethnicity)
         - optional_keys: Optional traits that exist in the metadata
     """
-    # Core traits that should always be present for bias analysis
+
     required_keys = ["gender", "ethnicity"]
     
     if not person_set.metadata:
@@ -212,7 +208,7 @@ def get_available_traits(person_set: PersonSet) -> Tuple[List[str], List[str]]:
         for profile in sample_profiles:
             try:
                 traits = person_set.get_traits(profile, group_keys=[field])
-                if traits.get(field, "Unknown") != "Unknown":
+                if traits.get(field, "Unknown")!="Unknown":
                     field_has_data = True
                     break
             except:
@@ -250,7 +246,6 @@ def has_cognitive_style_data(person_set: PersonSet, sample_size: int = 10) -> bo
     if not person_set.metadata:
         return False
     
-    # Sample some profile IDs to check
     profile_ids = list(person_set.metadata.keys())
     sample_ids = profile_ids[:min(sample_size, len(profile_ids))]
     
@@ -319,8 +314,8 @@ def guarded_labelspace_analysis(
 def resolve_plot_dir(
     case,
     plots_root: Optional[str] = None,
-    strategy: Optional[str] = None,   # e.g., "zero_shot", "few_shot", "cot"
-    stage: Optional[str] = None,      # e.g., "preliminary", "tier1", "tier2"
+    strategy: Optional[str] = None,
+    stage: Optional[str] = None,
     extra_subdir: Optional[str] = None,
     sub_case: Optional[str] = None,
 ) -> str:

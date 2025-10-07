@@ -1,6 +1,3 @@
-# ============================================
-# token_metrics.py  —  cost & efficiency utils
-# ============================================
 from __future__ import annotations
 import os, glob
 from typing import Dict, Iterable, Optional, Sequence, Tuple, NamedTuple, Any

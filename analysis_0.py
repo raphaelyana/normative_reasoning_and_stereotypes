@@ -1610,7 +1610,7 @@ def plot_accuracy_deltas_with_ci(
     colormap: str = "tab10",
     figsize=(14, 6),
     savepath: str = None,
-    full_scale_axis: bool = True,
+    full_scale_axis: bool = False,
     error_style: str = "none",
 ):
     """
@@ -2176,7 +2176,7 @@ def plot_token_analysis_figures(perf: pd.DataFrame, out_dir: str, have_pricing: 
         ax.set_ylabel("Accuracy (%)")
         ax.set_title("Tokens vs Accuracy (per profile)")
         pth = os.path.join(out_dir, "tokens_vs_accuracy.pdf")
-        plt.savefig(pth)
+        #plt.savefig(pth)
         plt.close()
 
     if have_pricing and {"cost_per_sample", "accuracy"}.issubset(perf.columns) and perf["cost_per_sample"].notna().any():
@@ -2189,7 +2189,7 @@ def plot_token_analysis_figures(perf: pd.DataFrame, out_dir: str, have_pricing: 
         ax.set_ylabel("Accuracy (%)")
         ax.set_title("Cost vs Accuracy (per profile)")
         pth = os.path.join(out_dir, "cost_vs_accuracy.pdf")
-        plt.savefig(pth)
+        #plt.savefig(pth)
         plt.close()
 
 
@@ -2302,6 +2302,7 @@ def run_full_preliminary_analysis(
             merged_df,
             person_set=person_set,
             group_keys=group_keys,
+            error_style="t",
             figsize=(10, 6),
             savepath=os.path.join(acc_dir, "accuracy_by_group.pdf"),
         )

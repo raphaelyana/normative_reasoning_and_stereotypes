@@ -1730,7 +1730,7 @@ def visualize_predictive_attribution(results, figsize=(6.5, 4.2), coef_bootstrap
             other_contrib  = [float(predictive_association_results[o].get('other_unique', 0.0)) for o in subset]
             shared_contrib = [float(predictive_association_results[o].get('shared_variance', 0.0)) for o in subset]
             r2s            = [float(predictive_association_results[o].get('r2_full', 0.0)) for o in subset]
-            x = np.arange(len(subset)); width = 0.6
+            x = np.arange(len(subset)); width = 0.3
             ax.bar(x, demo_contrib,  width, label='Demographics',  alpha=0.85)
             ax.bar(x, other_contrib, width, bottom=demo_contrib, label='Other Traits', alpha=0.85)
             ax.bar(x, shared_contrib,width, bottom=np.array(demo_contrib)+np.array(other_contrib), label='Shared', alpha=0.85)
@@ -1750,9 +1750,9 @@ def visualize_predictive_attribution(results, figsize=(6.5, 4.2), coef_bootstrap
     figs['variance_decomposition'] = _r2_plot('Variance Decomposition (Associational R²): Demographics vs Other Traits', outcomes)
 
     if core_cols:
-        figs['variance_decomposition_core'] = _r2_plot('Variance Decomposition — Core (COI/ATI/CAI & Benefit–Risk)', core_cols)
+        figs['variance_decomposition_core'] = _r2_plot('Variance Decomposition', core_cols)
     if perf_cols:
-        figs['variance_decomposition_perf'] = _r2_plot('Variance Decomposition — Performance/Stability/Efficiency', perf_cols)
+        figs['variance_decomposition_perf'] = _r2_plot('Variance Decomposition', perf_cols)
 
 
     def _coef_heatmap(title, subset):

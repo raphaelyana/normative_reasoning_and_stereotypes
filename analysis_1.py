@@ -675,7 +675,7 @@ def plot_block_wald(wald_blocks: pd.DataFrame, out_path: str, title: str | None 
     ax.set_yticks(y)
     ax.set_yticklabels(df["block"])
     ax.axvline(-np.log10(0.05), color="0.5", ls="--", lw=1)
-    ax.set_xlabel("−log10 p (higher = stronger)")
+    ax.set_xlabel("−log10 p")
     fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
 

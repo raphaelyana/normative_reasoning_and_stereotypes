@@ -27,9 +27,9 @@ class DSPClassifier:
         self,
         case: CaseConfig,
         client: openai.OpenAI,
-        policy_model: str = "gpt-4.1-mini",  # For generating stimulus
-        target_model: str = "gpt-4.1-mini",        # Main classification model
-        max_tokens: int = 300,
+        policy_model: str ="gpt-4.1-mini",  # Generation model
+        target_model: str ="gpt-4.1-mini",  # Classification model
+        max_tokens: int=300,
         task_definition: Optional[str] = None,
         examples_df: Optional[pd.DataFrame] = None,
         use_rl: bool = False,

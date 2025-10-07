@@ -1,6 +1,9 @@
 # =======================================
 # Stereotypes definitions used for classification
 #
+# Note: After several experiments, the short binary definition showed the most promising results.
+#       Therefore, all the experimentation was done with this definition.
+#
 # ---------------
 # 4 definitions : 
 # ---------------
