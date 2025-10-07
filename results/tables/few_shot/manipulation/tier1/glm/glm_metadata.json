@@ -21,10 +21,10 @@
     }
   },
   "cluster_on": "sample_id",
-  "n_rows": 30000,
-  "n_items": 500,
+  "n_rows": 25200,
+  "n_items": 420,
   "n_profiles": 60,
-  "n_clusters": 500,
+  "n_clusters": 420,
   "seed": null,
   "notes": "Cluster-robust SEs; binomial GLM.",
   "versions": {

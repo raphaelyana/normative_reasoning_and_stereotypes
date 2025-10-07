@@ -1,0 +1,47 @@
+{
+  "formula": "correct ~ C(gender, Treatment(reference='man')) + C(ethnicity, Treatment(reference='white')) + C(age, Treatment(reference='20')) + C(gender, Treatment(reference='man')):C(ethnicity, Treatment(reference='white')) + C(gender, Treatment(reference='man')):C(age, Treatment(reference='20')) + C(ethnicity, Treatment(reference='white')):C(age, Treatment(reference='20'))",
+  "factors": {
+    "gender": {
+      "levels": [
+        "man",
+        "woman"
+      ],
+      "reference": "man"
+    },
+    "ethnicity": {
+      "levels": [
+        "white",
+        "asian",
+        "black",
+        "indian",
+        "latine",
+        "middle_eastern"
+      ],
+      "reference": "white"
+    },
+    "age": {
+      "levels": [
+        "20",
+        "25",
+        "35",
+        "45",
+        "55"
+      ],
+      "reference": "20"
+    }
+  },
+  "cluster_on": "sample_id",
+  "n_rows": 45000,
+  "n_items": 750,
+  "n_profiles": 60,
+  "n_clusters": 750,
+  "seed": null,
+  "notes": "Cluster-robust SEs; binomial GLM.",
+  "versions": {
+    "python": "3.11.5 | packaged by conda-forge | (main, Aug 27 2023, 03:33:12) [Clang 15.0.7 ]",
+    "pandas": "2.2.3",
+    "numpy": "1.26.4",
+    "scipy": "1.13.1",
+    "statsmodels": "0.14.2"
+  }
+}

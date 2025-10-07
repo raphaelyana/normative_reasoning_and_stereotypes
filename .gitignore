@@ -41,17 +41,15 @@ experiment1_tests_.ipynb
 analysis_0dump.py
 batch_jobs/
 
-results/deepseek_v3/
-results/openai_4.1_mini/
-results/openai_4o_mini/
-results/mistral_small_2506/
-results/mistral_small_2503/
-results/anthropic_3_7_sonnet/
-results/google_gemini_2_5_flash/
+results/*
+!results/figs/
+!results/tables/
 # Keep results/figs/ folder
 #!results/figs/
 zero_shot_basic.py
+few_shot_basic.py
 plots_workshop.py
 workshop.ipynb
+benchmark_results.ipynb
 
 aaaa_secret.ipynb
