@@ -12,26 +12,56 @@ This repository implements a comprehensive cost-aware statistical framework for 
 ## Project Structure
 
 ```
-├── analysis/                  # Core analysis modules
-│   ├── preliminary.py         # Preliminary bias analysis
-│   ├── tier1_analysis.py      # ANOVA & Pareto frontier analysis
-│   ├── tier2_analysis.py      # Ensemble & clustering analysis
-│   └── tier3_analysis.py      # Consistency-boldness trade-offs analysis
-├── profiles/                  # Profile structure and management
-│   ├── profile_dict.py        # Profile and metadata dictionnaries
-│   ├── profile_message.py     # Utils for adapting LLM to role-playing
-│   ├── profile_sets.py        # Predefined demographic profiles
-│   └── schema.py              # PersonSet and other structures used for profile design
-├── cases/                     # Dataset configurations
-│   └── cases.py               # CaseConfig design for each studied dataset
-├── utils/                     # Utility functions
-├── results/                   # Analysis outputs
-│   ├── openai_4o_mini/        # Each folder corresponding to a model tested
-│   ...
-    └── docs/                       # Documentation files
-    └── notebooks/                # Jupyter notebooks for experiments and analysis
-    └── README.md                 # This file
+├── src/                            # All source code
+│   ├── zero_shot.py                # Zero-shot prompting strategy
+│   ├── few_shots.py                # Few-shot prompting strategy
+│   ├── chain_of_thought.py         # Chain-of-Thought prompting
+│   ├── tree_of_thought.py          # Tree-of-Thought prompting
+│   ├── tree_of_thought_v2.py       # Tree-of-Thought, revised implementation
+│   ├── tree_of_thought_judge.py    # Judge component for Tree-of-Thought
+│   ├── generated_knowledge_prompting.py  # Generated-Knowledge prompting
+│   ├── llm_judge.py                # LLM-as-judge evaluation
+│   ├── analysis_0.py               # Preliminary bias analysis & token economics
+│   ├── analysis_1.py               # Tier-1: GLM & pairwise demographic tests
+│   ├── analysis_2.py               # Tier-2: ensembles, Pareto & permutation tests
+│   ├── analysis_3.py               # Tier-3: consistency-boldness trade-offs
+│   ├── analysis_tools.py           # Shared analysis helpers & plot path building
+│   ├── plot_tools.py               # Publication figure styling
+│   ├── tokens_metrics.py           # Token usage, cost & efficiency metrics
+│   ├── data_loader.py              # Dataset loading
+│   ├── stereotype_definitions.py   # Stereotype task definitions
+│   ├── manipulation_definitions.py # Manipulation task definitions
+│   ├── benchmark_results.py        # Cross-model benchmark figures
+│   ├── publication_figures.py      # Final paper figures
+│   ├── profiles/                   # Profile structure and management
+│   │   ├── profile_dict.py         # Profile and metadata dictionnaries
+│   │   ├── profile_message.py      # Utils for adapting LLM to role-playing
+│   │   ├── profile_sets.py         # Predefined demographic profiles
+│   │   └── schema.py               # PersonSet and other structures for profile design
+│   ├── cases/                      # Dataset configurations
+│   │   ├── cases_config.py         # CaseConfig design for each studied dataset
+│   │   ├── get_case_config.py      # Case lookup helper
+│   │   ├── stereotypes_case.py     # Stereotype dataset config
+│   │   ├── manipulation_case.py    # Manipulation dataset config
+│   │   └── mmlu_case.py            # MMLU dataset config
+│   └── utils/                      # Utility functions
+│       └── call_llm.py             # Unified multi-provider LLM client
+├── notebooks/                      # Jupyter notebooks for experiments and analysis
+│   ├── experiment1_*.ipynb         # Prompting-strategy experiment runs
+│   └── analysis_*.ipynb            # Per-dataset and global analyses
+├── data/                           # Input datasets
+├── results/                        # Analysis outputs
+│   ├── figs/                       # Generated figures
+│   └── tables/                     # Generated statistical tables
+├── figs/                           # Publication figures (fig1–fig11)
+├── requirements.txt                # Pinned dependencies
+├── LICENSE
+└── README.md                       # This file
 ```
+
+> **Note on paths:** all scripts and notebooks resolve `data/` and `results/` relative to the
+> repository root, so run them from the repo root. Notebooks include a bootstrap cell that
+> handles this automatically and puts `src/` on the import path.
 
 ## Research Framework
 
@@ -121,14 +151,28 @@ pip install -r requirements.txt
 
 ### Basic Usage
 
-```python
-from analysis.preliminary import run_full_preliminary_analysis
-from profiles.profile_sets import PERSON_ETHNICS
-from cases.cases import stereotypes_case
-from analysis.analysis_tools import load_and_merged_df
+Run from the repository root, with `src/` on the import path:
 
-# Load your merged dataset
-merged_df = load_and_merged_df()
+```python
+import sys; sys.path.insert(0, "src")
+
+import pandas as pd
+from analysis_0 import run_full_preliminary_analysis
+from analysis_tools import load_and_merge_profiles
+from cases.stereotypes_case import stereotypes_case
+from profiles.profile_sets import PERSON_ETHNICS
+
+# Load and merge the baseline run with the role-play runs.
+# NOTE: raw per-model outputs under results/<model>/ are not distributed with
+# this repository (see "Reproducing the results" below) — generate them first
+# with the notebooks in notebooks/, then point these paths at your own run.
+MODEL = "openai_4o_mini"
+merged_df = load_and_merge_profiles(
+    base_file_path=f"results/{MODEL}/zero_shot/classic/results_stereotype_zero_shot_prompt_short_binary.csv",
+    role_playing_glob_pattern=f"results/{MODEL}/zero_shot/role_playing_ethnics/*/results_stereotype_*.csv",
+    sample_df=pd.read_csv("data/mgsd.csv"),   # shipped with the repo
+    case=stereotypes_case,
+)
 
 # Run comprehensive analysis
 results = run_full_preliminary_analysis(
@@ -141,6 +185,24 @@ results = run_full_preliminary_analysis(
 print(f"Bias patterns detected: {len(results['meaningful_bias_patterns'])}")
 print(f"High disagreement cases: {len(results['disagreement'])}")
 ```
+
+### Reproducing the results
+
+Raw per-model outputs (`results/<model>/…`) are **not** distributed with this repository —
+they are large and API-dependent, and are excluded via `.gitignore`. What *is* published is
+the derived output: aggregated figures in `results/figs/` and statistical tables in
+`results/tables/`, plus the paper figures in `figs/`.
+
+To regenerate the raw outputs yourself:
+
+1. Install dependencies and set your API keys in a `.env` file at the repository root.
+2. Run the experiment notebooks in `notebooks/` (`experiment1_shot`, `experiment1_CoT`,
+   `experiment1_ToT`, `experiment1_gkp`, …). Each writes to `results/<model>/…`.
+3. Run the analysis notebooks (`analysis_mgsd`, `analysis_mentalmanip`, `analysis_mmlu`,
+   `analysis_global`) to rebuild `results/figs/` and `results/tables/`.
+
+All scripts and notebooks resolve paths relative to the repository root, so run them from
+there. The notebooks handle this themselves via their bootstrap cell.
 
 ## Supported Datasets
 
