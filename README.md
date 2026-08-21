@@ -9,6 +9,10 @@ Code for MSc thesis (UCL X Holistic AI): cost-aware framework for evaluating in-
 
 This repository implements a comprehensive cost-aware statistical framework for how in-context-learning strategy and demographic role-play affect Large Language Models (LLMs) across normative reasoning tasks. The research addresses the critical questions: *"Can we statistically prove that systematic biases exist in LLM normative reasoning, and identify evidence suggesting their potential sources?"* and *Which prompting strategies give the best accuracy-cost trade-off, and does demographic framing systematically changes model behaviour?*
 
+## Thesis
+
+:page_facing_up: **[Benchmarking Aligned Reasoning in Test-Time Constrained AI Systems](Yana-MSc-Thesis.pdf)**, MSc thesis, University College London X Holistic AI, 2025.
+
 ## Project Structure
 
 ```
@@ -54,6 +58,7 @@ This repository implements a comprehensive cost-aware statistical framework for 
 │   ├── figs/                       # Generated figures
 │   └── tables/                     # Generated statistical tables
 ├── figs/                           # Publication figures (fig1–fig11)
+├── Yana-MSc-Thesis.pdf             # Full MSc thesis write-up
 ├── requirements.txt                # Pinned dependencies
 ├── LICENSE
 └── README.md                       # This file
@@ -243,8 +248,22 @@ plot_accuracy_deltas_with_ci(merged_df, person_set, group_keys)
 
 ## Status
 
-Thesis complete. Core benchmarking, profile analysis, and stability framework fully implemented.
+Thesis complete and included above. Core benchmarking, profile analysis, and stability framework fully implemented.
 
+## Citation
+
+If you use this code or refer to the thesis, please cite:
+
+```bibtex
+@mastersthesis{yana2025benchmarking,
+  title  = {Benchmarking Aligned Reasoning in Test-Time Constrained AI Systems},
+  author = {Yana, Raphael},
+  school = {University College London},
+  year   = {2025},
+  type   = {MSc thesis},
+  note   = {In collaboration with Holistic AI}
+}
+```
 
 ## License
 
