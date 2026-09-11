@@ -7,7 +7,7 @@ Code for MSc thesis (UCL X Holistic AI): cost-aware framework for evaluating in-
 
 ## Overview
 
-This repository implements a comprehensive cost-aware statistical framework for how in-context-learning strategy and demographic role-play affect Large Language Models (LLMs) across normative reasoning tasks. The research addresses the critical questions: *"Can we statistically prove that systematic biases exist in LLM normative reasoning, and identify evidence suggesting their potential sources?"* and *Which prompting strategies give the best accuracy-cost trade-off, and does demographic framing systematically changes model behaviour?*
+This repository implements a comprehensive cost-aware statistical framework for how in-context-learning strategy and demographic role-play affect Large Language Models (LLMs) across normative reasoning tasks. The research addresses the critical questions: *"Which prompting strategies give the best accuracy–cost trade-off,"* and *Does demographic framing systematically change model behaviour?*
 
 ## Thesis
 
@@ -214,6 +214,7 @@ there. The notebooks handle this themselves via their bootstrap cell.
 - **MGSD**: Stereotype detection in moral scenarios
 - **MentalManip**: Manipulation detection in dialogues  
 - **MMLU**: Normative reasoning categories
+- **MMLU-Large**: Narrowed to four categories with more samples from each, 2 normative and 2 logical reasoning categories (Professional Law, Moral Dilemmas, College Mathematics, Formal Logic)
 
 ## Core Components
 
@@ -271,7 +272,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Contributing
 
-This is thesis research code, used for paper in publication. While not actively seeking contributions, issues and suggestions are welcome for discussion.
+This is thesis research code. While not actively seeking contributions, issues and suggestions are welcome for discussion.
 
 ## Contact
 
